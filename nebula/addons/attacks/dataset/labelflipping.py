@@ -171,10 +171,15 @@ class LabelFlippingAttack(DatasetAttack):
 
         # Create the appropriate strategy based on whether the attack is targeted
         if attack_params.get("targeted", False):
-            target_label = int(attack_params.get("target_label") or attack_params.get("targetLabel", 4))
-            target_changed_label = int(
-                attack_params.get("target_changed_label") or attack_params.get("targetChangedLabel", 7)
-            )
+            target_label = attack_params.get("target_label")
+            if target_label is None:
+                target_label = attack_params.get("targetLabel", 4)
+            target_label = int(target_label)
+
+            target_changed_label = attack_params.get("target_changed_label")
+            if target_changed_label is None:
+                target_changed_label = attack_params.get("targetChangedLabel", 7)
+            target_changed_label = int(target_changed_label)
             self.strategy = TargetedLabelFlippingStrategy(target_label, target_changed_label)
         else:
             self.strategy = NonTargetedLabelFlippingStrategy()
