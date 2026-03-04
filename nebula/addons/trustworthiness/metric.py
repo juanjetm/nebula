@@ -16,11 +16,17 @@ class TrustMetricManager:
     Manager class to help store the output directory and handle calls from the FL framework.
     """
 
-    def __init__(self, scenario_start_time):
-        self.factsheet_file_nm = "factsheet.json"
-        self.eval_metrics_file_nm = "eval_metrics.json"
-        self.nebula_trust_results_nm = "nebula_trust_results.json"
-        self.scenario_start_time = scenario_start_time
+    def __init__(self, scenario_start_time, federation, participant=None):
+        if federation == "DFL":
+            self.factsheet_file_nm = f"factsheet_participant_{participant}.json" # IDEA: Pasarle desde trustworthiness.py el id del participante, ponerlo a None para CFL
+            self.eval_metrics_file_nm = "eval_metrics_dfl.json"
+            self.nebula_trust_results_nm = f"nebula_trust_results_{participant}.json"
+            self.scenario_start_time = scenario_start_time
+        else:
+            self.factsheet_file_nm = "factsheet.json"
+            self.eval_metrics_file_nm = "eval_metrics.json"
+            self.nebula_trust_results_nm = "nebula_trust_results.json"
+            self.scenario_start_time = scenario_start_time
 
     def evaluate(self, experiment_name, weights, use_weights=False):
         """
@@ -64,6 +70,58 @@ class TrustMetricManager:
             final_score = round(final_score, 2)
             result_json["trust_score"] = final_score
             write_results_json(results_file, result_json)
-            
+
             graphics = Graphics(self.scenario_start_time, scenario_name)
             graphics.graphics()
+
+    def evaluate_participant(self, experiment_name, weights, participant_id, use_weights=False):
+        """
+        Evaluates the trustworthiness score.
+
+        Args:
+            scenario (object): The scenario in whith the trustworthiness will be calculated.
+            weights (dict): The desired weghts of the pillars.
+            use_weights (bool): True to turn on the weights in the metric config file, default to False.
+        """
+        # Get scenario name
+        scenario_name = experiment_name
+        factsheet_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", self.factsheet_file_nm)
+        metrics_cfg_file = os.path.join(dirname, "configs", self.eval_metrics_file_nm)
+        results_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", self.nebula_trust_results_nm)
+
+        if not os.path.exists(factsheet_file):
+            logger.error(f"{factsheet_file} is missing! Please check documentation.")
+            return
+
+        if not os.path.exists(metrics_cfg_file):
+            logger.error(f"{metrics_cfg_file} is missing! Please check documentation.")
+            return
+
+        with open(factsheet_file, "r") as f, open(metrics_cfg_file, "r") as m:
+            factsheet = json.load(f)
+            #metrics_cfg = json.load(m)
+            #metrics_cfg = replace_everywhere(metrics_cfg, "factsheet", f"factsheet_participant_{participant_id}")
+
+            raw_metrics_cfg: str = m.read()
+            raw_metrics_cfg = raw_metrics_cfg.replace("factsheet", f"factsheet_participant_{participant_id}")
+            metrics_cfg = json.loads(raw_metrics_cfg)
+
+            metrics = metrics_cfg.items()
+            input_docs = {f"factsheet_participant_{participant_id}": factsheet}
+
+            result_json = {"trust_score": 0, "pillars": []}
+            final_score = 0
+            result_print = []
+            for key, value in metrics:
+                pillar = TrustPillar(key, value, input_docs, use_weights)
+                score, result = pillar.evaluate()
+                weight = weights.get(key) / 100
+                final_score += weight * score
+                result_print.append([key, score])
+                result_json["pillars"].append(result)
+            final_score = round(final_score, 2)
+            result_json["trust_score"] = final_score
+            write_results_json(results_file, result_json)
+
+            graphics = Graphics(self.scenario_start_time, scenario_name, participant_id)
+            graphics.graphics_dfl(participant_id)

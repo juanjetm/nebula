@@ -23,6 +23,9 @@ from nebula.core.datasets.cifar10.cifar10 import CIFAR10Dataset
 from nebula.core.datasets.cifar100.cifar100 import CIFAR100Dataset
 from nebula.core.datasets.emnist.emnist import EMNISTDataset
 from nebula.core.datasets.fashionmnist.fashionmnist import FashionMNISTDataset
+from nebula.core.datasets.covtype.covtype import CovtypeDataset
+from nebula.core.datasets.adultcensus.adultcensus import AdultCensusDataset
+from nebula.core.datasets.breast_cancer.breast_cancer import BreastCancerDataset
 from nebula.core.datasets.mnist.mnist import MNISTDataset
 from nebula.core.utils.certificate import generate_ca_certificate, generate_certificate
 from nebula.utils import DockerUtils, FileUtils
@@ -988,9 +991,15 @@ class ScenarioManagement:
         if additional_participants:
             self.n_nodes += len(additional_participants)
 
+
+
         # Splitting dataset
         dataset_name = self.scenario.dataset
         dataset = None
+
+
+        logging.info(f"[DEBUG] dataset_name received: {dataset_name!r}")
+        logging.info("SALE YA")
         if dataset_name == "MNIST":
             dataset = MNISTDataset(
                 num_classes=10,
@@ -1004,6 +1013,36 @@ class ScenarioManagement:
         elif dataset_name == "FashionMNIST":
             dataset = FashionMNISTDataset(
                 num_classes=10,
+                partitions_number=self.n_nodes,
+                iid=self.scenario.iid,
+                partition=self.scenario.partition_selection,
+                partition_parameter=self.scenario.partition_parameter,
+                seed=42,
+                config_dir=self.config_dir,
+            )
+        elif dataset_name == "Covtype":
+            dataset = CovtypeDataset(
+                num_classes=7,
+                partitions_number=self.n_nodes,
+                iid=self.scenario.iid,
+                partition=self.scenario.partition_selection,
+                partition_parameter=self.scenario.partition_parameter,
+                seed=42,
+                config_dir=self.config_dir,
+            )
+        elif dataset_name == "AdultCensus":
+            dataset = AdultCensusDataset(
+                num_classes=2,
+                partitions_number=self.n_nodes,
+                iid=self.scenario.iid,
+                partition=self.scenario.partition_selection,
+                partition_parameter=self.scenario.partition_parameter,
+                seed=42,
+                config_dir=self.config_dir,
+            )
+        elif dataset_name == "BreastCancer":
+            dataset = BreastCancerDataset(
+                num_classes=2,
                 partitions_number=self.n_nodes,
                 iid=self.scenario.iid,
                 partition=self.scenario.partition_selection,
@@ -1046,6 +1085,15 @@ class ScenarioManagement:
 
         logging.info(f"Splitting {dataset_name} dataset...")
         dataset.initialize_dataset()
+        logging.info(
+            f"[DEBUG] train_set is None? {dataset.train_set is None} | "
+            f"test_set is None? {dataset.test_set is None}"
+        )
+
+        if dataset.train_set is not None and hasattr(dataset.train_set, "data"):
+            logging.info(f"[DEBUG] AdultCensus train_set.data.shape = {dataset.train_set.data.shape}")
+        else:
+            logging.info("[DEBUG] AdultCensus train_set has no .data yet (or train_set is None)")
         logging.info(f"Splitting {dataset_name} dataset... Done")
 
         if self.scenario.deployment in ["docker", "process", "physical"]:

@@ -7,13 +7,13 @@
 	"data": {
 		"provenance": "",
 		"preprocessing": "",
-		"avg_entropy": ""
+		"entropy_local": ""
 	},
 	"participants": {
 		"client_num": "",
 		"sample_client_rate": "",
 		"client_selector": "",
-		"avg_dataset_size": ""
+		"local_dataset_size": ""
 	},
 	"configuration": {
 		"aggregation_algorithm": "",
@@ -28,8 +28,8 @@
 		"local_update_steps": ""
 	},
 	"performance": {
-		"test_loss_avg": "",
-		"test_acc_avg": "",
+		"test_loss": "",
+		"test_acc": "",
 		"test_feature_importance_cv": "",
 		"test_clever": "",
 		"test_loss_sensitivity": "",
@@ -39,26 +39,18 @@
 		"test_attack_success_rate": ""
 	},
 	"fairness": {
-		"test_acc_cv": "",
-		"selection_cv": "",
 		"class_imbalance": ""
 	},
 	"system": {
-		"avg_time_minutes": "",
-		"avg_model_size": "",
-		"total_upload_bytes": "",
-		"total_download_bytes":"",
-		"avg_upload_bytes": "",
-		"avg_download_bytes": ""
+		"time_minutes": "",
+		"model_size": "",
+		"upload_bytes": "",
+		"download_bytes":""
 	},
 	"sustainability": {
-		"avg_carbon_intensity_server": "",
-		"avg_carbon_intensity_clients": "",
-		"avg_power_performance_clients": "",
-		"avg_power_performance_server": "",
-		"emissions_training": "",
-		"emissions_aggregation": "",
-		"emissions_communication_uplink": "",
-		"emissions_communication_downlink": ""
+		"carbon_intensity_local": "",
+		"emissions_training_local": "",
+		"energy_consumed_local": "",
+		"emissions_communication_local": ""
 	}
 }

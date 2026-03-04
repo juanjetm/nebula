@@ -1285,11 +1285,17 @@ def factory_nebuladataset(dataset, **config) -> NebulaDataset:
     from nebula.core.datasets.cifar100.cifar100 import CIFAR100Dataset
     from nebula.core.datasets.emnist.emnist import EMNISTDataset
     from nebula.core.datasets.fashionmnist.fashionmnist import FashionMNISTDataset
+    from nebula.core.datasets.covtype.covtype import CovtypeDataset
+    from nebula.core.datasets.adultcensus.adultcensus import AdultCensusDataset
+    from nebula.core.datasets.breast_cancer.breast_cancer import BreastCancerDataset
     from nebula.core.datasets.mnist.mnist import MNISTDataset
 
     options = {
         "MNIST": MNISTDataset,
         "FashionMNIST": FashionMNISTDataset,
+        "Covtype": CovtypeDataset,
+        "AdultCensus": AdultCensusDataset,
+        "BreastCancer": BreastCancerDataset,
         "EMNIST": EMNISTDataset,
         "CIFAR10": CIFAR10Dataset,
         "CIFAR100": CIFAR100Dataset,

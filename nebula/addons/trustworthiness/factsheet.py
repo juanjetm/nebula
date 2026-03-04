@@ -7,15 +7,20 @@ from json import JSONDecodeError
 import pickle
 import numpy as np
 import pandas as pd
+import time
 
 # from nebula.core.models.cifar10.cnn import CIFAR10ModelCNN
 from nebula.core.models.mnist.mlp import MNISTModelMLP
 from nebula.core.models.mnist.cnn import MNISTModelCNN
-from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_models, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv
+from nebula.core.models.covtype.mlp import CovtypeModelMLP
+from nebula.core.models.adultcensus.mlp import AdultCensusModelMLP
+from nebula.core.models.breast_cancer.mlp import BreastCancerModelMLP
+from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_models, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv, get_loss_sensitivity_score, compute_adversarial_accuracy_art,get_empirical_robustness_score,get_confidence_score,attack_success_rate
 from nebula.addons.trustworthiness.utils import count_all_class_samples, read_csv, check_field_filled, get_all_data_entropy
 # from nebula.core.models.syscall.mlp import SyscallModelMLP
 
 dirname = os.path.dirname(__file__)
+logger = logging.getLogger(__name__)
 
 class Factsheet:
     def __init__(self):
@@ -112,8 +117,19 @@ class Factsheet:
 
                     if dataset == "MNIST" and algorithm == "MLP":
                         model = MNISTModelMLP()
+                        num_classes_temp = 10
                     elif dataset == "MNIST" and algorithm == "CNN":
                         model = MNISTModelCNN()
+                        num_classes_temp = 10
+                    elif dataset == "Covtype" and algorithm == "MLP":
+                        model = CovtypeModelMLP()
+                        num_classes_temp = 7
+                    elif dataset == "AdultCensus" and algorithm == "MLP":
+                        model = AdultCensusModelMLP()
+                        num_classes_temp = 2
+                    elif dataset == "BreastCancer" and algorithm == "MLP":
+                        model = BreastCancerModelMLP()
+                        num_classes_temp = 2
                     # elif dataset == "Syscall" and algorithm == "MLP":
                     #     model = SyscallModelMLP()
                     # else:
@@ -147,6 +163,28 @@ class Factsheet:
             try:
                 factsheet = json.load(f)
 
+                expected_total = int(factsheet.get("participants", {}).get("client_num", 0) or 0)
+                logging.info(f"[Factsheet] expected_total_nodes = {expected_total}")
+
+                data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "confirmation.csv")
+
+                data = read_csv(data_file)
+
+                number_files = len(data)
+
+                logger.info(f"number_files={number_files}")
+
+                while (number_files != expected_total):
+                    logger.info("WAIT")
+                    time.sleep(5)
+                    data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "confirmation.csv")
+                    data = read_csv(data_file)
+                    number_files = len(data)
+                    logger.info(f"number_files={number_files}")
+                    logger.info(f"expected_nodes={expected_total}")
+
+
+
                 dataset = factsheet["data"]["provenance"]
                 model = factsheet["configuration"]["training_model"]
 
@@ -165,7 +203,7 @@ class Factsheet:
                 #         dataloader = pickle.load(file)
                 #     get_entropy(i, scenario_name, dataloader)
                 #     i += 1
-                
+
                 get_all_data_entropy(scenario_name)
 
                 with open(f"{files_dir}/entropy.json", "r") as file:
@@ -198,7 +236,7 @@ class Factsheet:
                 factsheet["fairness"]["selection_cv"] = 1
 
                 count_all_class_samples(scenario_name)
-                
+
                 with open(f"{files_dir}/count_class.json", "r") as file:
                     class_distribution = json.load(file)
 
@@ -211,13 +249,24 @@ class Factsheet:
 
                 if dataset == "MNIST" and model == "MLP":
                     model = MNISTModelMLP()
+                    num_classes_temp = 10 # CAMBIAR
                 elif dataset == "MNIST" and model == "CNN":
                     model = MNISTModelCNN()
+                    num_classes_temp = 10
+                elif dataset == "Covtype" and model == "MLP":
+                    model = CovtypeModelMLP()
+                    num_classes_temp = 7
+                elif dataset == "AdultCensus" and model == "MLP":
+                    model = AdultCensusModelMLP()
+                    num_classes_temp = 2
+                elif dataset == "BreastCancer" and algorithm == "MLP":
+                    model = BreastCancerModelMLP()
+                    num_classes_temp = 2
                 # elif dataset == "Syscall" and model == "MLP":
                 #     model = SyscallModelMLP()
                 # else:
                 #     model = CIFAR10ModelCNN()
-                
+
                 model.load_state_dict(lightning_model.state_dict())
 
                 with open(test_dataloader_file, "rb") as file:
@@ -226,9 +275,30 @@ class Factsheet:
                 test_sample = next(iter(test_dataloader))
 
                 lr = factsheet["configuration"]["learning_rate"]
-                value_clever = get_clever_score(model, test_sample, 10, lr)
+                value_clever = get_clever_score(model, test_sample, num_classes_temp, lr)
 
                 factsheet["performance"]["test_clever"] = 1 if value_clever > 1 else value_clever
+
+                value_loss_sensitivity = get_loss_sensitivity_score(model, test_sample, num_classes_temp, lr)
+
+                factsheet["performance"]["test_loss_sensitivity"] = 1 if value_loss_sensitivity > 1 else value_loss_sensitivity
+
+                value_adv_accuracy = compute_adversarial_accuracy_art(model, test_dataloader, num_classes_temp, lr)
+
+                factsheet["performance"]["test_adv_accuracy"] = 1 if value_adv_accuracy > 1 else value_adv_accuracy
+
+                value_empirical_robustness = get_empirical_robustness_score(model, test_sample, num_classes_temp, lr)
+
+                factsheet["performance"]["test_empirical_robustness"] = 1 if value_empirical_robustness > 1 else value_empirical_robustness
+
+                value_confidence_score = get_confidence_score(model, test_sample)
+
+                factsheet["performance"]["test_confidence_score"] = 1 if value_confidence_score > 1 else value_confidence_score
+                attack_success_rate
+
+                value_attack_success_rate = attack_success_rate(model, test_sample)
+
+                factsheet["performance"]["test_attack_success_rate"] = 1 if value_attack_success_rate > 1 else value_attack_success_rate
 
                 feature_importance = get_feature_importance_cv(model, test_sample)
 

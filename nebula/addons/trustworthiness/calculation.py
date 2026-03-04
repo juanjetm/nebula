@@ -12,10 +12,12 @@ import pandas as pd
 import shap
 import torch.nn
 from art.estimators.classification import PyTorchClassifier
-from art.metrics import clever_u
+from art.metrics import clever_u, loss_sensitivity, empirical_robustness
 from codecarbon import EmissionsTracker
 from scipy.stats import variation
 from torch import nn, optim
+import torch.nn.functional as F
+import time
 
 from nebula.addons.trustworthiness.utils import read_csv
 
@@ -286,6 +288,21 @@ def get_bytes_models(models_files):
 
     return avg_model_size
 
+def get_bytes_model(model_file):
+    """
+    Calculates the bytes of the final model of a node.
+
+    Args:
+        model_file: Final model.
+
+    Returns:
+        float: The bytes of the model.
+    """
+
+    model_size = os.path.getsize(model_file)
+
+    return model_size
+
 
 def get_bytes_sent_recv(scenario_name):
     """
@@ -309,7 +326,7 @@ def get_bytes_sent_recv(scenario_name):
 
     total_upload_bytes = int(data["bytes_sent"].sum())
     total_download_bytes = int(data["bytes_recv"].sum())
-    
+
     avg_upload_bytes = total_upload_bytes / number_files
     avg_download_bytes = total_download_bytes / number_files
 
@@ -330,15 +347,46 @@ def get_avg_loss_accuracy(scenario_name):
     total_accuracy = 0
     total_loss = 0
 
+    expected_nodes = 3
+    """
+    if os.path.exists(factsheet_file):
+        with open(factsheet_file, "r") as f:
+            fs = json.load(f)
+        # normalmente client_num viene como string, lo convierto
+        expected_nodes = int(fs.get("participants", {}).get("client_num", 0) or 0)
+        logger.info(f"nodes={expected_nodes}")
+    """
+
+
     data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
+
+    logger.info(f"FIRST 5 LINES:\n{open(data_file,'r').read().splitlines()[:5]}")
+    logger.info(f"LAST 5 LINES:\n{open(data_file,'r').read().splitlines()[-5:]}")
 
     data = read_csv(data_file)
 
+    logger.info(f"shape={data.shape}")
+    logger.info(f"dtypes={data.dtypes.to_dict()}")
+    logger.info(f"accuracy sample raw={data['accuracy'].head(20).tolist()}")
+    logger.info(f"accuracy non-null={data['accuracy'].notna().sum()}")
+
     number_files = len(data)
+    logger.info(f"number_files={number_files}")
+
+    """
+    while (number_files != expected_nodes):
+        logger.info("WAIT")
+        time.sleep(5)
+        data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
+        data = read_csv(data_file)
+        number_files = len(data)
+        logger.info(f"number_files={number_files}")
+        logger.info(f"expected_nodes={expected_nodes}")
+    """
 
     total_loss = data["loss"].sum()
     total_accuracy = data["accuracy"].sum()
-    
+
     avg_loss = total_loss / number_files
     avg_accuracy = total_accuracy / number_files
     std_accuracy = statistics.stdev(data["accuracy"])
@@ -399,18 +447,46 @@ def get_clever_score(model, test_sample, nb_classes, learning_rate):
         float: The CLEVER score.
     """
 
+
     images, _ = test_sample
-    background = images[-1]
+    input_shape = None
+
+    # Si por cualquier motivo llega sin batch, lo añadimos
+    if torch.is_tensor(images) and images.dim() >= 1 and images.shape[0] != 0:
+        pass
+    else:
+        raise ValueError("`test_sample[0]` debe ser un torch.Tensor no vacío.")
+
+    if input_shape is None:
+        if images.dim() >= 2:
+            # (B, ...) -> input_shape = (...)
+            input_shape = tuple(images.shape[1:])
+        else:
+            # (...) sin batch
+            input_shape = tuple(images.shape)
+
+    # Escogemos un "background" (aquí el último del batch, como hacías tú)
+    background = images[-1] if images.dim() >= 2 else images
+
+    # Convertir a numpy de forma segura (GPU-friendly)
+    x = background.detach().cpu().numpy()
+
+    # Asegurar batch dimension para clever_u: (1, *input_shape)
+    if tuple(x.shape) == tuple(input_shape):
+        x = x.reshape((1,) + tuple(input_shape))
+
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), learning_rate)
+
+
 
     # Create the ART classifier
     classifier = PyTorchClassifier(
         model=model,
         loss=criterion,
         optimizer=optimizer,
-        input_shape=(1, 28, 28),
+        input_shape=input_shape,
         nb_classes=nb_classes,
     )
 
@@ -434,6 +510,7 @@ def stop_emissions_tracking_and_save(
     role: str,
     workload: str,
     sample_size: int = 0,
+    participant_idx=None,
 ):
     """
     Stops emissions tracking object from CodeCarbon and saves relevant information to emissions.csv file.
@@ -456,6 +533,7 @@ def stop_emissions_tracking_and_save(
     else:
         df = pd.DataFrame(
             columns=[
+                "id",
                 "role",
                 "energy_grid",
                 "emissions",
@@ -470,6 +548,7 @@ def stop_emissions_tracking_and_save(
             [
                 df,
                 pd.DataFrame({
+                    "id": participant_idx,
                     "role": role,
                     "energy_grid": [energy_grid],
                     "emissions": [tracker.final_emissions_data.emissions],
@@ -491,3 +570,320 @@ def stop_emissions_tracking_and_save(
         df.to_csv(emissions_file, encoding="utf-8", index=False)
     except Exception as e:
         logger.warning(e)
+
+def comm_efficiency(bytes_up: int, bytes_down: int, test_acc_avg: float, eps: float = 1e-12) -> float:
+    """
+    Communication efficiency = total_bytes / final_accuracy.
+    Lower is better.
+
+    Args:
+        bytes_up: total uploaded bytes
+        bytes_down: total downloaded bytes
+        final_accuracy: final test accuracy in [0,1] (or [0,100] if your factsheet uses %)
+        eps: small constant to avoid division by zero
+
+    Returns:
+        float
+    """
+    total_bytes = float(bytes_up) + float(bytes_down)
+    acc = float(test_acc_avg)
+
+    # Si tu factsheet guarda accuracy como porcentaje (0-100), descomenta esto:
+    # if acc > 1.0:
+    #     acc = acc / 100.0
+
+    if acc < eps:
+        acc = eps
+
+    return total_bytes / acc
+
+def get_loss_sensitivity_score(model, test_sample, nb_classes, learning_rate):
+
+    images, labels = test_sample
+    sample = images[-1].unsqueeze(0)
+    label = labels[-1].unsqueeze(0)
+
+    label = F.one_hot(label, num_classes=nb_classes).float()
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), learning_rate)
+
+    # Create the ART classifier
+    classifier = PyTorchClassifier(
+        model=model,
+        loss=criterion,
+        optimizer=optimizer,
+        input_shape=sample.shape[1:],
+        nb_classes=nb_classes,
+    )
+
+    score = loss_sensitivity(
+        classifier,
+        sample.numpy(),
+        label.numpy(),
+    )
+    return float(score)
+
+def compute_adversarial_accuracy_art(
+    model,
+    test_loader,
+    nb_classes,
+    learning_rate,
+    epsilon=0.03
+):
+    """
+    Computes adversarial accuracy using ART FGSM attack.
+    """
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.eval()
+    model.to(device)
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+    # Obtener shape dinámicamente
+    sample_batch = next(iter(test_loader))
+    images, _ = sample_batch
+    input_shape = images.shape[1:] #CAMBIAR
+
+    classifier = PyTorchClassifier(
+        model=model,
+        loss=criterion,
+        optimizer=optimizer,
+        input_shape=input_shape,
+        nb_classes=nb_classes,
+    )
+    """
+    from art.attack.evasion import FastGradientMethod
+
+    attack = FastGradientMethod(
+        estimator=classifier,
+        eps=epsilon,
+        norm=np.inf
+    )
+    """
+
+    correct = 0
+    total = 0
+
+    for images, labels in test_loader:
+        images = images.to(device)
+        labels = labels.to(device)
+
+        # Generar adversarios con FGSM puro
+        x_adv = fgsm_attack(model, images, labels, epsilon=epsilon)
+
+        # Predicciones
+        with torch.no_grad():
+            outputs = model(x_adv)
+            preds = outputs.argmax(dim=1)
+
+        correct += (preds == labels).sum().item()
+        total += labels.size(0)
+
+    return correct / total
+
+def get_empirical_robustness_score(
+    model: object,
+    test_sample: object,
+    nb_classes: int,
+    learning_rate: float,
+    attack_name: str = "fgsm",
+    attack_params: dict | None = None,
+    max_samples: int = 32,
+) -> float:
+    """
+    Calculates the Empirical Robustness score using Adversarial Robustness Toolbox (ART).
+
+    Empirical robustness estimates the minimal relative perturbation required for a successful attack
+    on the provided samples. Higher is better (needs larger perturbation to fool the model).
+
+    Args:
+        model (object): The model.
+        test_sample (object): A batch from the test dataloader (images, labels).
+        nb_classes (int): Number of classes.
+        learning_rate (float): LR used to build the ART classifier wrapper.
+        attack_name (str): Attack key supported by ART empirical_robustness (commonly "fgsm" or "hsj").
+        attack_params (dict | None): Optional attack parameters.
+        max_samples (int): Max number of samples from the batch to use.
+
+    Returns:
+        float: Empirical robustness score (>= 0.0). If it cannot be computed, returns 0.0.
+    """
+    try:
+        images, _ = test_sample
+
+        # Limit how many samples we use from the batch (keeps it lightweight)
+        batch_size: int = int(images.shape[0])
+        n: int = int(min(max_samples, batch_size))
+        x = images[:n].detach().cpu().numpy()
+
+        # Infer input shape for ART (no batch dimension)
+        input_shape = tuple(images.shape[1:])
+
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), learning_rate)
+
+        classifier = PyTorchClassifier(
+            model=model,
+            loss=criterion,
+            optimizer=optimizer,
+            input_shape=input_shape,
+            nb_classes=nb_classes,
+        )
+
+        score = empirical_robustness(
+            classifier=classifier,
+            x=x,
+            attack_name=attack_name,
+            attack_params=attack_params,
+        )
+
+        # ART may return ndarray depending on input; aggregate to scalar
+        if isinstance(score, np.ndarray):
+            score = float(np.mean(score))
+
+        if score is None or (isinstance(score, float) and math.isnan(score)):
+            return 0.0
+
+        return float(score)
+
+    except Exception as exc:
+        logger.warning("Could not compute empirical robustness (ART). Returning 0.0")
+        logger.warning(exc)
+        return 0.0
+
+
+
+def fgsm_attack(model, images, labels, epsilon=0.03):
+    """
+    Genera ejemplos adversariales usando FGSM puro en PyTorch. Cuando se pueda meter los ataques de ART se podría cambiar
+    """
+    images = images.clone().detach().to(images.device)
+    labels = labels.to(images.device)
+    images.requires_grad = True
+
+    outputs = model(images)
+    loss = nn.CrossEntropyLoss()(outputs, labels)
+    model.zero_grad()
+    loss.backward()
+
+    # FGSM: x_adv = x + epsilon * sign(grad)
+    perturbation = epsilon * images.grad.sign()
+    x_adv = images + perturbation
+
+    # Limitar valores al rango [0,1]
+    #x_adv = torch.clamp(x_adv, 0, 1)
+    return x_adv.detach()
+
+def get_confidence_score(
+    model,
+    test_sample,
+    max_samples: int = 128,
+    use_true_label: bool = True,
+) -> float:
+    """
+    Confidence Score basado en probabilidades softmax.
+
+    - Si use_true_label=True: devuelve la media de P(y_true | x).
+    - Si use_true_label=False: devuelve la media de max softmax prob (MSP).
+
+    Args:
+        model (object): Modelo (torch.nn.Module).
+        test_sample (object): Batch del dataloader: (x, y).
+        max_samples (int): Máximo nº de muestras del batch a usar.
+        use_true_label (bool): Ver arriba.
+
+    Returns:
+        float: Confidence score en [0, 1] (o 0.0 si falla).
+    """
+    try:
+        if not isinstance(model, torch.nn.Module):
+            logger.warning("Model is not a torch.nn.Module")
+            return 0.0
+
+        x, y = test_sample
+
+        # Recorta batch para que sea barato
+        if isinstance(x, torch.Tensor):
+            x = x[:max_samples]
+        if isinstance(y, torch.Tensor):
+            y = y[:max_samples]
+
+        # Usa el device real del modelo
+        try:
+            device = next(model.parameters()).device
+        except Exception:
+            device = torch.device("cpu")
+
+        model.eval()
+        with torch.no_grad():
+            x = x.to(device) if isinstance(x, torch.Tensor) else x
+            out = model(x)
+
+            # Por si el modelo devuelve tupla (logits, ...)
+            logits = out[0] if isinstance(out, (tuple, list)) else out
+            probs = torch.softmax(logits, dim=1)
+
+            if use_true_label and isinstance(y, torch.Tensor):
+                # y puede venir como índices [B] o one-hot [B, C]
+                if y.ndim > 1:
+                    y_idx = torch.argmax(y, dim=1)
+                else:
+                    y_idx = y
+                y_idx = y_idx.to(device)
+
+                # P(y_true|x)
+                true_probs = probs.gather(1, y_idx.view(-1, 1)).squeeze(1)
+                return float(true_probs.mean().detach().cpu().item())
+
+            # MSP: max_c P(c|x)
+            msp = probs.max(dim=1).values
+            return float(msp.mean().detach().cpu().item())
+
+    except Exception as e:
+        logger.warning("Could not compute confidence score")
+        logger.warning(e)
+        return 0.0
+
+def attack_success_rate(model, test_sample,epsilon=0.03):
+    """
+    Calcula ASR para un ataque untargeted.
+
+    attack_fn debe recibir (model, images, labels)
+    y devolver imágenes adversariales.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.eval()
+
+    images, labels = test_sample
+    images = images.to(device)
+    labels = labels.to(device)
+
+    # 1️⃣ Predicciones originales
+    with torch.no_grad():
+        outputs = model(images)
+        preds = outputs.argmax(dim=1)
+
+    # Solo consideramos los originalmente correctos
+    correct_mask = preds.eq(labels)
+    num_correct = correct_mask.sum().item()
+
+    if num_correct == 0:
+        return 0.0  # evitar división por cero
+
+    # 2️⃣ Generar adversariales
+    x_adv = fgsm_attack(model, images, labels, epsilon=epsilon)
+
+    # 3️⃣ Predicciones adversariales
+    with torch.no_grad():
+        outputs_adv = model(x_adv)
+        preds_adv = outputs_adv.argmax(dim=1)
+
+    # 4️⃣ Ataque exitoso = antes correcto y ahora incorrecto
+    successful_attacks = (correct_mask & preds_adv.ne(labels)).sum().item()
+
+    asr = successful_attacks / num_correct
+
+    return asr

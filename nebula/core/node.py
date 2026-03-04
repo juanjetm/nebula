@@ -25,6 +25,9 @@ from nebula.core.datasets.cifar100.cifar100 import CIFAR100PartitionHandler
 from nebula.core.datasets.datamodule import DataModule
 from nebula.core.datasets.emnist.emnist import EMNISTPartitionHandler
 from nebula.core.datasets.fashionmnist.fashionmnist import FashionMNISTPartitionHandler
+from nebula.core.datasets.covtype.covtype import CovtypePartitionHandler
+from nebula.core.datasets.adultcensus.adultcensus import AdultCensusPartitionHandler
+from nebula.core.datasets.breast_cancer.breast_cancer import BreastCancerPartitionHandler
 from nebula.core.datasets.mnist.mnist import MNISTPartitionHandler
 from nebula.core.datasets.nebuladataset import NebulaPartition
 from nebula.core.models.cifar10.cnn import CIFAR10ModelCNN
@@ -38,6 +41,9 @@ from nebula.core.models.emnist.cnn import EMNISTModelCNN
 from nebula.core.models.emnist.mlp import EMNISTModelMLP
 from nebula.core.models.fashionmnist.cnn import FashionMNISTModelCNN
 from nebula.core.models.fashionmnist.mlp import FashionMNISTModelMLP
+from nebula.core.models.covtype.mlp import CovtypeModelMLP
+from nebula.core.models.adultcensus.mlp import AdultCensusModelMLP
+from nebula.core.models.breast_cancer.mlp import BreastCancerModelMLP
 from nebula.core.models.mnist.cnn import MNISTModelCNN
 from nebula.core.models.mnist.mlp import MNISTModelMLP
 from nebula.core.engine import Engine
@@ -110,6 +116,27 @@ async def main(config: Config):
             model = FashionMNISTModelMLP()
         elif model_name == "CNN":
             model = FashionMNISTModelCNN()
+        else:
+            raise ValueError(f"Model {model} not supported for dataset {dataset_name}")
+    elif dataset_name == "Covtype":
+        batch_size = 32
+        handler = CovtypePartitionHandler
+        if model_name == "MLP":
+            model = CovtypeModelMLP()
+        else:
+            raise ValueError(f"Model {model} not supported for dataset {dataset_name}")
+    elif dataset_name == "AdultCensus":
+        batch_size = 32
+        handler = AdultCensusPartitionHandler
+        if model_name == "MLP":
+            model = AdultCensusModelMLP()
+        else:
+            raise ValueError(f"Model {model} not supported for dataset {dataset_name}")
+    elif dataset_name == "BreastCancer":
+        batch_size = 32
+        handler = BreastCancerPartitionHandler
+        if model_name == "MLP":
+            model = BreastCancerModelMLP()
         else:
             raise ValueError(f"Model {model} not supported for dataset {dataset_name}")
     elif dataset_name == "EMNIST":

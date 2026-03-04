@@ -210,7 +210,7 @@ const DeploymentManager = (function() {
         datasetSelect.innerHTML = "";
 
         // Add dataset options
-        const datasets = ['MNIST', 'FashionMNIST', 'EMNIST', 'CIFAR10', 'CIFAR100'];
+        const datasets = ['MNIST', 'FashionMNIST', 'EMNIST', 'CIFAR10', 'CIFAR100', 'Covtype', 'AdultCensus', 'BreastCancer'];
         datasets.forEach(dataset => {
             const option = document.createElement("option");
             option.value = dataset;
@@ -251,6 +251,12 @@ const DeploymentManager = (function() {
                 return ['CNN', 'ResNet9', 'fastermobilenet', 'simplemobilenet', 'CNNv2', 'CNNv3'];
             case 'cifar100':
                 return ['CNN'];
+            case 'covtype':
+                return ['MLP'];
+            case 'adultcensus':
+                return ['MLP'];
+            case 'breast_cancer':
+                return ['MLP'];
             default:
                 return ['MLP', 'CNN'];
         }

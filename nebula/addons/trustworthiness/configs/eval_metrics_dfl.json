@@ -86,19 +86,6 @@
       "algorithm_robustness": {
         "weight": 0.4,
         "metrics": {
-          "performance": {
-            "inputs": [
-              {
-                "source": "factsheet",
-                "field_path": "performance/test_acc_avg"
-              }
-            ],
-            "operation": "get_value",
-            "score_function": "get_true_score",
-            "type": "true_score",
-            "description": "Average test accuracy of the global model on clients test data.",
-            "weight": 0.5
-          },
           "personalization": {
             "inputs": [
               {
@@ -109,7 +96,7 @@
             "operation": "get_value",
             "type": "true_score",
             "description": "The use of personalized FL algorithm.",
-            "weight": 0.5
+            "weight": 1.0
           }
         }
       },
@@ -158,7 +145,7 @@
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "data/avg_entropy"
+                "field_path": "data/entropy_local"
               }
             ],
             "operation": "get_value",
@@ -196,44 +183,8 @@
       }
     },
     "fairness": {
-      "selection_fairness": {
-        "weight": 0.3333,
-        "metrics": {
-          "selection_variation": {
-            "inputs": [
-              {
-                "source": "factsheet",
-                "field_path": "fairness/selection_cv"
-              }
-            ],
-            "operation": "get_value",
-            "type": "true_score",
-            "direction": "asc",
-            "description": "Variation in selection rate among the clients.",
-            "weight": 1
-          }
-        }
-      },
-      "performance_fairness": {
-        "weight": 0.3333,
-        "metrics": {
-          "accuracy_variation": {
-            "inputs": [
-              {
-                "source": "factsheet",
-                "field_path": "fairness/test_acc_cv"
-              }
-            ],
-            "operation": "get_value",
-            "type": "true_score",
-            "direction": "desc",
-            "description": "Variation of global model performance among the clients.",
-            "weight": 1
-          }
-        }
-      },
       "class_distribution": {
-        "weight": 0.3333,
+        "weight": 1,
         "metrics": {
           "class_imbalance": {
             "inputs": [
@@ -384,7 +335,7 @@
               },
               {
                 "source": "factsheet",
-                "field_path": "data/avg_entropy"
+                "field_path": "data/entropy_local"
               }
             ],
             "operation": "check_properties",
@@ -440,11 +391,11 @@
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "performance/test_loss_avg"
+                "field_path": "performance/test_loss"
               },
               {
                 "source": "factsheet",
-                "field_path": "performance/test_acc_avg"
+                "field_path": "performance/test_acc"
               },
               {
                 "source": "factsheet",
@@ -484,14 +435,6 @@
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "fairness/test_acc_cv"
-              },
-              {
-                "source": "factsheet",
-                "field_path": "fairness/selection_cv"
-              },
-              {
-                "source": "factsheet",
                 "field_path": "fairness/class_imbalance"
               }
             ],
@@ -504,19 +447,19 @@
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "system/avg_time_minutes"
+                "field_path": "system/time_minutes"
               },
               {
                 "source": "factsheet",
-                "field_path": "system/avg_model_size"
+                "field_path": "system/model_size"
               },
               {
                 "source": "factsheet",
-                "field_path": "system/avg_upload_bytes"
+                "field_path": "system/upload_bytes"
               },
               {
                 "source": "factsheet",
-                "field_path": "system/avg_download_bytes"
+                "field_path": "system/download_bytes"
               }
             ],
             "operation": "check_properties",
@@ -577,7 +520,7 @@
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "sustainability/avg_carbon_intensity_clients"
+                "field_path": "sustainability/carbon_intensity_local"
               }
             ],
             "operation": "get_value",
@@ -585,65 +528,18 @@
             "direction": "desc",
             "scale": [20, 795],
             "description": "Carbon intensity of energy grid used by clients",
-            "weight": 0.5
-          },
-          "carbon_intensity_server": {
-            "inputs": [
-              {
-                "source": "factsheet",
-                "field_path": "sustainability/avg_carbon_intensity_server"
-              }
-            ],
-            "operation": "get_value",
-            "type": "scaled_score",
-            "direction": "desc",
-            "scale": [20, 795],
-            "description": "Carbon intensity of energy grid used by server",
-            "weight": 0.5
-          }
-        }
-      },
-      "hardware_efficiency": {
-        "weight": 0.25,
-        "metrics": {
-          "avg_power_performance_clients": {
-            "inputs": [
-              {
-                "source": "factsheet",
-                "field_path": "sustainability/avg_power_performance_clients"
-              }
-            ],
-            "operation": "get_value",
-            "type": "scaled_score",
-            "direction": "asc",
-            "scale": [20, 1447],
-            "description": "Average Power Performanc of Client CPUs or GPUs",
-            "weight": 0.5
-          },
-          "avg_power_performance_server": {
-            "inputs": [
-              {
-                "source": "factsheet",
-                "field_path": "sustainability/avg_power_performance_server"
-              }
-            ],
-            "operation": "get_value",
-            "type": "scaled_score",
-            "direction": "asc",
-            "scale": [20, 1447],
-            "description": "Power Performanc of Server CPU or GPU",
-            "weight": 0.5
+            "weight": 1
           }
         }
       },
       "federation_complexity": {
-        "weight": 0.25,
+        "weight": 0.5,
         "metrics": {
           "communication_efficiency": {
             "inputs": [
-              { "source": "factsheet", "field_path": "system/total_upload_bytes" },
-              { "source": "factsheet", "field_path": "system/total_download_bytes" },
-              { "source": "factsheet", "field_path": "performance/test_acc_avg" }
+              { "source": "factsheet", "field_path": "system/upload_bytes" },
+              { "source": "factsheet", "field_path": "system/download_bytes" },
+              { "source": "factsheet", "field_path": "performance/test_acc" }
             ],
             "operation": "comm_efficiency",
             "type": "ranges",
@@ -728,7 +624,7 @@
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "participants/avg_dataset_size"
+                "field_path": "participants/local_dataset_size"
               }
             ],
             "operation": "get_value",
