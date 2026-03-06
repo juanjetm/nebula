@@ -83,7 +83,6 @@ const TrustworthinessManager = (function() {
             "cfl-sustainability-notion-3"
         ];
 
-        // IDs DFL (AJUSTA si tu DFL tiene otras nociones)
         const dflPillarIds = [
             "dfl-robustness-pillar",
             "dfl-privacy-pillar",
@@ -100,14 +99,12 @@ const TrustworthinessManager = (function() {
             "dfl-privacy-notion-1",
             "dfl-privacy-notion-2",
             "dfl-privacy-notion-3",
-            // DFL fairness reducido:
             "dfl-fairness-notion-3",
             "dfl-explainability-notion-1",
             "dfl-explainability-notion-2",
             "dfl-accountability-notion-1",
             "dfl-architectural-soundness-notion-1",
             "dfl-architectural-soundness-notion-2",
-            // DFL sustainability reducido:
             "dfl-sustainability-notion-1",
             "dfl-sustainability-notion-3"
         ];
@@ -193,7 +190,6 @@ const TrustworthinessManager = (function() {
         const privacyNotion2 = parseFloat(document.getElementById("dfl-privacy-notion-2").value) || 0;
         const privacyNotion3 = parseFloat(document.getElementById("dfl-privacy-notion-3").value) || 0;
 
-        // DFL fairness reducido (AJUSTA si corresponde)
         const fairnessNotion3 = parseFloat(document.getElementById("dfl-fairness-notion-3").value) || 0;
 
         const explainabilityNotion1 = parseFloat(document.getElementById("dfl-explainability-notion-1").value) || 0;
@@ -202,7 +198,6 @@ const TrustworthinessManager = (function() {
         const architecturalSoundnessNotion1 = parseFloat(document.getElementById("dfl-architectural-soundness-notion-1").value) || 0;
         const architecturalSoundnessNotion2 = parseFloat(document.getElementById("dfl-architectural-soundness-notion-2").value) || 0;
 
-        // DFL sustainability reducido (AJUSTA si corresponde)
         const sustainabilityNotion1 = parseFloat(document.getElementById("dfl-sustainability-notion-1").value) || 0;
         const sustainabilityNotion3 = parseFloat(document.getElementById("dfl-sustainability-notion-3").value) || 0;
 
@@ -304,7 +299,6 @@ const TrustworthinessManager = (function() {
                 parseFloat(document.getElementById("dfl-privacy-notion-2").value) || 0,
                 parseFloat(document.getElementById("dfl-privacy-notion-3").value) || 0
             ],
-            // DFL fairness reducido (AJUSTA si corresponde)
             fairness: [
                 parseFloat(document.getElementById("dfl-fairness-notion-3").value) || 0
             ],
@@ -319,7 +313,6 @@ const TrustworthinessManager = (function() {
                 parseFloat(document.getElementById("dfl-architectural-soundness-notion-1").value) || 0,
                 parseFloat(document.getElementById("dfl-architectural-soundness-notion-2").value) || 0
             ],
-            // DFL sustainability reducido (AJUSTA si corresponde)
             sustainability: [
                 parseFloat(document.getElementById("dfl-sustainability-notion-1").value) || 0,
                 parseFloat(document.getElementById("dfl-sustainability-notion-3").value) || 0
@@ -402,7 +395,6 @@ const TrustworthinessManager = (function() {
             document.getElementById("dfl-privacy-notion-2").value = p[1];
             document.getElementById("dfl-privacy-notion-3").value = p[2];
 
-            // DFL fairness reducido (AJUSTA si corresponde)
             const f = config.notions.fairness || [0];
             document.getElementById("dfl-fairness-notion-3").value = f[0];
 
@@ -414,7 +406,6 @@ const TrustworthinessManager = (function() {
             document.getElementById("dfl-architectural-soundness-notion-1").value = a[0];
             document.getElementById("dfl-architectural-soundness-notion-2").value = a[1];
 
-            // DFL sustainability reducido (AJUSTA si corresponde)
             const s = config.notions.sustainability || [0, 0];
             document.getElementById("dfl-sustainability-notion-1").value = s[0];
             document.getElementById("dfl-sustainability-notion-3").value = s[1];
@@ -483,7 +474,6 @@ const TrustworthinessManager = (function() {
         document.getElementById("dfl-privacy-notion-2").value = "0";
         document.getElementById("dfl-privacy-notion-3").value = "0";
 
-        // DFL fairness reducido (AJUSTA si corresponde)
         document.getElementById("dfl-fairness-notion-3").value = "0";
 
         document.getElementById("dfl-explainability-notion-1").value = "0";
@@ -492,7 +482,6 @@ const TrustworthinessManager = (function() {
         document.getElementById("dfl-architectural-soundness-notion-1").value = "0";
         document.getElementById("dfl-architectural-soundness-notion-2").value = "0";
 
-        // DFL sustainability reducido (AJUSTA si corresponde)
         document.getElementById("dfl-sustainability-notion-1").value = "0";
         document.getElementById("dfl-sustainability-notion-3").value = "0";
     }

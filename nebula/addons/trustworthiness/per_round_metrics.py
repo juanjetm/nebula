@@ -19,7 +19,6 @@ def _safe_get_round(engine) -> int:
     if trainer is None:
         return -1
 
-    # Nebula suele exponer get_round() o el atributo round
     try:
         return int(trainer.get_round())
     except Exception:
@@ -39,7 +38,6 @@ def _get_local_test_loader(engine):
 
     try:
         tdl = dm.test_dataloader()
-        # En Nebula normalmente: [local_loader, global_loader]
         if isinstance(tdl, (list, tuple)) and len(tdl) > 0:
             return tdl[0]
         return tdl
@@ -48,10 +46,6 @@ def _get_local_test_loader(engine):
 
 
 def _build_test_sample_min_bs(test_loader, min_bs: int = 10) -> Optional[Tuple[Any, Any]]:
-    """
-    Devuelve un batch (x, y) con batch_size >= min_bs si es posible.
-    así que min_bs=10 es lo ideal.
-    """
     if test_loader is None:
         return None
 
@@ -101,13 +95,9 @@ class PerRoundTrustMetrics:
     trust_dir: str
     role_label: str
 
-    # Control
     enable_print: bool = True
     enable_csv: bool = True
 
-    fi_every_n_rounds: int = 1  # pon 5 o 10 si quieres reducir coste
-
-    # Estado interno
     _csv_path: str = field(init=False)
     _prev_acc: Optional[float] = field(default=None, init=False)
     _test_loader: Any = field(default=None, init=False)
@@ -137,7 +127,6 @@ class PerRoundTrustMetrics:
         async with self._lock:
             round_id = _safe_get_round(engine)
 
-            # Métrica sencilla per-round (ejemplo): estabilidad de accuracy
             if self._prev_acc is None:
                 tw_stability = 1.0
             else:

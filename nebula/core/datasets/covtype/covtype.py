@@ -114,8 +114,8 @@ class CovtypeDataset(NebulaDataset):
         seed: int = 42,
         config_dir: str | None = None,
         test_size: float = 0.2,
-        train_limit: int | None = 40000,
-        test_limit: int | None = 5000,
+        train_limit: int | None = None,
+        test_limit: int | None = None,
     ):
         super().__init__(
             num_classes=num_classes,

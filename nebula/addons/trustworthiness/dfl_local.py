@@ -27,22 +27,17 @@ def compute_trust_local_dfl(experiment_name, participant_idx, data, start_time, 
     trust_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), experiment_name, "trustworthiness")
     os.makedirs(trust_dir, exist_ok=True)
 
-    # 1) Factsheet por nodo
     factsheet_name = f"factsheet_participant_{participant_idx}.json"
     factsheet_path = os.path.join(trust_dir, factsheet_name)
 
-    # Copia de template (la misma que usa Factsheet) :contentReference[oaicite:9]{index=9}
     template_path = os.path.join(dirname, "configs", "factsheet_template_dfl.json")
     if not os.path.exists(factsheet_path):
         shutil.copyfile(template_path, factsheet_path)
 
-    # Relleno mínimo: aquí pones valores LOCALES del nodo.
-    # (puedes ir ampliándolo)
     with open(factsheet_path, "r+", encoding="utf-8") as f:
         factsheet = {}
         factsheet = json.load(f)
 
-        # Pre-train básico desde data (usa federation, dataset, etc.) :contentReference[oaicite:10]{index=10}
         logging.info("DFL FactSheet: Populating factsheet with pre training metrics")
 
         federation = data["federation"]
@@ -223,20 +218,18 @@ def compute_trust_local_dfl(experiment_name, participant_idx, data, start_time, 
         f.truncate()
         json.dump(factsheet, f, indent=4)
 
-def load_round_metrics(experiment_name: str, participant_idx: int):
+def load_round_metrics(experiment_name, participant_idx):
     files_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), experiment_name, "trustworthiness")
     path = os.path.join(files_dir, f"round_metrics_participant_{participant_idx}.csv")
     df = pd.read_csv(path)
 
-    # Asegura orden
     if "round" in df.columns:
         df = df.sort_values("round")
 
-    # Limpieza básica
     df = df.dropna(subset=["loss", "accuracy"])
     return df
 
-def get_bytes(experiment_name: str, participant_idx: int):
+def get_bytes(experiment_name, participant_idx):
     data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), experiment_name, "trustworthiness", f"data_results_{participant_idx}.csv")
 
     data = read_csv(data_file)
@@ -248,7 +241,7 @@ def get_bytes(experiment_name: str, participant_idx: int):
 
     return bytes_sent, bytes_recv
 
-def get_emissions(emissions_file, participant_idx: int):
+def get_emissions(emissions_file, participant_idx):
     data = read_csv(emissions_file)
 
     row = data[data["id"] == participant_idx]
@@ -260,7 +253,7 @@ def get_emissions(emissions_file, participant_idx: int):
 
     return avg_carbon_intensity_clients, emissions_training, energy_consumed, sample_size
 
-def normalized_entropy_from_class_counts(count_class_file: str) -> float:
+def normalized_entropy_from_class_counts(count_class_file):
     with open(count_class_file, "r") as f:
         dist = json.load(f)
 
@@ -271,15 +264,13 @@ def normalized_entropy_from_class_counts(count_class_file: str) -> float:
 
     p = counts / total
 
-    # Entropía (evita log(0))
     eps = 1e-12
     H = -float(np.sum(p * np.log(p + eps)))
 
-    # Normalización por número de clases
     K = len(p)
     if K <= 1:
         return 0.0
 
     H_norm = H / float(np.log(K))
-    # seguridad numérica
+
     return max(0.0, min(1.0, H_norm))

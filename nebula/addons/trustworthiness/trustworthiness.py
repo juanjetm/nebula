@@ -79,7 +79,6 @@ class TrustWorkloadTrainer(TrustWorkload):
             role_label="TRAINER",
             enable_print=True,
             enable_csv=True,
-            fi_every_n_rounds=1,  # cambia a 5/10 si quieres menos coste
         )
         await self._per_round.setup(self._engine)
 
@@ -115,9 +114,9 @@ class TrustWorkloadTrainer(TrustWorkload):
         self._sample_size = len(train_loader)
 
     async def finish_experiment_role_post_actions(self, trust_config, experiment_name):
-        federation = trust_config.get("federation")  # "CFL" o "DFL" :contentReference[oaicite:13]{index=13}
+        federation = trust_config.get("federation")  # "CFL" or "DFL"
 
-        if federation == "DFL":
+        if federation == "DFL" or (federation == "SDFL" and self._idx == 0):
             self._end_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             data_file_path = os.path.join(os.environ.get('NEBULA_CONFIG_DIR'), experiment_name, "scenario.json")
             with open(data_file_path, 'r') as data_file:
@@ -146,8 +145,7 @@ class TrustWorkloadTrainer(TrustWorkload):
                     "energy_source": float(data["energy_source"]),
                     "federation_complexity": float(data["federation_complexity"])
                 }
-            # 1) calcula pesos (igual que ya hacías en el server, leyendo scenario.json)
-            # 2) cada nodo genera factsheet_participant_<idx>.json + results_participant_<idx>.json
+
             compute_trust_local_dfl(experiment_name, self._idx, trust_config, self._start_time, self._end_time)
 
             trust_metric_manager = TrustMetricManager(self._start_time, federation, self._idx)
@@ -209,7 +207,6 @@ class TrustWorkloadServer(TrustWorkload):
             role_label="SERVER",
             enable_print=True,
             enable_csv=True,
-            fi_every_n_rounds=1,
         )
         await self._per_round.setup(self._engine)
 
@@ -355,53 +352,6 @@ class Trustworthiness():
         save_results_csv(self._experiment_name, self._idx, bytes_sent, bytes_recv, last_loss, last_accuracy)
         stop_emissions_tracking_and_save(self._tracker, self._trust_dir_files, self._emissions_file, self._role.value, workload, sample_size, self._idx)
         save_confirmation_csv(self._experiment_name, self._idx)
-        """
-        federation = self._trust_config.get("federation")  # "CFL" o "DFL" :contentReference[oaicite:13]{index=13}
-
-        if federation == "DFL":
-            data_file_path = os.path.join(os.environ.get('NEBULA_CONFIG_DIR'), self._experiment_name, "scenario.json")
-            with open(data_file_path, 'r') as data_file:
-                data = json.load(data_file)
-
-                weights = {
-                    "robustness": float(data["robustness_pillar"]),
-                    "resilience_to_attacks": float(data["resilience_to_attacks"]),
-                    "algorithm_robustness": float(data["algorithm_robustness"]),
-                    "client_reliability": float(data["client_reliability"]),
-                    "privacy": float(data["privacy_pillar"]),
-                    "technique": float(data["technique"]),
-                    "uncertainty": float(data["uncertainty"]),
-                    "indistinguishability": float(data["indistinguishability"]),
-                    "fairness": float(data["fairness_pillar"]),
-                    "selection_fairness": float(data["selection_fairness"]),
-                    "performance_fairness": float(data["performance_fairness"]),
-                    "class_distribution": float(data["class_distribution"]),
-                    "explainability": float(data["explainability_pillar"]),
-                    "interpretability": float(data["interpretability"]),
-                    "post_hoc_methods": float(data["post_hoc_methods"]),
-                    "accountability": float(data["accountability_pillar"]),
-                    "factsheet_completeness":  float(data["factsheet_completeness"]),
-                    "architectural_soundness": float(data["architectural_soundness_pillar"]),
-                    "client_management": float(data["client_management"]),
-                    "optimization": float(data["optimization"]),
-                    "sustainability": float(data["sustainability_pillar"]),
-                    "energy_source": float(data["energy_source"]),
-                    "hardware_efficiency": float(data["hardware_efficiency"]),
-                    "federation_complexity": float(data["federation_complexity"])
-                }
-            # 1) calcula pesos (igual que ya hacías en el server, leyendo scenario.json)
-            # 2) cada nodo genera factsheet_participant_<idx>.json + results_participant_<idx>.json
-            compute_trust_local_dfl(self._experiment_name, self._idx, self._trust_config, weights)
-
-            # y SALES sin tocar el camino CFL
-            return
-
-        # Si NO es DFL => CFL (o lo que uses) sigue EXACTAMENTE IGUAL
-
-        elif federation == "SDFL":
-            #SDFL
-            return
-        """
         await self.tw.finish_experiment_role_post_actions(self._trust_config, self._experiment_name)
 
     def _factory_trust_workload(self, role: Role, engine: Engine, idx, trust_files_route) -> TrustWorkload:

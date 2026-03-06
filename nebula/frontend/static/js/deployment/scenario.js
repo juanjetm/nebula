@@ -100,17 +100,15 @@ const ScenarioManager = (function () {
             sar_training: window.SaManager.getSaConfig().sar_training || false,
             sar_training_policy: window.SaManager.getSaConfig().sar_training_policy || "Broad-Propagation Strategy",
             random_topology_probability: document.getElementById("random-probability").value || 0.5,
-            // --- Trustworthiness (IDs distintos para CFL/DFL) ---
+            // --- Trustworthiness (CFL/DFL) ---
             with_trustworthiness: document.getElementById("TrustworthinessSwitch").checked ? true : false,
 
-            // Si no está activado, manda 0s para mantener el schema
             ...(document.getElementById("TrustworthinessSwitch").checked
                 ? (() => {
                     const federationType = document.getElementById("federationArchitecture").value;
                     const useDFL = (federationType === "DFL" || federationType === "SDFL");
 
                     if (useDFL) {
-                        // DFL (AJUSTA si tu DFL tiene otras nociones)
                         return {
                             robustness_pillar: document.getElementById("dfl-robustness-pillar")?.value || "0",
                             resilience_to_attacks: document.getElementById("dfl-robustness-notion-1")?.value || "0",
@@ -123,7 +121,7 @@ const ScenarioManager = (function () {
                             indistinguishability: document.getElementById("dfl-privacy-notion-3")?.value || "0",
 
                             fairness_pillar: document.getElementById("dfl-fairness-pillar")?.value || "0",
-                            // En DFL normalmente solo guardas class_distribution (notion-3)
+
                             selection_fairness: "0",
                             performance_fairness: "0",
                             class_distribution: document.getElementById("dfl-fairness-notion-3")?.value || "0",
@@ -141,9 +139,7 @@ const ScenarioManager = (function () {
 
                             sustainability_pillar: document.getElementById("dfl-sustainability-pillar")?.value || "0",
                             energy_source: document.getElementById("dfl-sustainability-notion-1")?.value || "0",
-                            // Si en DFL no existe hardware_efficiency, lo dejamos a 0
                             hardware_efficiency: "0",
-                            // En DFL mapea federation_complexity a tu notion-3 (si es así)
                             federation_complexity: document.getElementById("dfl-sustainability-notion-3")?.value || "0",
                         };
                     }
