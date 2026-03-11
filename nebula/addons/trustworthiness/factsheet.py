@@ -13,6 +13,7 @@ import time
 from nebula.core.models.mnist.mlp import MNISTModelMLP
 from nebula.core.models.mnist.cnn import MNISTModelCNN
 from nebula.core.models.covtype.mlp import CovtypeModelMLP
+from nebula.core.models.kddcup99.mlp import KDDCUP99ModelMLP
 from nebula.core.models.adultcensus.mlp import AdultCensusModelMLP
 from nebula.core.models.breast_cancer.mlp import BreastCancerModelMLP
 from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_models, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv, get_loss_sensitivity_score, compute_adversarial_accuracy_art,get_empirical_robustness_score,get_confidence_score,attack_success_rate
@@ -124,6 +125,9 @@ class Factsheet:
                     elif dataset == "Covtype" and algorithm == "MLP":
                         model = CovtypeModelMLP()
                         num_classes_temp = 7
+                    elif dataset == "KDDCUP99" and algorithm == "MLP":
+                        model = KDDCUP99ModelMLP()
+                        num_classes_temp = 2
                     elif dataset == "AdultCensus" and algorithm == "MLP":
                         model = AdultCensusModelMLP()
                         num_classes_temp = 2
@@ -256,6 +260,9 @@ class Factsheet:
                 elif dataset == "Covtype" and model == "MLP":
                     model = CovtypeModelMLP()
                     num_classes_temp = 7
+                elif dataset == "KDDCUP99" and algorithm == "MLP":
+                    model = KDDCUP99ModelMLP()
+                    num_classes_temp = 23
                 elif dataset == "AdultCensus" and model == "MLP":
                     model = AdultCensusModelMLP()
                     num_classes_temp = 2

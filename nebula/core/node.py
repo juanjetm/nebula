@@ -26,6 +26,7 @@ from nebula.core.datasets.datamodule import DataModule
 from nebula.core.datasets.emnist.emnist import EMNISTPartitionHandler
 from nebula.core.datasets.fashionmnist.fashionmnist import FashionMNISTPartitionHandler
 from nebula.core.datasets.covtype.covtype import CovtypePartitionHandler
+from nebula.core.datasets.kddcup99.kddcup99 import KDDCUP99PartitionHandler
 from nebula.core.datasets.adultcensus.adultcensus import AdultCensusPartitionHandler
 from nebula.core.datasets.breast_cancer.breast_cancer import BreastCancerPartitionHandler
 from nebula.core.datasets.mnist.mnist import MNISTPartitionHandler
@@ -42,6 +43,7 @@ from nebula.core.models.emnist.mlp import EMNISTModelMLP
 from nebula.core.models.fashionmnist.cnn import FashionMNISTModelCNN
 from nebula.core.models.fashionmnist.mlp import FashionMNISTModelMLP
 from nebula.core.models.covtype.mlp import CovtypeModelMLP
+from nebula.core.models.kddcup99.mlp import KDDCUP99ModelMLP
 from nebula.core.models.adultcensus.mlp import AdultCensusModelMLP
 from nebula.core.models.breast_cancer.mlp import BreastCancerModelMLP
 from nebula.core.models.mnist.cnn import MNISTModelCNN
@@ -123,6 +125,13 @@ async def main(config: Config):
         handler = CovtypePartitionHandler
         if model_name == "MLP":
             model = CovtypeModelMLP()
+        else:
+            raise ValueError(f"Model {model} not supported for dataset {dataset_name}")
+    elif dataset_name == "KDDCUP99":
+        batch_size = 32
+        handler = KDDCUP99PartitionHandler
+        if model_name == "MLP":
+            model = KDDCUP99ModelMLP()
         else:
             raise ValueError(f"Model {model} not supported for dataset {dataset_name}")
     elif dataset_name == "AdultCensus":

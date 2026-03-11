@@ -23,6 +23,7 @@ from nebula.core.datasets.cifar10.cifar10 import CIFAR10Dataset
 from nebula.core.datasets.cifar100.cifar100 import CIFAR100Dataset
 from nebula.core.datasets.emnist.emnist import EMNISTDataset
 from nebula.core.datasets.fashionmnist.fashionmnist import FashionMNISTDataset
+from nebula.core.datasets.kddcup99.kddcup99 import KDDCUP99Dataset
 from nebula.core.datasets.covtype.covtype import CovtypeDataset
 from nebula.core.datasets.adultcensus.adultcensus import AdultCensusDataset
 from nebula.core.datasets.breast_cancer.breast_cancer import BreastCancerDataset
@@ -1030,6 +1031,17 @@ class ScenarioManagement:
                 seed=42,
                 config_dir=self.config_dir,
             )
+        elif dataset_name == "KDDCUP99":
+            logging.info("[DEBUG] entrando en rama KDDCUP99 para crear dataset")
+            dataset = KDDCUP99Dataset(
+                num_classes=2,
+                partitions_number=self.n_nodes,
+                iid=self.scenario.iid,
+                partition=self.scenario.partition_selection,
+                partition_parameter=self.scenario.partition_parameter,
+                seed=42,
+                config_dir=self.config_dir,
+            )
         elif dataset_name == "AdultCensus":
             dataset = AdultCensusDataset(
                 num_classes=2,
@@ -1091,9 +1103,9 @@ class ScenarioManagement:
         )
 
         if dataset.train_set is not None and hasattr(dataset.train_set, "data"):
-            logging.info(f"[DEBUG] AdultCensus train_set.data.shape = {dataset.train_set.data.shape}")
+            logging.info(f"[DEBUG] Dataset train_set.data.shape = {dataset.train_set.data.shape}")
         else:
-            logging.info("[DEBUG] AdultCensus train_set has no .data yet (or train_set is None)")
+            logging.info("[DEBUG] Dataset train_set has no .data yet (or train_set is None)")
         logging.info(f"Splitting {dataset_name} dataset... Done")
 
         if self.scenario.deployment in ["docker", "process", "physical"]:

@@ -1286,6 +1286,7 @@ def factory_nebuladataset(dataset, **config) -> NebulaDataset:
     from nebula.core.datasets.emnist.emnist import EMNISTDataset
     from nebula.core.datasets.fashionmnist.fashionmnist import FashionMNISTDataset
     from nebula.core.datasets.covtype.covtype import CovtypeDataset
+    from nebula.core.datasets.kddcup99.kddcup99 import KDDCUP99Dataset
     from nebula.core.datasets.adultcensus.adultcensus import AdultCensusDataset
     from nebula.core.datasets.breast_cancer.breast_cancer import BreastCancerDataset
     from nebula.core.datasets.mnist.mnist import MNISTDataset
@@ -1294,6 +1295,7 @@ def factory_nebuladataset(dataset, **config) -> NebulaDataset:
         "MNIST": MNISTDataset,
         "FashionMNIST": FashionMNISTDataset,
         "Covtype": CovtypeDataset,
+        "KDDCUP99": KDDCUP99Dataset,
         "AdultCensus": AdultCensusDataset,
         "BreastCancer": BreastCancerDataset,
         "EMNIST": EMNISTDataset,
