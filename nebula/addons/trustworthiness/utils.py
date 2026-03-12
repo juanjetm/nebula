@@ -1,4 +1,5 @@
 import json
+import csv
 import logging
 import math
 import os
@@ -268,8 +269,103 @@ def write_results_json(out_file, dict):
     with open(out_file, "a") as f:
         json.dump(dict, f, indent=4)
 
+def load_data_results_participant(experiment_name: str, participant_id: int | str):
+    data_results_path = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), experiment_name, "trustworthiness", f"data_results_{participant_id}.csv")
 
-def save_results_csv(scenario_name: str, id: int, bytes_sent: int, bytes_recv: int, accuracy: float, loss: float):
+    if not os.path.exists(data_results_path):
+        raise FileNotFoundError(f"File not found: {data_results_path}")
+
+    with open(data_results_path, "r", newline="") as csv_file:
+        reader = csv.DictReader(csv_file)
+        rows = list(reader)
+
+    if len(rows) == 0:
+        raise ValueError(f"No rows found in {data_results_path}")
+
+    row = rows[0]
+
+    bytes_sent = int(float(row["bytes_sent"]))
+    bytes_recv = int(float(row["bytes_recv"]))
+    accuracy = float(row["accuracy"])
+    loss = float(row["loss"])
+
+    return bytes_sent, bytes_recv, accuracy, loss
+
+
+def load_emissions_participant(experiment_name: str, participant_id: int | str):
+    emissions_path = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), experiment_name, "trustworthiness", f"emissions_{participant_id}.csv")
+
+    if not os.path.exists(emissions_path):
+        raise FileNotFoundError(f"File not found: {emissions_path}")
+
+    with open(emissions_path, "r", newline="") as csv_file:
+        reader = csv.DictReader(csv_file)
+        rows = list(reader)
+
+    if len(rows) == 0:
+        raise ValueError(f"No rows found in {emissions_path}")
+
+    row = rows[0]
+
+    energy_grid = float(row["energy_grid"])
+    emissions = float(row["emissions"])
+    energy_consumed = float(row["energy_consumed"])
+    sample_size = int(float(row["sample_size"]))
+
+    return energy_grid, emissions, energy_consumed, sample_size
+
+def save_trustworthiness_reports_csv(
+    reports: dict,
+    experiment_name: str,
+) -> None:
+
+    data_results_path = os.path.join("nebula", "app", "logs", experiment_name, "trustworthiness", "data_results.csv")
+    emissions_path = os.path.join("nebula", "app", "logs", experiment_name, "trustworthiness", "emissions.csv")
+
+    sorted_reports = sorted(
+        reports.values(),
+        key=lambda report: int(report["node_id"])
+    )
+
+    with open(data_results_path, "w", newline="") as csv_file:
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=["id", "bytes_sent", "bytes_recv", "accuracy", "loss"],
+        )
+        writer.writeheader()
+
+        for report in sorted_reports:
+            writer.writerow({
+                "id": report["node_id"],
+                "bytes_sent": report["bytes_sent"],
+                "bytes_recv": report["bytes_recv"],
+                "accuracy": report["accuracy"],
+                "loss": report["loss"],
+            })
+
+    with open(emissions_path, "w", newline="") as csv_file:
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=["id", "energy_grid", "emissions", "energy_consumed", "sample_size"],
+        )
+        writer.writeheader()
+
+        for report in sorted_reports:
+            writer.writerow({
+                "id": report["node_id"],
+                "energy_grid": report["energy_grid"],
+                "emissions": report["emissions"],
+                "energy_consumed": report["energy_consumed"],
+                "sample_size": report["sample_size"],
+            })
+
+    logging.info(
+        "[TW SERVER] CSV files written correctly: %s, %s",
+        data_results_path,
+        emissions_path,
+    )
+
+def save_results_csv_cfl(scenario_name: str, id: int, bytes_sent: int, bytes_recv: int, accuracy: float, loss: float):
     try:
         data_results_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
     except:
@@ -292,6 +388,57 @@ def save_results_csv(scenario_name: str, id: int, bytes_sent: int, bytes_recv: i
 
     except Exception as e:
         logger.warning(e)
+
+def save_emissions_csv_cfl(scenario_name: str, id: int, energy_grid: float, emissions: float, energy_consumed: float, sample_size: int):
+    try:
+        data_results_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "emissions.csv")
+    except:
+        data_results_file = os.path.join("nebula", "app", "logs", scenario_name, "trustworthiness", "emissions.csv")
+
+    if exists(data_results_file):
+        df = pd.read_csv(data_results_file)
+    else:
+        df = pd.DataFrame(columns=["id", "energy_grid", "emissions", "energy_consumed", "sample_size"])
+
+    try:
+        # Add new entry to DataFrame
+        new_data = pd.DataFrame({'id': [id], 'energy_grid': [energy_grid],
+                                    'emissions': [emissions], 'energy_consumed': [energy_consumed],
+                                    'sample_size': [sample_size]})
+        df = pd.concat([df, new_data], ignore_index=True)
+        logger.info(f"new_data={new_data}")
+
+        df.to_csv(data_results_file, encoding='utf-8', index=False)
+
+    except Exception as e:
+        logger.warning(e)
+
+
+def save_results_csv(scenario_name: str, id: int, bytes_sent: int, bytes_recv: int, accuracy: float, loss: float):
+    """
+    try:
+        data_results_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
+    except:
+        data_results_file = os.path.join("nebula", "app", "logs", scenario_name, "trustworthiness", "data_results.csv")
+
+    if exists(data_results_file):
+        df = pd.read_csv(data_results_file)
+    else:
+        df = pd.DataFrame(columns=["id", "bytes_sent", "bytes_recv", "accuracy", "loss"])
+
+    try:
+        # Add new entry to DataFrame
+        new_data = pd.DataFrame({'id': [id], 'bytes_sent': [bytes_sent],
+                                    'bytes_recv': [bytes_recv], 'accuracy': [accuracy],
+                                    'loss': [loss]})
+        df = pd.concat([df, new_data], ignore_index=True)
+        logger.info(f"new_data={new_data}")
+
+        df.to_csv(data_results_file, encoding='utf-8', index=False)
+
+    except Exception as e:
+        logger.warning(e)
+    """
 
     try:
         data_results_id_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", f"data_results_{id}.csv")

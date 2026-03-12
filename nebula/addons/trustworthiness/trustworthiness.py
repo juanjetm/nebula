@@ -8,7 +8,7 @@ from nebula.config.config import Config
 from nebula.core.engine import Engine
 import pickle
 from nebula.addons.trustworthiness.calculation import stop_emissions_tracking_and_save
-from nebula.addons.trustworthiness.utils import save_results_csv, save_confirmation_csv
+from nebula.addons.trustworthiness.utils import save_results_csv, save_confirmation_csv, save_trustworthiness_reports_csv, load_emissions_participant, load_data_results_participant, save_results_csv_cfl, save_emissions_csv_cfl
 from codecarbon import EmissionsTracker
 from nebula.addons.trustworthiness.per_round_metrics import PerRoundTrustMetrics
 from datetime import datetime
@@ -160,15 +160,9 @@ class TrustWorkloadTrainer(TrustWorkload):
             logging.info("connections=%s", list(cm.connections.keys()))
             logging.info("server in connections? %s", server_addr in cm.connections)
 
-            # Sustituye estos valores por los reales que tengas en este punto
-            bytes_sent = 111
-            bytes_recv = 222
-            accuracy = 0.91
-            loss = 0.12
-            energy_grid = 0.33
-            emissions = 0.44
-            energy_consumed = 0.55
-            sample_size = 667
+            bytes_sent, bytes_recv, accuracy, loss = load_data_results_participant(experiment_name, self._idx)
+
+            energy_grid, emissions, energy_consumed, sample_size = load_emissions_participant(experiment_name, self._idx)
 
             message = cm.mm.create_message(
                 "trustworthiness",
@@ -289,6 +283,23 @@ class TrustWorkloadServer(TrustWorkload):
 
         if self._csv_completed == True:
             logging.info("[TW SERVER] finish_experiment_role_post_actions called, trustworthiness reports OK, starting generate_factsheet")
+            bytes_sent, bytes_recv, accuracy, loss = load_data_results_participant(
+                self._experiment_name,
+                self._idx,
+            )
+
+            energy_grid, emissions, energy_consumed, sample_size = load_emissions_participant(
+                self._experiment_name,
+                self._idx,
+            )
+
+            logging.info(
+                "[TW SERVER] local server report added for node_id=%s",
+                str(self._idx),
+            )
+
+            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss)
+            save_emissions_csv_cfl(self._experiment_name, self._idx, energy_grid, emissions, energy_consumed, sample_size)
             #await self._generate_factsheet(trust_config, experiment_name)
         else:
             self._finish_post = True
@@ -318,6 +329,7 @@ class TrustWorkloadServer(TrustWorkload):
         if (len(self._trustworthiness_reports) >= self._expected_reports):
             logging.info("[TW SERVER] all reports received, generating csv")
             #GENERAR CSV
+            save_trustworthiness_reports_csv(self._trustworthiness_reports, self._experiment_name)
             if self._finish_post == True:
                 logging.info("[TW SERVER] all reports received and post OK, generating factsheet")
                 #await self._generate_factsheet(self._trust_config, self._experiment_name)
@@ -450,7 +462,7 @@ class Trustworthiness():
 
         # Last operations
         save_results_csv(self._experiment_name, self._idx, bytes_sent, bytes_recv, last_loss, last_accuracy)
-        stop_emissions_tracking_and_save(self._tracker, self._trust_dir_files, self._emissions_file, self._role.value, workload, sample_size, self._idx)
+        stop_emissions_tracking_and_save(self._tracker, self._trust_dir_files, f'emissions_{self._idx}.csv', self._role.value, workload, sample_size, self._idx)
         save_confirmation_csv(self._experiment_name, self._idx)
         await self.tw.finish_experiment_role_post_actions(self._trust_config, self._experiment_name)
 
