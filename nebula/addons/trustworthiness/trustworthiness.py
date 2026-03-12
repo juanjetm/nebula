@@ -16,6 +16,7 @@ from nebula.addons.trustworthiness.factsheet import Factsheet
 from nebula.addons.trustworthiness.metric import TrustMetricManager
 from nebula.addons.trustworthiness.dfl_local import compute_trust_local_dfl
 import json, os
+from nebula.core.network.communications import CommunicationsManager
 
 """                                                     ##############################
                                                         #       TRUST WORKLOADS      #
@@ -153,7 +154,58 @@ class TrustWorkloadTrainer(TrustWorkload):
         elif federation == "SDFL":
             pass
         else:
-            pass
+            cm = CommunicationsManager.get_instance()
+            server_addr = "192.168.51.2:45001"  # cambiar por la IP:PUERTO real del servidor
+
+            logging.info("connections=%s", list(cm.connections.keys()))
+            logging.info("server in connections? %s", server_addr in cm.connections)
+
+            # Sustituye estos valores por los reales que tengas en este punto
+            bytes_sent = 111
+            bytes_recv = 222
+            accuracy = 0.91
+            loss = 0.12
+            energy_grid = 0.33
+            emissions = 0.44
+            energy_consumed = 0.55
+            sample_size = 667
+
+            message = cm.mm.create_message(
+                "trustworthiness",
+                action="report",
+                node_id=str(self._idx),
+                bytes_sent=bytes_sent,
+                bytes_recv=bytes_recv,
+                accuracy=accuracy,
+                loss=loss,
+                energy_grid=energy_grid,
+                emissions=emissions,
+                energy_consumed=energy_consumed,
+                sample_size=sample_size,
+            )
+
+            logging.info(
+                "[TW SEND] dest=%s node_id=%s bytes_sent=%s bytes_recv=%s "
+                "accuracy=%s loss=%s energy_grid=%s emissions=%s "
+                "energy_consumed=%s sample_size=%s",
+                server_addr,
+                str(self._idx),
+                bytes_sent,
+                bytes_recv,
+                accuracy,
+                loss,
+                energy_grid,
+                emissions,
+                energy_consumed,
+                sample_size,
+            )
+
+            await cm.send_message(
+                server_addr,
+                message,
+                message_type="trustworthiness",
+                allow_after_learning_finished=True,
+            )
 
     async def _process_round_end_event(self, ree: RoundEndEvent):
         scenario_name = self._engine.config.participant["scenario_args"]["name"]
@@ -194,6 +246,11 @@ class TrustWorkloadServer(TrustWorkload):
         self._idx = idx
         self._trust_files_route = trust_files_route
         self._per_round = None
+        self._trustworthiness_reports = {}
+        self._expected_reports = 2
+        self._trust_config = None
+        self._csv_completed = False
+        self._finish_post = False
 
     async def init(self, experiment_name):
         self._experiment_name = experiment_name
@@ -225,8 +282,49 @@ class TrustWorkloadServer(TrustWorkload):
 
     async def finish_experiment_role_post_actions(self, trust_config, experiment_name):
         from datetime  import datetime
+
         self._end_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        self._trust_config = trust_config
+        self._experiment_name = experiment_name
+
+        if self._csv_completed == True:
+            logging.info("[TW SERVER] finish_experiment_role_post_actions called, trustworthiness reports OK, starting generate_factsheet")
+            #await self._generate_factsheet(trust_config, experiment_name)
+        else:
+            self._finish_post = True
+            logging.info("[TW SERVER] finish_experiment_role_post_actions called, waiting for trustworthiness reports")
         await self._generate_factsheet(trust_config, experiment_name)
+
+    async def register_trustworthiness_report(self, source, message):
+        self._trustworthiness_reports[message.node_id] = {
+            "source": source,
+            "node_id": message.node_id,
+            "bytes_sent": message.bytes_sent,
+            "bytes_recv": message.bytes_recv,
+            "accuracy": message.accuracy,
+            "loss": message.loss,
+            "energy_grid": message.energy_grid,
+            "emissions": message.emissions,
+            "energy_consumed": message.energy_consumed,
+            "sample_size": message.sample_size,
+        }
+
+        logging.info(
+            "[TW SERVER] received report from node_id=%s total=%s",
+            message.node_id,
+            len(self._trustworthiness_reports),
+        )
+
+        if (len(self._trustworthiness_reports) >= self._expected_reports):
+            logging.info("[TW SERVER] all reports received, generating csv")
+            #GENERAR CSV
+            if self._finish_post == True:
+                logging.info("[TW SERVER] all reports received and post OK, generating factsheet")
+                #await self._generate_factsheet(self._trust_config, self._experiment_name)
+            else:
+                self._csv_completed = True
+                logging.info(f"[TW SERVER] all reports received, waiting for finish post, csv_completed {self._csv_completed}")
+
 
     async def _generate_factsheet(self, trust_config, experiment_name):
         from nebula.addons.trustworthiness.factsheet import Factsheet
@@ -309,6 +407,8 @@ class Trustworthiness():
         self._role: Role = engine.rb.get_role()
         self._idx = self._config.participant["device_args"]["idx"]
         self._trust_workload: TrustWorkload = self._factory_trust_workload(self._role, self._engine, self._idx, self._trust_dir_files)
+
+        self._engine.trustworthiness = self
 
         # EmissionsTracker from codecarbon to measure the emissions during the aggregation step in the server
         self._tracker= EmissionsTracker(tracking_mode='process', log_level='error', save_to_file=False)

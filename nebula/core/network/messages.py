@@ -94,6 +94,21 @@ class MessagesManager:
             },
             "discover": {"parameters": ["action"], "defaults": {}},
             "link": {"parameters": ["action", "addrs"], "defaults": {}},
+            "trustworthiness": {
+                "parameters": [
+                    "action",
+                    "node_id",
+                    "bytes_sent",
+                    "bytes_recv",
+                    "accuracy",
+                    "loss",
+                    "energy_grid",
+                    "emissions",
+                    "energy_consumed",
+                    "sample_size"
+                ],
+                "defaults": {},
+            }
             # Add additional message types here
         }
 

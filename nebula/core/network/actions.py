@@ -83,6 +83,13 @@ class ReputationAction(Enum):
 
     SHARE = nebula_pb2.ReputationMessage.Action.SHARE
 
+class TrustworthinessAction(Enum):
+    """
+    Enum for reputation exchange messages in the federation.
+    """
+
+    REPORT = nebula_pb2.TrustworthinessMessage.Action.REPORT
+
 
 # Mapping between message type strings and their corresponding Enum classes
 ACTION_CLASSES = {
@@ -94,6 +101,7 @@ ACTION_CLASSES = {
     "offer": OfferAction,
     "link": LinkAction,
     "reputation": ReputationAction,
+    "trustworthiness": TrustworthinessAction,
 }
 
 

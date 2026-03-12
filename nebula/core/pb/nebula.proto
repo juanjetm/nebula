@@ -26,6 +26,7 @@ message Wrapper {
     DiscoverMessage discover_message = 9;
     OfferMessage offer_message = 10;
     LinkMessage link_message = 11;
+    TrustworthinessMessage trustworthiness_message = 12;
   }
 }
 
@@ -129,4 +130,21 @@ message ReputationMessage {
 // Response transmits the outcome of a requested operation, including any errors.
 message ResponseMessage {
   string response = 1;      // Outcome of the requested operation.
+}
+
+message TrustworthinessMessage {
+  enum Action {
+    REPORT = 0;
+  }
+
+  Action action = 1;
+  string node_id = 2;
+  int64 bytes_sent = 3;
+  int64 bytes_recv = 4;
+  double accuracy = 5;
+  double loss = 6;
+  double energy_grid = 7;
+  double emissions = 8;
+  double energy_consumed = 9;
+  int32 sample_size = 10;
 }
