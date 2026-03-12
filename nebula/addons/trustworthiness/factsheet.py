@@ -167,6 +167,7 @@ class Factsheet:
             try:
                 factsheet = json.load(f)
 
+                """
                 expected_total = int(factsheet.get("participants", {}).get("client_num", 0) or 0)
                 logging.info(f"[Factsheet] expected_total_nodes = {expected_total}")
 
@@ -186,6 +187,7 @@ class Factsheet:
                     number_files = len(data)
                     logger.info(f"number_files={number_files}")
                     logger.info(f"expected_nodes={expected_total}")
+                """
 
 
 

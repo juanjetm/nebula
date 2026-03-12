@@ -143,8 +143,14 @@ message TrustworthinessMessage {
   int64 bytes_recv = 4;
   double accuracy = 5;
   double loss = 6;
-  double energy_grid = 7;
-  double emissions = 8;
-  double energy_consumed = 9;
-  int32 sample_size = 10;
+  string role = 7;
+  double energy_grid = 8;
+  double emissions = 9;
+  string workload = 10;
+  string cpu_model = 11;
+  string gpu_model = 12;
+  bool cpu_used = 13;
+  bool gpu_used = 14;
+  double energy_consumed = 15;
+  int32 sample_size = 16;
 }

@@ -307,12 +307,18 @@ def load_emissions_participant(experiment_name: str, participant_id: int | str):
 
     row = rows[0]
 
+    role = str(row["role"])
     energy_grid = float(row["energy_grid"])
     emissions = float(row["emissions"])
+    workload = str(row["workload"])
+    cpu_model = str(row["CPU_model"])
+    gpu_model = str(row["GPU_model"])
+    cpu_used = str(row["CPU_used"]).strip().lower() == "true"
+    gpu_used = str(row["GPU_used"]).strip().lower() == "true"
     energy_consumed = float(row["energy_consumed"])
     sample_size = int(float(row["sample_size"]))
 
-    return energy_grid, emissions, energy_consumed, sample_size
+    return role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size
 
 def save_trustworthiness_reports_csv(
     reports: dict,
@@ -346,15 +352,21 @@ def save_trustworthiness_reports_csv(
     with open(emissions_path, "w", newline="") as csv_file:
         writer = csv.DictWriter(
             csv_file,
-            fieldnames=["id", "energy_grid", "emissions", "energy_consumed", "sample_size"],
+            fieldnames=["id", "role", "energy_grid", "emissions", "workload", "CPU_model", "GPU_model", "CPU_used", "GPU_used", "energy_consumed", "sample_size"],
         )
         writer.writeheader()
 
         for report in sorted_reports:
             writer.writerow({
                 "id": report["node_id"],
+                "role": report["role"],
                 "energy_grid": report["energy_grid"],
                 "emissions": report["emissions"],
+                "workload": report["workload"],
+                "CPU_model": report["cpu_model"],
+                "GPU_model": report["gpu_model"],
+                "CPU_used": report["cpu_used"],
+                "GPU_used": report["gpu_used"],
                 "energy_consumed": report["energy_consumed"],
                 "sample_size": report["sample_size"],
             })
@@ -389,7 +401,7 @@ def save_results_csv_cfl(scenario_name: str, id: int, bytes_sent: int, bytes_rec
     except Exception as e:
         logger.warning(e)
 
-def save_emissions_csv_cfl(scenario_name: str, id: int, energy_grid: float, emissions: float, energy_consumed: float, sample_size: int):
+def save_emissions_csv_cfl(scenario_name: str, id: int, role: str, energy_grid: float, emissions: float, workload: str, cpu_model: str, gpu_model: str, cpu_used: bool, gpu_used: bool, energy_consumed: float, sample_size: int):
     try:
         data_results_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "emissions.csv")
     except:
@@ -398,12 +410,12 @@ def save_emissions_csv_cfl(scenario_name: str, id: int, energy_grid: float, emis
     if exists(data_results_file):
         df = pd.read_csv(data_results_file)
     else:
-        df = pd.DataFrame(columns=["id", "energy_grid", "emissions", "energy_consumed", "sample_size"])
+        df = pd.DataFrame(columns=["id", "role", "energy_grid", "emissions", "workload", "CPU_model", "GPU_model", "CPU_used", "GPU_used", "energy_consumed", "sample_size"])
 
     try:
         # Add new entry to DataFrame
-        new_data = pd.DataFrame({'id': [id], 'energy_grid': [energy_grid],
-                                    'emissions': [emissions], 'energy_consumed': [energy_consumed],
+        new_data = pd.DataFrame({'id': [id], 'role': [role], 'energy_grid': [energy_grid],
+                                    'emissions': [emissions], 'workload': [workload], 'CPU_model': [cpu_model], 'GPU_model': [gpu_model], 'CPU_used': [cpu_used], 'GPU_used': [gpu_used], 'energy_consumed': [energy_consumed],
                                     'sample_size': [sample_size]})
         df = pd.concat([df, new_data], ignore_index=True)
         logger.info(f"new_data={new_data}")

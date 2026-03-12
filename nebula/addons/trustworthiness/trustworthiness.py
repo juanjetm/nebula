@@ -162,7 +162,7 @@ class TrustWorkloadTrainer(TrustWorkload):
 
             bytes_sent, bytes_recv, accuracy, loss = load_data_results_participant(experiment_name, self._idx)
 
-            energy_grid, emissions, energy_consumed, sample_size = load_emissions_participant(experiment_name, self._idx)
+            role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size = load_emissions_participant(experiment_name, self._idx)
 
             message = cm.mm.create_message(
                 "trustworthiness",
@@ -172,28 +172,40 @@ class TrustWorkloadTrainer(TrustWorkload):
                 bytes_recv=bytes_recv,
                 accuracy=accuracy,
                 loss=loss,
+                role=role,
                 energy_grid=energy_grid,
                 emissions=emissions,
+                workload = workload,
+                cpu_model = cpu_model,
+                gpu_model = gpu_model,
+                cpu_used = cpu_used,
+                gpu_used = gpu_used,
                 energy_consumed=energy_consumed,
                 sample_size=sample_size,
             )
-
+            """
             logging.info(
                 "[TW SEND] dest=%s node_id=%s bytes_sent=%s bytes_recv=%s "
-                "accuracy=%s loss=%s energy_grid=%s emissions=%s "
-                "energy_consumed=%s sample_size=%s",
+                "accuracy=%s loss=%s energy_grid=%s emissions=%s workload=%s"
+                "cpu_model=%s gpu_model=%s cpu_used=%s gpu_used=%s energy_consumed=%s sample_size=%s",
                 server_addr,
                 str(self._idx),
                 bytes_sent,
                 bytes_recv,
                 accuracy,
                 loss,
+                role,
                 energy_grid,
                 emissions,
+                workload,
+                cpu_model,
+                gpu_model,
+                cpu_used,
+                gpu_used,
                 energy_consumed,
                 sample_size,
             )
-
+            """
             await cm.send_message(
                 server_addr,
                 message,
@@ -288,7 +300,7 @@ class TrustWorkloadServer(TrustWorkload):
                 self._idx,
             )
 
-            energy_grid, emissions, energy_consumed, sample_size = load_emissions_participant(
+            role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size = load_emissions_participant(
                 self._experiment_name,
                 self._idx,
             )
@@ -299,7 +311,7 @@ class TrustWorkloadServer(TrustWorkload):
             )
 
             save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss)
-            save_emissions_csv_cfl(self._experiment_name, self._idx, energy_grid, emissions, energy_consumed, sample_size)
+            save_emissions_csv_cfl(self._experiment_name, self._idx, role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size)
             #await self._generate_factsheet(trust_config, experiment_name)
         else:
             self._finish_post = True
@@ -314,8 +326,14 @@ class TrustWorkloadServer(TrustWorkload):
             "bytes_recv": message.bytes_recv,
             "accuracy": message.accuracy,
             "loss": message.loss,
+            "role": message.role,
             "energy_grid": message.energy_grid,
             "emissions": message.emissions,
+            "workload": message.workload,
+            "cpu_model": message.cpu_model,
+            "gpu_model": message.gpu_model,
+            "cpu_used": message.cpu_used,
+            "gpu_used": message.gpu_used,
             "energy_consumed": message.energy_consumed,
             "sample_size": message.sample_size,
         }
@@ -463,7 +481,7 @@ class Trustworthiness():
         # Last operations
         save_results_csv(self._experiment_name, self._idx, bytes_sent, bytes_recv, last_loss, last_accuracy)
         stop_emissions_tracking_and_save(self._tracker, self._trust_dir_files, f'emissions_{self._idx}.csv', self._role.value, workload, sample_size, self._idx)
-        save_confirmation_csv(self._experiment_name, self._idx)
+        #save_confirmation_csv(self._experiment_name, self._idx)
         await self.tw.finish_experiment_role_post_actions(self._trust_config, self._experiment_name)
 
     def _factory_trust_workload(self, role: Role, engine: Engine, idx, trust_files_route) -> TrustWorkload:
