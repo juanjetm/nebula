@@ -7,8 +7,8 @@ from abc import ABC, abstractmethod
 from nebula.config.config import Config
 from nebula.core.engine import Engine
 import pickle
-from nebula.addons.trustworthiness.calculation import stop_emissions_tracking_and_save
-from nebula.addons.trustworthiness.utils import save_results_csv, save_confirmation_csv, save_trustworthiness_reports_csv, load_emissions_participant, load_data_results_participant, save_results_csv_cfl, save_emissions_csv_cfl
+from nebula.addons.trustworthiness.calculation import stop_emissions_tracking_and_save, get_bytes_final_model_id, get_class_imbalance_local
+from nebula.addons.trustworthiness.utils import save_results_csv, save_confirmation_csv, save_trustworthiness_reports_csv, load_emissions_participant, load_data_results_participant, save_results_csv_cfl, save_emissions_csv_cfl, save_class_count_per_participant, get_local_entropy
 from codecarbon import EmissionsTracker
 from nebula.addons.trustworthiness.per_round_metrics import PerRoundTrustMetrics
 from datetime import datetime
@@ -155,7 +155,8 @@ class TrustWorkloadTrainer(TrustWorkload):
             pass
         else:
             cm = CommunicationsManager.get_instance()
-            server_addr = "192.168.51.2:45001"  # cambiar por la IP:PUERTO real del servidor
+
+            server_addr = str(self._engine.config.participant["network_args"]["neighbors"]).strip()
 
             logging.info("connections=%s", list(cm.connections.keys()))
             logging.info("server in connections? %s", server_addr in cm.connections)
@@ -163,6 +164,15 @@ class TrustWorkloadTrainer(TrustWorkload):
             bytes_sent, bytes_recv, accuracy, loss = load_data_results_participant(experiment_name, self._idx)
 
             role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size = load_emissions_participant(experiment_name, self._idx)
+
+            class_imbalance = get_class_imbalance_local(self._idx, experiment_name)
+            logging.info("class_imbalance=%s", class_imbalance)
+
+            model_size = get_bytes_final_model_id(self._idx, experiment_name)
+            logging.info("model_size=%s", model_size)
+
+            local_entropy = get_local_entropy(self._idx, experiment_name)
+            logging.info("local_entropy=%s", local_entropy)
 
             message = cm.mm.create_message(
                 "trustworthiness",
@@ -262,6 +272,7 @@ class TrustWorkloadServer(TrustWorkload):
         self._experiment_name = experiment_name
         await EventManager.get_instance().subscribe_addonevent(TestMetricsEvent, self._process_test_metrics_event)
         await EventManager.get_instance().subscribe_node_event(ExperimentFinishEvent, self._process_experiment_finished_event)
+        await self._create_pk_files(experiment_name)
 
         self._per_round = PerRoundTrustMetrics(
             experiment_name=experiment_name,
@@ -272,6 +283,16 @@ class TrustWorkloadServer(TrustWorkload):
             enable_csv=True,
         )
         await self._per_round.setup(self._engine)
+
+    async def _create_pk_files(self, experiment_name):
+        # Save data to local files to calculate the trustworthyness
+        test_loader_filename = f"/nebula/app/logs/{experiment_name}/trustworthiness/participant_{self._idx}_test_loader.pk"
+        self._engine.trainer.datamodule.setup(stage="test")
+        test_loader = self._engine.trainer.datamodule.test_dataloader()[0]
+
+        with open(test_loader_filename, 'wb') as f:
+            pickle.dump(test_loader, f)
+            f.close()
 
 
     def get_workload(self):
@@ -364,7 +385,7 @@ class TrustWorkloadServer(TrustWorkload):
 
         factsheet = Factsheet()
         factsheet.populate_factsheet_pre_train(trust_config, experiment_name)
-        factsheet.populate_factsheet_post_train(experiment_name, self._start_time, self._end_time)
+        factsheet.populate_factsheet_post_train(experiment_name, self._start_time, self._end_time, self._idx)
 
         data_file_path = os.path.join(os.environ.get('NEBULA_CONFIG_DIR'), experiment_name, "scenario.json")
         with open(data_file_path, 'r') as data_file:
@@ -462,8 +483,9 @@ class Trustworthiness():
         os.chmod(trust_dir, 0o777)
 
     async def _process_experiment_finish_event(self, efe: ExperimentFinishEvent):
-        from nebula.addons.trustworthiness.utils import save_class_count_per_participant
         class_counter = self._engine.trainer.datamodule.get_samples_per_label()
+        logging.info("COUNTER=%s", class_counter)
+
         save_class_count_per_participant(self._experiment_name, class_counter, self._idx)
 
         await self.tw.finish_experiment_role_pre_actions()

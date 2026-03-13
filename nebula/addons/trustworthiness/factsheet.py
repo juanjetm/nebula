@@ -151,7 +151,7 @@ class Factsheet:
                 logging.warning(f"{factsheet_file} is invalid")
                 logging.error(e)
 
-    def populate_factsheet_post_train(self, scenario_name, start_time, end_time):
+    def populate_factsheet_post_train(self, scenario_name, start_time, end_time, participant_idx):
         """
         Populates the factsheet with values after the training.
 
@@ -196,10 +196,10 @@ class Factsheet:
 
                 files_dir = f"{os.environ.get('NEBULA_LOGS_DIR')}/{scenario_name}/trustworthiness"
 
-                models_files = glob.glob(os.path.join(files_dir, "*final_model*"))
+                models_files = glob.glob(os.path.join(files_dir, "*final_model*")) # MANDAR MENSAJE
                 #dataloaders_files = glob.glob(os.path.join(files_dir, "*train_loader*"))
-                test_dataloader_file = f"{files_dir}/participant_1_test_loader.pk"
-                train_model_file = f"{files_dir}/participant_1_train_model.pk"
+                test_dataloader_file = f"{files_dir}/participant_{participant_idx}_test_loader.pk"
+                final_model_file = f"{files_dir}/participant_{participant_idx}_final_model.pk"
                 emissions_file = os.path.join(files_dir, "emissions.csv")
 
                 # # Entropy
@@ -250,7 +250,7 @@ class Factsheet:
                 class_imbalance = get_cv(list=class_samples_sizes)
                 factsheet["fairness"]["class_imbalance"] = 1 if class_imbalance > 1 else class_imbalance
 
-                with open(train_model_file, "rb") as file:
+                with open(final_model_file, "rb") as file:
                     lightning_model = pickle.load(file)
 
                 if dataset == "MNIST" and model == "MLP":

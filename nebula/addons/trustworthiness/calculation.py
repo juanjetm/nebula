@@ -6,6 +6,7 @@ import statistics
 from datetime import datetime
 from math import e
 from os.path import exists
+import json
 
 import numpy as np
 import pandas as pd
@@ -206,6 +207,17 @@ def check_properties(*args):
     result = map(lambda x: x is not None and x != "", args)
     return np.mean(list(result))
 
+def get_class_imbalance_local(participant_id, experiment_name):
+    data_class_count_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), experiment_name, "trustworthiness", f"{str(participant_id)}_class_count.json")
+
+    with open(data_class_count_file, "r") as file:
+        class_distribution = json.load(file)
+
+    class_samples_sizes = [x for x in class_distribution.values()]
+    class_imbalance = get_cv(list=class_samples_sizes)
+
+    return class_imbalance
+
 
 def get_cv(list=None, std=None, mean=None):
     """
@@ -298,6 +310,24 @@ def get_bytes_model(model_file):
     Returns:
         float: The bytes of the model.
     """
+
+    model_size = os.path.getsize(model_file)
+
+    return model_size
+
+def get_bytes_final_model_id(id, scenario_name):
+    """
+    Calculates the bytes of the final model of a node by id.
+
+    Args:
+        id: Participant ID.
+
+    Returns:
+        float: The bytes of the model.
+    """
+
+
+    model_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", f"participant_{id}_final_model.pk")
 
     model_size = os.path.getsize(model_file)
 

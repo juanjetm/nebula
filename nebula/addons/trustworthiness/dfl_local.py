@@ -126,10 +126,10 @@ def compute_trust_local_dfl(experiment_name, participant_idx, data, start_time, 
 
         files_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), experiment_name, "trustworthiness")
 
-        final_model_file = os.path.join(files_dir, f"participant_{participant_idx}_final_model.pk")
-        train_model_file = os.path.join(files_dir, f"participant_{participant_idx}_train_model.pk")
+        train_model_file = os.path.join(files_dir, f"participant_{participant_idx}_final_model.pk")
+        #train_model_file = os.path.join(files_dir, f"participant_{participant_idx}_train_model.pk")
         test_dataloader_file = os.path.join(files_dir, f"participant_{participant_idx}_test_loader.pk")
-        emissions_file = os.path.join(files_dir, f"emissions.csv")
+        emissions_file = os.path.join(files_dir, f"emissions_{participant_idx}.csv")
 
         with open(train_model_file, "rb") as t_file:
             lightning_model = pickle.load(t_file)

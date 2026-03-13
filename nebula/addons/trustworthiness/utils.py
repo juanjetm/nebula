@@ -116,6 +116,23 @@ def get_all_data_entropy(experiment_name):
     with open(name_file, "w") as f:
         json.dump(entropy_per_participant, f, indent=2)
 
+def get_local_entropy(id, experiment_name):
+    data_class_count_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), experiment_name, "trustworthiness", f"{str(id)}_class_count.json")
+
+    with open(data_class_count_file, "r") as f:
+        class_count = json.load(f)
+
+    total = sum(class_count.values())
+    if total == 0:
+        entropy_value = 0.0
+    else:
+        probabilities = [count / total for count in class_count.values()]
+        entropy_value = entropy(probabilities, base=2)
+
+    entropy_local = round(entropy_value, 6)
+
+    return entropy_local
+
 def get_entropy(client_id, scenario_name, dataloader):
     """
     Get the entropy of each client in the scenario.
