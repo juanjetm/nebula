@@ -353,7 +353,7 @@ def save_trustworthiness_reports_csv(
     with open(data_results_path, "w", newline="") as csv_file:
         writer = csv.DictWriter(
             csv_file,
-            fieldnames=["id", "bytes_sent", "bytes_recv", "accuracy", "loss"],
+            fieldnames=["id", "bytes_sent", "bytes_recv", "accuracy", "loss", "class_imbalance", "model_size", "local_entropy"],
         )
         writer.writeheader()
 
@@ -364,6 +364,9 @@ def save_trustworthiness_reports_csv(
                 "bytes_recv": report["bytes_recv"],
                 "accuracy": report["accuracy"],
                 "loss": report["loss"],
+                "class_imbalance": report["class_imbalance"],
+                "model_size": report["model_size"],
+                "local_entropy": report["local_entropy"],
             })
 
     with open(emissions_path, "w", newline="") as csv_file:
@@ -394,7 +397,7 @@ def save_trustworthiness_reports_csv(
         emissions_path,
     )
 
-def save_results_csv_cfl(scenario_name: str, id: int, bytes_sent: int, bytes_recv: int, accuracy: float, loss: float):
+def save_results_csv_cfl(scenario_name: str, id: int, bytes_sent: int, bytes_recv: int, accuracy: float, loss: float, class_imbalance: float, model_size: int, local_entropy: float):
     try:
         data_results_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
     except:
@@ -403,13 +406,13 @@ def save_results_csv_cfl(scenario_name: str, id: int, bytes_sent: int, bytes_rec
     if exists(data_results_file):
         df = pd.read_csv(data_results_file)
     else:
-        df = pd.DataFrame(columns=["id", "bytes_sent", "bytes_recv", "accuracy", "loss"])
+        df = pd.DataFrame(columns=["id", "bytes_sent", "bytes_recv", "accuracy", "loss", "class_imbalance", "model_size", "local_entropy"])
 
     try:
         # Add new entry to DataFrame
         new_data = pd.DataFrame({'id': [id], 'bytes_sent': [bytes_sent],
                                     'bytes_recv': [bytes_recv], 'accuracy': [accuracy],
-                                    'loss': [loss]})
+                                    'loss': [loss], 'class_imbalance': [class_imbalance], 'model_size': [model_size], 'local_entropy': [local_entropy]})
         df = pd.concat([df, new_data], ignore_index=True)
         logger.info(f"new_data={new_data}")
 

@@ -192,6 +192,9 @@ class TrustWorkloadTrainer(TrustWorkload):
                 gpu_used = gpu_used,
                 energy_consumed=energy_consumed,
                 sample_size=sample_size,
+                class_imbalance=class_imbalance,
+                model_size=model_size,
+                local_entropy=local_entropy,
             )
             """
             logging.info(
@@ -331,13 +334,22 @@ class TrustWorkloadServer(TrustWorkload):
                 str(self._idx),
             )
 
-            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss)
+            class_imbalance = get_class_imbalance_local(self._idx, experiment_name)
+            logging.info("class_imbalance=%s", class_imbalance)
+
+            model_size = get_bytes_final_model_id(self._idx, experiment_name)
+            logging.info("model_size=%s", model_size)
+
+            local_entropy = get_local_entropy(self._idx, experiment_name)
+            logging.info("local_entropy=%s", local_entropy)
+
+            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss, class_imbalance, model_size, local_entropy)
             save_emissions_csv_cfl(self._experiment_name, self._idx, role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size)
-            #await self._generate_factsheet(trust_config, experiment_name)
+            await self._generate_factsheet(trust_config, experiment_name)
         else:
             self._finish_post = True
             logging.info("[TW SERVER] finish_experiment_role_post_actions called, waiting for trustworthiness reports")
-        await self._generate_factsheet(trust_config, experiment_name)
+        #await self._generate_factsheet(trust_config, experiment_name)
 
     async def register_trustworthiness_report(self, source, message):
         self._trustworthiness_reports[message.node_id] = {
@@ -357,6 +369,9 @@ class TrustWorkloadServer(TrustWorkload):
             "gpu_used": message.gpu_used,
             "energy_consumed": message.energy_consumed,
             "sample_size": message.sample_size,
+            "class_imbalance": message.class_imbalance,
+            "model_size": message.model_size,
+            "local_entropy": message.local_entropy,
         }
 
         logging.info(
@@ -371,7 +386,7 @@ class TrustWorkloadServer(TrustWorkload):
             save_trustworthiness_reports_csv(self._trustworthiness_reports, self._experiment_name)
             if self._finish_post == True:
                 logging.info("[TW SERVER] all reports received and post OK, generating factsheet")
-                #await self._generate_factsheet(self._trust_config, self._experiment_name)
+                await self._generate_factsheet(self._trust_config, self._experiment_name)
             else:
                 self._csv_completed = True
                 logging.info(f"[TW SERVER] all reports received, waiting for finish post, csv_completed {self._csv_completed}")

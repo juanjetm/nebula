@@ -433,6 +433,9 @@ class Engine:
                 "gpu_used": message.gpu_used,
                 "energy_consumed": message.energy_consumed,
                 "sample_size": message.sample_size,
+                "class_imbalance": message.class_imbalance,
+                "model_size": message.model_size,
+                "local_entropy": message.local_entropy,
             }
 
             logging.info(f"handle_trustworthiness_message | Trigger | {report}")

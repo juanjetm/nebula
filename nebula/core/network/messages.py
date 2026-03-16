@@ -111,7 +111,10 @@ class MessagesManager:
                     "cpu_used",
                     "gpu_used",
                     "energy_consumed",
-                    "sample_size"
+                    "sample_size",
+                    "class_imbalance",
+                    "model_size",
+                    "local_entropy"
                 ],
                 "defaults": {},
             }

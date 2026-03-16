@@ -16,7 +16,7 @@ from nebula.core.models.covtype.mlp import CovtypeModelMLP
 from nebula.core.models.kddcup99.mlp import KDDCUP99ModelMLP
 from nebula.core.models.adultcensus.mlp import AdultCensusModelMLP
 from nebula.core.models.breast_cancer.mlp import BreastCancerModelMLP
-from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_models, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv, get_loss_sensitivity_score, compute_adversarial_accuracy_art,get_empirical_robustness_score,get_confidence_score,attack_success_rate
+from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_models, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv, get_loss_sensitivity_score, compute_adversarial_accuracy_art,get_empirical_robustness_score,get_confidence_score,attack_success_rate, get_entropy_list, get_avg_class_imbalance_model_size
 from nebula.addons.trustworthiness.utils import count_all_class_samples, read_csv, check_field_filled, get_all_data_entropy
 # from nebula.core.models.syscall.mlp import SyscallModelMLP
 
@@ -196,7 +196,7 @@ class Factsheet:
 
                 files_dir = f"{os.environ.get('NEBULA_LOGS_DIR')}/{scenario_name}/trustworthiness"
 
-                models_files = glob.glob(os.path.join(files_dir, "*final_model*")) # MANDAR MENSAJE
+                #models_files = glob.glob(os.path.join(files_dir, "*final_model*")) # MANDAR MENSAJE
                 #dataloaders_files = glob.glob(os.path.join(files_dir, "*train_loader*"))
                 test_dataloader_file = f"{files_dir}/participant_{participant_idx}_test_loader.pk"
                 final_model_file = f"{files_dir}/participant_{participant_idx}_final_model.pk"
@@ -210,12 +210,26 @@ class Factsheet:
                 #     get_entropy(i, scenario_name, dataloader)
                 #     i += 1
 
+
+                """
                 get_all_data_entropy(scenario_name)
 
                 with open(f"{files_dir}/entropy.json", "r") as file:
                     entropy_distribution = json.load(file)
 
                 values = np.array(list(entropy_distribution.values()))
+
+                normalized_values = (values - np.min(values)) / (np.max(values) - np.min(values))
+
+                avg_entropy = np.mean(normalized_values)
+
+                factsheet["data"]["avg_entropy"] = avg_entropy
+                """
+
+                avg_class_imbalance, avg_model_size = get_avg_class_imbalance_model_size(scenario_name)
+                entropy_distribution = get_entropy_list (scenario_name)
+
+                values = np.array(entropy_distribution)
 
                 normalized_values = (values - np.min(values)) / (np.max(values) - np.min(values))
 
@@ -231,7 +245,7 @@ class Factsheet:
                 factsheet["fairness"]["test_acc_cv"] = 1 if test_acc_cv > 1 else test_acc_cv
 
                 factsheet["system"]["avg_time_minutes"] = get_elapsed_time(start_time, end_time)
-                factsheet["system"]["avg_model_size"] = get_bytes_models(models_files)
+                factsheet["system"]["avg_model_size"] = avg_model_size
 
                 result_bytes_sent_recv = get_bytes_sent_recv(scenario_name)
                 factsheet["system"]["total_upload_bytes"] = result_bytes_sent_recv[0]
@@ -241,6 +255,7 @@ class Factsheet:
 
                 factsheet["fairness"]["selection_cv"] = 1
 
+                """
                 count_all_class_samples(scenario_name)
 
                 with open(f"{files_dir}/count_class.json", "r") as file:
@@ -249,6 +264,9 @@ class Factsheet:
                 class_samples_sizes = [x for x in class_distribution.values()]
                 class_imbalance = get_cv(list=class_samples_sizes)
                 factsheet["fairness"]["class_imbalance"] = 1 if class_imbalance > 1 else class_imbalance
+                """
+                class_imbalance_score = 1 / (1+avg_class_imbalance)
+                factsheet["fairness"]["class_imbalance"] = 1 if class_imbalance_score > 1 else class_imbalance_score
 
                 with open(final_model_file, "rb") as file:
                     lightning_model = pickle.load(file)

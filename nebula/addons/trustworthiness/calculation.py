@@ -392,6 +392,58 @@ def get_avg_loss_accuracy(scenario_name):
 
     return avg_loss, avg_accuracy, std_accuracy
 
+
+def get_avg_class_imbalance_model_size(scenario_name):
+    """
+    Calculates the mean class imbalance and model size of the nodes.
+
+    Args:
+        data_results_files (list): Files that contain the class imbalance and model size of the nodes
+
+    Returns:
+        2-tupla: The mean class imbalance mean and model size mean of the nodes.
+    """
+    total_class_imbalance = 0
+    total_model_size = 0
+
+    data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
+
+    data = read_csv(data_file)
+
+    number_files = len(data)
+
+    total_class_imbalance = data["class_imbalance"].sum()
+    total_model_size = data["model_size"].sum()
+
+    avg_class_imbalance = total_class_imbalance / number_files
+    avg_model_size = total_model_size / number_files
+
+    return avg_class_imbalance, avg_model_size
+
+
+def get_entropy_list(scenario_name):
+    """
+    Obtiene una lista con los valores de entropy de todos los nodos.
+
+    Args:
+        scenario_name (str): Nombre del escenario.
+
+    Returns:
+        list: Lista con los valores de entropy
+    """
+    data_file = os.path.join(
+        os.environ.get('NEBULA_LOGS_DIR'),
+        scenario_name,
+        "trustworthiness",
+        "data_results.csv"
+    )
+
+    data = read_csv(data_file)
+
+    entropy_list = data["local_entropy"].tolist()
+
+    return entropy_list
+
 def get_feature_importance_cv(model, test_sample):
     """
     Calculates the coefficient of variation of the feature importance.

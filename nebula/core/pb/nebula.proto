@@ -153,4 +153,7 @@ message TrustworthinessMessage {
   bool gpu_used = 14;
   double energy_consumed = 15;
   int32 sample_size = 16;
+  float class_imbalance = 17;
+  int64 model_size = 18;
+  float local_entropy = 19;
 }
