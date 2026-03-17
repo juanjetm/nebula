@@ -280,13 +280,13 @@ class Factsheet:
                 elif dataset == "Covtype" and model == "MLP":
                     model = CovtypeModelMLP()
                     num_classes_temp = 7
-                elif dataset == "KDDCUP99" and algorithm == "MLP":
+                elif dataset == "KDDCUP99" and model == "MLP":
                     model = KDDCUP99ModelMLP()
                     num_classes_temp = 23
                 elif dataset == "AdultCensus" and model == "MLP":
                     model = AdultCensusModelMLP()
                     num_classes_temp = 2
-                elif dataset == "BreastCancer" and algorithm == "MLP":
+                elif dataset == "BreastCancer" and model == "MLP":
                     model = BreastCancerModelMLP()
                     num_classes_temp = 2
                 # elif dataset == "Syscall" and model == "MLP":

@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from nebula.addons.functions import print_msg_box
 from nebula.core.nebulaevents import ExperimentFinishEvent, RoundEndEvent, TestMetricsEvent
 from nebula.core.eventmanager import EventManager
@@ -349,6 +350,36 @@ class TrustWorkloadServer(TrustWorkload):
         else:
             self._finish_post = True
             logging.info("[TW SERVER] finish_experiment_role_post_actions called, waiting for trustworthiness reports")
+            await asyncio.sleep(60)
+            if self._trustworthiness_reports != None and self._csv_completed == False:
+                save_trustworthiness_reports_csv(self._trustworthiness_reports, self._experiment_name)
+            bytes_sent, bytes_recv, accuracy, loss = load_data_results_participant(
+                self._experiment_name,
+                self._idx,
+            )
+
+            role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size = load_emissions_participant(
+                self._experiment_name,
+                self._idx,
+            )
+
+            logging.info(
+                "[TW SERVER] local server report added for node_id=%s",
+                str(self._idx),
+            )
+
+            class_imbalance = get_class_imbalance_local(self._idx, experiment_name)
+            logging.info("class_imbalance=%s", class_imbalance)
+
+            model_size = get_bytes_final_model_id(self._idx, experiment_name)
+            logging.info("model_size=%s", model_size)
+
+            local_entropy = get_local_entropy(self._idx, experiment_name)
+            logging.info("local_entropy=%s", local_entropy)
+
+            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss, class_imbalance, model_size, local_entropy)
+            save_emissions_csv_cfl(self._experiment_name, self._idx, role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size)
+            await self._generate_factsheet(trust_config, experiment_name)
         #await self._generate_factsheet(trust_config, experiment_name)
 
     async def register_trustworthiness_report(self, source, message):
@@ -384,12 +415,8 @@ class TrustWorkloadServer(TrustWorkload):
             logging.info("[TW SERVER] all reports received, generating csv")
             #GENERAR CSV
             save_trustworthiness_reports_csv(self._trustworthiness_reports, self._experiment_name)
-            if self._finish_post == True:
-                logging.info("[TW SERVER] all reports received and post OK, generating factsheet")
-                await self._generate_factsheet(self._trust_config, self._experiment_name)
-            else:
-                self._csv_completed = True
-                logging.info(f"[TW SERVER] all reports received, waiting for finish post, csv_completed {self._csv_completed}")
+            self._csv_completed = True
+            logging.info(f"[TW SERVER] all reports received, waiting for finish post, csv_completed {self._csv_completed}")
 
 
     async def _generate_factsheet(self, trust_config, experiment_name):
@@ -516,7 +543,7 @@ class Trustworthiness():
         sample_size = self.tw.get_sample_size()
 
         # Last operations
-        save_results_csv(self._experiment_name, self._idx, bytes_sent, bytes_recv, last_loss, last_accuracy)
+        save_results_csv(self._experiment_name, self._idx, bytes_sent, bytes_recv, last_accuracy, last_loss)
         stop_emissions_tracking_and_save(self._tracker, self._trust_dir_files, f'emissions_{self._idx}.csv', self._role.value, workload, sample_size, self._idx)
         #save_confirmation_csv(self._experiment_name, self._idx)
         await self.tw.finish_experiment_role_post_actions(self._trust_config, self._experiment_name)
