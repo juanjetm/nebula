@@ -267,7 +267,7 @@ class TrustWorkloadServer(TrustWorkload):
         self._trust_files_route = trust_files_route
         self._per_round = None
         self._trustworthiness_reports = {}
-        self._expected_reports = 2
+        self._expected_reports = int(self._engine.config.participant["scenario_args"]["n_nodes"])-1
         self._trust_config = None
         self._csv_completed = False
         self._finish_post = False
