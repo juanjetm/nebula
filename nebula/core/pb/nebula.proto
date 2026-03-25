@@ -27,6 +27,7 @@ message Wrapper {
     OfferMessage offer_message = 10;
     LinkMessage link_message = 11;
     TrustworthinessMessage trustworthiness_message = 12;
+    TrustscoresMessage trustscores_message = 13;
   }
 }
 
@@ -156,4 +157,14 @@ message TrustworthinessMessage {
   float class_imbalance = 17;
   int64 model_size = 18;
   float local_entropy = 19;
+}
+
+message TrustscoresMessage {
+  enum Action {
+    SHARE = 0;
+  }
+
+  Action action = 1;
+  string node_id = 2;
+  string trust_report_json = 3;
 }

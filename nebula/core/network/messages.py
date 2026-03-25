@@ -117,6 +117,14 @@ class MessagesManager:
                     "local_entropy"
                 ],
                 "defaults": {},
+            },
+            "trustscores": {
+                "parameters": [
+                    "action",
+                    "node_id",
+                    "trust_report_json"
+                ],
+                "defaults": {},
             }
             # Add additional message types here
         }
@@ -146,7 +154,7 @@ class MessagesManager:
             addr_from (str): Address from which the message was received.
         """
         not_processing_messages = {"control_message", "connection_message"}
-        special_processing_messages = {"discovery_message", "federation_message", "model_message"}
+        special_processing_messages = {"discovery_message", "federation_message", "model_message", "trustscores_message"}
 
         try:
             message_wrapper = nebula_pb2.Wrapper()
@@ -224,6 +232,8 @@ class MessagesManager:
             and message_wrapper.federation_message.action
             == nebula_pb2.FederationMessage.Action.Value("FEDERATION_START")
         ):
+            return True
+        if message_type == "trustscores_message":
             return True
 
     def create_message(self, message_type: str, action: str = "", *args, **kwargs):

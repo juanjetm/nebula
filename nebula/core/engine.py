@@ -449,6 +449,29 @@ class Engine:
         except Exception as e:
             logging.exception(f"Error handling trustworthiness message: {e}")
 
+    async def _trustscores_share_callback(self, source, message):
+        try:
+            report = {
+                "source": source,
+                "node_id": message.node_id,
+                "trust_report_json": message.trust_report_json,
+            }
+
+            logging.info(f"handle_trustscores_message | Trigger | {report}")
+
+            trust_handler = getattr(self, "trustworthiness", None)
+            if trust_handler is None:
+                trust_handler = getattr(self, "trustscores", None)
+
+            if trust_handler is not None:
+                if hasattr(trust_handler, "tw") and trust_handler.tw is not None:
+                    if hasattr(trust_handler.tw, "register_trustscores_report"):
+                        await trust_handler.tw.register_trustscores_report(source, message)
+
+
+        except Exception as e:
+            logging.exception(f"Error handling trustscores message: {e}")
+
     """                                                     ##############################
                                                             #    REGISTERING CALLBACKS   #
                                                             ##############################

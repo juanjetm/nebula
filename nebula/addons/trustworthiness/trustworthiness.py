@@ -9,7 +9,7 @@ from nebula.config.config import Config
 from nebula.core.engine import Engine
 import pickle
 from nebula.addons.trustworthiness.calculation import stop_emissions_tracking_and_save, get_bytes_final_model_id, get_class_imbalance_local
-from nebula.addons.trustworthiness.utils import save_results_csv, save_confirmation_csv, save_trustworthiness_reports_csv, load_emissions_participant, load_data_results_participant, save_results_csv_cfl, save_emissions_csv_cfl, save_class_count_per_participant, get_local_entropy
+from nebula.addons.trustworthiness.utils import save_results_csv, save_confirmation_csv, save_trustworthiness_reports_csv, load_emissions_participant, load_data_results_participant, save_results_csv_cfl, save_emissions_csv_cfl, save_class_count_per_participant, get_local_entropy, load_trust_report_json_dumped, create_local_trust_report_copy, accumulate_weighted_trustscores, build_weighted_trustscores_report, save_trust_report_json
 from codecarbon import EmissionsTracker
 from nebula.addons.trustworthiness.per_round_metrics import PerRoundTrustMetrics
 from datetime import datetime
@@ -53,6 +53,10 @@ class TrustWorkload(ABC):
         raise NotImplementedError
 
 class TrustWorkloadTrainer(TrustWorkload):
+    TRUSTSCORES_WAIT_TIMEOUT_SECONDS = 10
+    TRUSTSCORES_FORWARDING_GRACE_SECONDS = 1.0
+    TRUSTSCORES_FORWARDING_GRACE_MARGIN_SECONDS = 0.25
+
     def __init__(self, engine, idx, trust_files_route):
         self._engine: Engine = engine
         self._workload = 'training'
@@ -66,9 +70,20 @@ class TrustWorkloadTrainer(TrustWorkload):
         self._per_round = None
         self._start_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         self._end_time = None
+        self._expected_trustscores_sources = set()
+        self._expected_trustscores_reports = int(self._engine.config.participant["scenario_args"]["n_nodes"]) - 1
+        self._received_trustscores_node_ids = set()
+        self._trustscores_wait_event = None
+        self._trustscores_score_accumulator = {}
+        self._trustscores_weight_accumulator = {}
+        self._trustscores_template_report = None
+        self._trustscores_local_copy_path = None
+        self._trustscores_local_report_initialized = False
 
     async def init(self, experiment_name):
         self._experiment_name = experiment_name
+        #self._reset_trustscores_exchange_state()
+        self._trustscores_wait_event = asyncio.Event()
         await EventManager.get_instance().subscribe_node_event(RoundEndEvent, self._process_round_end_event)
         await EventManager.get_instance().subscribe_addonevent(TestMetricsEvent, self._process_test_metrics_event)
         await EventManager.get_instance().subscribe_node_event(ExperimentFinishEvent, self._process_experiment_finished_event)
@@ -86,7 +101,7 @@ class TrustWorkloadTrainer(TrustWorkload):
 
 
     async def _create_pk_files(self, experiment_name):
-        # Save data to local files to calculate the trustworthyness
+        # Save data to local files to compute trustworthiness
         train_loader_filename = f"/nebula/app/logs/{experiment_name}/trustworthiness/participant_{self._idx}_train_loader.pk"
         test_loader_filename = f"/nebula/app/logs/{experiment_name}/trustworthiness/participant_{self._idx}_test_loader.pk"
         self._engine.trainer.datamodule.setup(stage="fit")
@@ -118,8 +133,9 @@ class TrustWorkloadTrainer(TrustWorkload):
     async def finish_experiment_role_post_actions(self, trust_config, experiment_name):
         federation = trust_config.get("federation")  # "CFL" or "DFL"
 
-        if federation == "DFL" or (federation == "SDFL" and self._idx == 0):
+        if federation == "DFL":
             self._end_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            await self._prepare_trustscores_exchange()
             data_file_path = os.path.join(os.environ.get('NEBULA_CONFIG_DIR'), experiment_name, "scenario.json")
             with open(data_file_path, 'r') as data_file:
                 data = json.load(data_file)
@@ -148,10 +164,19 @@ class TrustWorkloadTrainer(TrustWorkload):
                     "federation_complexity": float(data["federation_complexity"])
                 }
 
-            compute_trust_local_dfl(experiment_name, self._idx, trust_config, self._start_time, self._end_time)
-
-            trust_metric_manager = TrustMetricManager(self._start_time, federation, self._idx)
-            trust_metric_manager.evaluate_participant(experiment_name, weights, self._idx, use_weights=True)
+            json_dumped = await asyncio.to_thread(
+                self._compute_local_trustscores_report,
+                experiment_name,
+                trust_config,
+                weights,
+                federation,
+            )
+            logging.info("JSON_dumped=%s", json_dumped)
+            self._initialize_local_trustscores_aggregation(experiment_name)
+            await self._share_trustscores_report(json_dumped)
+            await self._wait_for_trustscores_reports()
+            await self._wait_for_trustscores_forwarding_drain()
+            self._finalize_trustscores_aggregation()
         elif federation == "SDFL":
             pass
         else:
@@ -227,10 +252,268 @@ class TrustWorkloadTrainer(TrustWorkload):
                 allow_after_learning_finished=True,
             )
 
+    def _compute_local_trustscores_report(self, experiment_name, trust_config, weights, federation) -> str:
+        compute_trust_local_dfl(experiment_name, self._idx, trust_config, self._start_time, self._end_time)
+
+        trust_metric_manager = TrustMetricManager(self._start_time, federation, self._idx)
+        trust_metric_manager.evaluate_participant(experiment_name, weights, self._idx, use_weights=True)
+
+        return load_trust_report_json_dumped(experiment_name, self._idx)
+    """
+    def _reset_trustscores_exchange_state(self):
+        self._expected_trustscores_sources = set()
+        self._received_trustscores_node_ids = set()
+        self._trustscores_score_accumulator = {}
+        self._trustscores_weight_accumulator = {}
+        self._trustscores_template_report = None
+        self._trustscores_local_copy_path = None
+        self._trustscores_local_report_initialized = False
+    """
+    def _is_reputation_enabled(self) -> bool:
+        defense_args = self._engine.config.participant.get("defense_args", {})
+        reputation_config = defense_args.get("reputation", {})
+        return bool(reputation_config.get("enabled", False))
+
+    def _get_reputation_system(self):
+        return getattr(self._engine, "_reputation", None)
+
+    def _get_trustscores_weight_for_source(self, source: str, node_id: int | str) -> float:
+        if not self._is_reputation_enabled():
+            return 1.0
+
+        reputation_system = self._get_reputation_system()
+        if reputation_system is None:
+            logging.warning(
+                "[TW DFL] Reputation is enabled but the reputation system is not available. Using fallback weight=1.0 for node_id=%s source=%s",
+                node_id,
+                source,
+            )
+            return 1.0
+
+        reputation_entry = reputation_system.reputation.get(source)
+        if reputation_entry is None or reputation_entry.get("reputation") is None:
+            logging.warning(
+                "[TW DFL] No reputation value available for node_id=%s source=%s. Using fallback weight=1.0",
+                node_id,
+                source,
+            )
+            return 1.0
+
+        return float(reputation_entry["reputation"])
+
+    def _get_trustscores_peer_weights_from_reputation(self) -> dict:
+        if not self._is_reputation_enabled():
+            return {}
+
+        reputation_system = self._get_reputation_system()
+        if reputation_system is None:
+            return {}
+
+        peer_weights = {}
+        for addr, data in reputation_system.reputation.items():
+            reputation_value = data.get("reputation")
+            if addr == self._engine.addr or reputation_value is None:
+                continue
+            peer_weights[addr] = float(reputation_value)
+        return peer_weights
+
+    def _get_trustscores_self_weight(self) -> float:
+        return 1.0
+
+    def _log_trustscores_node_weights(self):
+        if not self._is_reputation_enabled():
+            logging.info(
+                "[TW DFL] Reputation system disabled. trustscores weights fallback to 1.0 for all nodes"
+            )
+            return
+
+        peer_weight_map = self._get_trustscores_peer_weights_from_reputation()
+        if not peer_weight_map:
+            logging.info(
+                "[TW DFL] Reputation system enabled, but no peer reputation weights are available yet. Falling back to 1.0 when needed"
+            )
+            return
+
+        logging.info(
+            "[TW DFL] Local trustscores weights from reputation | self_node_id=%s self_weight=%s peer_weights_by_addr=%s",
+            self._idx,
+            self._get_trustscores_self_weight(),
+            peer_weight_map,
+        )
+
+        for addr, weight in sorted(peer_weight_map.items()):
+            logging.info(
+                "[TW DFL] Local trustscores weight from reputation | self_node_id=%s target_addr=%s weight=%s",
+                self._idx,
+                addr,
+                weight,
+            )
+
+    def _initialize_local_trustscores_aggregation(self, experiment_name: str):
+        if self._trustscores_local_report_initialized:
+            return
+
+        trust_report_template, copy_path = create_local_trust_report_copy(experiment_name, self._idx)
+        self._trustscores_template_report = trust_report_template
+        self._trustscores_local_copy_path = copy_path
+        accumulate_weighted_trustscores(
+            report=trust_report_template,
+            weight=self._get_trustscores_self_weight(),
+            score_accumulator=self._trustscores_score_accumulator,
+            weight_accumulator=self._trustscores_weight_accumulator,
+        )
+        self._trustscores_local_report_initialized = True
+        logging.info(
+            "[TW DFL] Local trustscores copy created at %s and accumulator initialized with local weight=%s",
+            copy_path,
+            self._get_trustscores_self_weight(),
+        )
+
+    async def _prepare_trustscores_exchange(self):
+        cm = CommunicationsManager.get_instance()
+        self._expected_trustscores_sources = await cm.get_all_addrs_current_connections(only_direct=True)
+
+        if self._trustscores_wait_event is None:
+            self._trustscores_wait_event = asyncio.Event()
+        self._trustscores_wait_event.clear()
+
+        if len(self._received_trustscores_node_ids) >= self._expected_trustscores_reports:
+            self._trustscores_wait_event.set()
+
+        if self._expected_trustscores_reports <= 0:
+            self._trustscores_wait_event.set()
+            logging.info("[TW DFL] No remote trustscores reports expected")
+            return
+
+        logging.info(
+            "[TW DFL] Expecting %s trustscores reports. Initial neighbors=%s",
+            self._expected_trustscores_reports,
+            sorted(self._expected_trustscores_sources),
+        )
+        self._log_trustscores_node_weights()
+
+    async def _share_trustscores_report(self, trust_report_json: str):
+        cm = CommunicationsManager.get_instance()
+        neighbors = self._expected_trustscores_sources.copy()
+
+        if not neighbors:
+            logging.info("[TW DFL] No direct neighbors available to share trustscores")
+            return
+
+        message = cm.create_message(
+            "trustscores",
+            action="share",
+            node_id=str(self._idx),
+            trust_report_json=trust_report_json,
+        )
+
+        logging.info("[TW DFL] Sharing trustscores report with neighbors=%s", sorted(neighbors))
+        for neighbor in neighbors:
+            await cm.send_message(
+                neighbor,
+                message,
+                message_type="trustscores",
+                allow_after_learning_finished=True,
+            )
+
+    async def _wait_for_trustscores_reports(self):
+        if self._trustscores_wait_event is None:
+            return
+
+        try:
+            await asyncio.wait_for(
+                self._trustscores_wait_event.wait(),
+                timeout=self.TRUSTSCORES_WAIT_TIMEOUT_SECONDS,
+            )
+            logging.info(
+                "[TW DFL] Trustscores exchange complete (%s/%s)",
+                len(self._received_trustscores_node_ids),
+                self._expected_trustscores_reports,
+            )
+        except asyncio.TimeoutError:
+            logging.warning(
+                "[TW DFL] Timeout waiting trustscores reports. Received=%s/%s missing=%s",
+                len(self._received_trustscores_node_ids),
+                self._expected_trustscores_reports,
+                self._expected_trustscores_reports - len(self._received_trustscores_node_ids),
+            )
+
+    async def _wait_for_trustscores_forwarding_drain(self):
+        if not self._expected_trustscores_sources:
+            return
+
+        cm = CommunicationsManager.get_instance()
+        forwarder = getattr(cm, "forwarder", None)
+        forwarder_interval = getattr(forwarder, "interval", 0)
+        messages_interval = getattr(forwarder, "messages_interval", 0)
+        forwarding_grace = max(
+            self.TRUSTSCORES_FORWARDING_GRACE_SECONDS,
+            float(forwarder_interval) + float(messages_interval) + self.TRUSTSCORES_FORWARDING_GRACE_MARGIN_SECONDS,
+        )
+
+        logging.info(
+            "[TW DFL] Waiting %.2fs to drain forwarded trustscores messages before shutdown",
+            forwarding_grace,
+        )
+        await asyncio.sleep(forwarding_grace)
+
+    def _finalize_trustscores_aggregation(self):
+        if self._trustscores_template_report is None or self._trustscores_local_copy_path is None:
+            logging.warning("[TW DFL] Skipping weighted trustscores write because local copy/template is not available")
+            return
+
+        aggregated_report = build_weighted_trustscores_report(
+            template_report=self._trustscores_template_report,
+            score_accumulator=self._trustscores_score_accumulator,
+            weight_accumulator=self._trustscores_weight_accumulator,
+        )
+        save_trust_report_json(self._trustscores_local_copy_path, aggregated_report)
+        logging.info(
+            "[TW DFL] Weighted trustscores written to local copy=%s",
+            self._trustscores_local_copy_path,
+        )
+
+    async def register_trustscores_report(self, source, message):
+        if str(message.node_id) == str(self._idx):
+            logging.info("[TW DFL] Ignoring own trustscores report from %s", source)
+            return
+
+        if str(message.node_id) in self._received_trustscores_node_ids:
+            logging.info(
+                "[TW DFL] Ignoring duplicated trustscores report from node_id=%s source=%s",
+                message.node_id,
+                source,
+            )
+            return
+
+        trust_report = json.loads(message.trust_report_json)
+        remote_weight = self._get_trustscores_weight_for_source(source, message.node_id)
+        accumulate_weighted_trustscores(
+            report=trust_report,
+            weight=remote_weight,
+            score_accumulator=self._trustscores_score_accumulator,
+            weight_accumulator=self._trustscores_weight_accumulator,
+        )
+        logging.info(
+            "[TW DFL] Trustscores report received from node_id=%s source=%s accumulated_with_weight=%s",
+            message.node_id,
+            source,
+            remote_weight,
+        )
+
+        self._received_trustscores_node_ids.add(str(message.node_id))
+        logging.info(
+            "[TW DFL] Trustscores progress %s/%s",
+            len(self._received_trustscores_node_ids),
+            self._expected_trustscores_reports,
+        )
+        if len(self._received_trustscores_node_ids) >= self._expected_trustscores_reports:
+            self._trustscores_wait_event.set()
+
     async def _process_round_end_event(self, ree: RoundEndEvent):
         scenario_name = self._engine.config.participant["scenario_args"]["name"]
         train_model = f"/nebula/app/logs/{scenario_name}/trustworthiness/participant_{self._idx}_train_model.pk"
-        # Save the train model in trustworthy dir
+        # Save the training model in the trustworthiness directory
         with open(train_model, 'wb') as f:
             pickle.dump(self._engine.trainer.model, f)
 
@@ -289,7 +572,7 @@ class TrustWorkloadServer(TrustWorkload):
         await self._per_round.setup(self._engine)
 
     async def _create_pk_files(self, experiment_name):
-        # Save data to local files to calculate the trustworthyness
+        # Save data to local files to compute trustworthiness
         test_loader_filename = f"/nebula/app/logs/{experiment_name}/trustworthiness/participant_{self._idx}_test_loader.pk"
         self._engine.trainer.datamodule.setup(stage="test")
         test_loader = self._engine.trainer.datamodule.test_dataloader()[0]
@@ -413,7 +696,7 @@ class TrustWorkloadServer(TrustWorkload):
 
         if (len(self._trustworthiness_reports) >= self._expected_reports):
             logging.info("[TW SERVER] all reports received, generating csv")
-            #GENERAR CSV
+            # Generate CSV files
             save_trustworthiness_reports_csv(self._trustworthiness_reports, self._experiment_name)
             self._csv_completed = True
             logging.info(f"[TW SERVER] all reports received, waiting for finish post, csv_completed {self._csv_completed}")
@@ -475,7 +758,7 @@ class TrustWorkloadServer(TrustWorkload):
     async def _process_experiment_finished_event(self, efe:ExperimentFinishEvent):
         model_file = f"/nebula/app/logs/{self._experiment_name}/trustworthiness/participant_{self._engine.idx}_final_model.pk"
 
-        # Save model in trustworthy dir
+        # Save the model in the trustworthiness directory
         with open(model_file, 'wb') as f:
             pickle.dump(self._engine.trainer.model, f)
 
@@ -503,12 +786,12 @@ class Trustworthiness():
 
         self._engine.trustworthiness = self
 
-        # EmissionsTracker from codecarbon to measure the emissions during the aggregation step in the server
+        # EmissionsTracker from CodeCarbon to measure emissions during the server aggregation step
         self._tracker= EmissionsTracker(tracking_mode='process', log_level='error', save_to_file=False)
 
     @property
     def tw(self):
-        """TrustWorkload depending on the node Role"""
+        """TrustWorkload implementation chosen according to the node role."""
         return self._trust_workload
 
     async def start(self):
@@ -520,7 +803,7 @@ class Trustworthiness():
     async def _create_trustworthiness_directory(self):
         import os
         trust_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), self._experiment_name, "trustworthiness")
-        # Create a directory to save files to calcutate trust
+        # Create a directory to store files used to compute trust
         os.makedirs(trust_dir, exist_ok=True)
         os.chmod(trust_dir, 0o777)
 
@@ -534,15 +817,15 @@ class Trustworthiness():
 
         last_loss, last_accuracy = self.tw.get_metrics()
 
-        # Get bytes send/received from reporter
+        # Get sent/received bytes from the reporter
         bytes_sent = self._engine.reporter.acc_bytes_sent
         bytes_recv = self._engine.reporter.acc_bytes_recv
 
-        # Get TrustWorkload info
+        # Get TrustWorkload information
         workload = self.tw.get_workload()
         sample_size = self.tw.get_sample_size()
 
-        # Last operations
+        # Final operations
         save_results_csv(self._experiment_name, self._idx, bytes_sent, bytes_recv, last_accuracy, last_loss)
         stop_emissions_tracking_and_save(self._tracker, self._trust_dir_files, f'emissions_{self._idx}.csv', self._role.value, workload, sample_size, self._idx)
         #save_confirmation_csv(self._experiment_name, self._idx)
@@ -555,6 +838,7 @@ class Trustworthiness():
             Role.PROXY: TrustWorkloadTrainer,
             Role.IDLE: TrustWorkloadTrainer,
             Role.TRAINER_AGGREGATOR: TrustWorkloadTrainer,
+            Role.MALICIOUS: TrustWorkloadTrainer,
             Role.SERVER: TrustWorkloadServer
         }
         trust_workload = trust_workloads.get(role)
