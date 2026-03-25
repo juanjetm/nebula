@@ -30,7 +30,7 @@ class Graphics():
         else:
             self.nebulalogger = NebulaTensorBoardLogger(scenario_start_time, f"{log_dir}", name="metrics", version=f"trust_{participant_id}", log_graph=True)
 
-    def __log_figure(self, df, pillar, color, notion_y_pos = -0.4, figsize=(10,6)):
+    def __log_figure(self, df, pillar, color, tag_root, notion_y_pos = -0.4, figsize=(10,6)):
         filtered_df = df[df['Pillar'] == pillar].copy()
 
         filtered_df.loc[:, 'Metric'] = filtered_df['Metric'].astype(str).str.replace('_', ' ')
@@ -92,14 +92,14 @@ class Graphics():
 
         plt.tight_layout()
 
-        self.nebulalogger.log_figure(ax.get_figure(), 0, f"Trust/Pillar/{pillar}")
+        self.nebulalogger.log_figure(ax.get_figure(), 0, f"{tag_root}/Pillar/{pillar}")
         plt.close()
 
-    def graphics(self):
-        results_file = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), self.scenario_name, "trustworthiness", "nebula_trust_results.json")
+    def _load_trust_results(self, results_file):
         with open(results_file, 'r') as f:
-            results = json.load(f)
+            return json.load(f)
 
+    def _log_trust_report(self, results, tag_root, all_pillars_tag, label_suffix=""):
         pillars_list = []
         notion_names = []
         notion_scores = []
@@ -133,13 +133,13 @@ class Graphics():
             "Metric Score": metric_scores
         })
 
-        self.__log_figure(df, 'robustness', "#F8D3DF")
-        self.__log_figure(df, "privacy", "#DA8D8B", -0.2)
-        self.__log_figure(df, "fairness", "#DDDDDD")
-        self.__log_figure(df, "explainability", "#FCEFC3")
-        self.__log_figure(df, "accountability", "#8FAADC", -0.3)
-        self.__log_figure(df, "architectural_soundness", "#DBB9FA", -0.3)
-        self.__log_figure(df, "sustainability", "#BBFDAF", -0.5, figsize=(12,8))
+        self.__log_figure(df, 'robustness', "#F8D3DF", tag_root)
+        self.__log_figure(df, "privacy", "#DA8D8B", tag_root, -0.2)
+        self.__log_figure(df, "fairness", "#DDDDDD", tag_root)
+        self.__log_figure(df, "explainability", "#FCEFC3", tag_root)
+        self.__log_figure(df, "accountability", "#8FAADC", tag_root, -0.3)
+        self.__log_figure(df, "architectural_soundness", "#DBB9FA", tag_root, -0.3)
+        self.__log_figure(df, "sustainability", "#BBFDAF", tag_root, -0.5, figsize=(12,8))
 
         categories = [
             "robustness",
@@ -169,108 +169,58 @@ class Graphics():
             ax.text(i, v + 0.01, f"{v:.2f}", ha='center', va='bottom', fontsize=10)
 
         name_labels = [
-            "Robustness",
-            "Privacy",
-            "Fairness",
-            "Explainability",
-            "Accountability",
-            "Architectural Soundness",
-            "Sustainability",
-            "Trust Score"
+            f"Robustness{label_suffix}",
+            f"Privacy{label_suffix}",
+            f"Fairness{label_suffix}",
+            f"Explainability{label_suffix}",
+            f"Accountability{label_suffix}",
+            f"Architectural Soundness{label_suffix}",
+            f"Sustainability{label_suffix}",
+            f"Trust Score{label_suffix}"
         ]
 
         ax.set_xticks(range(len(categories)))
         ax.set_xticklabels(name_labels, rotation=45)
 
-        self.nebulalogger.log_figure(ax.get_figure(), 0, f"Trust/AllPillars")
+        self.nebulalogger.log_figure(ax.get_figure(), 0, all_pillars_tag)
         plt.close()
+
+    def graphics(self):
+        results_file = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), self.scenario_name, "trustworthiness", "nebula_trust_results.json")
+        results = self._load_trust_results(results_file)
+        self._log_trust_report(results, "Trust", "Trust/AllPillars")
 
     def graphics_dfl(self,participant_id):
             results_file = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), self.scenario_name, "trustworthiness", f"nebula_trust_results_{participant_id}.json")
-            with open(results_file, 'r') as f:
-                results = json.load(f)
+            results = self._load_trust_results(results_file)
+            self._log_trust_report(results, "Trust", f"Trust/AllPillars_{participant_id}", label_suffix=f"_{participant_id}")
 
-            pillars_list = []
-            notion_names = []
-            notion_scores = []
-            metric_names = []
-            metric_scores = []
+    def graphics_dfl_global(self, participant_id):
+            results_file = os.path.join(
+                os.environ.get("NEBULA_LOGS_DIR"),
+                self.scenario_name,
+                "trustworthiness",
+                f"nebula_trust_results_{participant_id}_global.json",
+            )
+            results = self._load_trust_results(results_file)
+            self._log_trust_report(
+                results,
+                "TrustGlobal",
+                f"TrustGlobal/AllPillars_{participant_id}",
+                label_suffix=f"_{participant_id}",
+            )
 
-            for pillar in results["pillars"]:
-                for key, value in pillar.items():
-                    pillar_name = key
-                    if "notions" in value:
-                        for notion in value["notions"]:
-                            for notion_key, notion_value in notion.items():
-                                notion_name = notion_key
-                                notion_score = notion_value["score"]
-                                for metric in notion_value["metrics"]:
-                                    for metric_key, metric_value in metric.items():
-                                        metric_name = metric_key
-                                        metric_score = metric_value["score"]
-
-                                        pillars_list.append(pillar_name)
-                                        notion_names.append(notion_name)
-                                        notion_scores.append(notion_score)
-                                        metric_names.append(metric_name)
-                                        metric_scores.append(metric_score)
-
-            df = pd.DataFrame({
-                "Pillar": pillars_list,
-                "Notion": notion_names,
-                "Notion Score": notion_scores,
-                "Metric": metric_names,
-                "Metric Score": metric_scores
-            })
-
-            self.__log_figure(df, 'robustness', "#F8D3DF")
-            self.__log_figure(df, "privacy", "#DA8D8B", -0.2)
-            self.__log_figure(df, "fairness", "#DDDDDD")
-            self.__log_figure(df, "explainability", "#FCEFC3")
-            self.__log_figure(df, "accountability", "#8FAADC", -0.3)
-            self.__log_figure(df, "architectural_soundness", "#DBB9FA", -0.3)
-            self.__log_figure(df, "sustainability", "#BBFDAF", -0.5, figsize=(12,8))
-
-            categories = [
-                "robustness",
-                "privacy",
-                "fairness",
-                "explainability",
-                "accountability",
-                "architectural_soundness",
-                "sustainability"
-            ]
-
-            scores = [results["pillars"][i][category]["score"] for i, category in enumerate(categories)]
-
-            trust_score = results["trust_score"]
-            categories.append("trust_score")
-            scores.append(trust_score)
-
-            palette = ["#F8D3DF", "#DA8D8B", "#DDDDDD", "#FCEFC3", "#8FAADC", "#DBB9FA", "#BBFDAF", "#BF9000"]
-
-            plt.figure(figsize=(10, 8))
-            ax = sns.barplot(x=categories, y=scores, palette=palette, hue=categories, legend=False)
-            ax.set_xlabel("Pillar")
-            ax.set_ylabel("Score")
-            ax.set_title("Pillars and trust scores")
-
-            for i, v in enumerate(scores):
-                ax.text(i, v + 0.01, f"{v:.2f}", ha='center', va='bottom', fontsize=10)
-
-            name_labels = [
-                f"Robustness_{participant_id}",
-                f"Privacy_{participant_id}",
-                f"Fairness_{participant_id}",
-                f"Explainability_{participant_id}",
-                f"Accountability_{participant_id}",
-                f"Architectural Soundness_{participant_id}",
-                f"Sustainability_{participant_id}",
-                f"Trust Score_{participant_id}"
-            ]
-
-            ax.set_xticks(range(len(categories)))
-            ax.set_xticklabels(name_labels, rotation=45)
-
-            self.nebulalogger.log_figure(ax.get_figure(), 0, f"Trust/AllPillars_{participant_id}")
-            plt.close()
+    def graphics_sdfl_global(self, participant_id):
+            results_file = os.path.join(
+                os.environ.get("NEBULA_LOGS_DIR"),
+                self.scenario_name,
+                "trustworthiness",
+                "nebula_trust_results.json",
+            )
+            results = self._load_trust_results(results_file)
+            self._log_trust_report(
+                results,
+                "TrustGlobal",
+                f"TrustGlobal/AllPillars_{participant_id}",
+                label_suffix=f"_{participant_id}",
+            )

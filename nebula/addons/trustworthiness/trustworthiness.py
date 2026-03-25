@@ -16,6 +16,7 @@ from datetime import datetime
 from nebula.addons.trustworthiness.factsheet import Factsheet
 from nebula.addons.trustworthiness.metric import TrustMetricManager
 from nebula.addons.trustworthiness.dfl_local import compute_trust_local_dfl
+from nebula.addons.trustworthiness.graphics import Graphics
 import json, os
 from nebula.core.network.communications import CommunicationsManager
 
@@ -53,9 +54,9 @@ class TrustWorkload(ABC):
         raise NotImplementedError
 
 class TrustWorkloadTrainer(TrustWorkload):
-    TRUSTSCORES_WAIT_TIMEOUT_SECONDS = 10
+    TRUSTSCORES_WAIT_TIMEOUT_SECONDS = 20
     TRUSTSCORES_FORWARDING_GRACE_SECONDS = 1.0
-    TRUSTSCORES_FORWARDING_GRACE_MARGIN_SECONDS = 0.25
+    TRUSTSCORES_FORWARDING_GRACE_MARGIN_SECONDS = 1.0
 
     def __init__(self, engine, idx, trust_files_route):
         self._engine: Engine = engine
@@ -82,7 +83,7 @@ class TrustWorkloadTrainer(TrustWorkload):
 
     async def init(self, experiment_name):
         self._experiment_name = experiment_name
-        #self._reset_trustscores_exchange_state()
+        self._reset_trustscores_exchange_state()
         self._trustscores_wait_event = asyncio.Event()
         await EventManager.get_instance().subscribe_node_event(RoundEndEvent, self._process_round_end_event)
         await EventManager.get_instance().subscribe_addonevent(TestMetricsEvent, self._process_test_metrics_event)
@@ -134,51 +135,9 @@ class TrustWorkloadTrainer(TrustWorkload):
         federation = trust_config.get("federation")  # "CFL" or "DFL"
 
         if federation == "DFL":
-            self._end_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            await self._prepare_trustscores_exchange()
-            data_file_path = os.path.join(os.environ.get('NEBULA_CONFIG_DIR'), experiment_name, "scenario.json")
-            with open(data_file_path, 'r') as data_file:
-                data = json.load(data_file)
-
-                weights = {
-                    "robustness": float(data["robustness_pillar"]),
-                    "resilience_to_attacks": float(data["resilience_to_attacks"]),
-                    "algorithm_robustness": float(data["algorithm_robustness"]),
-                    "client_reliability": float(data["client_reliability"]),
-                    "privacy": float(data["privacy_pillar"]),
-                    "technique": float(data["technique"]),
-                    "uncertainty": float(data["uncertainty"]),
-                    "indistinguishability": float(data["indistinguishability"]),
-                    "fairness": float(data["fairness_pillar"]),
-                    "class_distribution": float(data["class_distribution"]),
-                    "explainability": float(data["explainability_pillar"]),
-                    "interpretability": float(data["interpretability"]),
-                    "post_hoc_methods": float(data["post_hoc_methods"]),
-                    "accountability": float(data["accountability_pillar"]),
-                    "factsheet_completeness":  float(data["factsheet_completeness"]),
-                    "architectural_soundness": float(data["architectural_soundness_pillar"]),
-                    "client_management": float(data["client_management"]),
-                    "optimization": float(data["optimization"]),
-                    "sustainability": float(data["sustainability_pillar"]),
-                    "energy_source": float(data["energy_source"]),
-                    "federation_complexity": float(data["federation_complexity"])
-                }
-
-            json_dumped = await asyncio.to_thread(
-                self._compute_local_trustscores_report,
-                experiment_name,
-                trust_config,
-                weights,
-                federation,
-            )
-            logging.info("JSON_dumped=%s", json_dumped)
-            self._initialize_local_trustscores_aggregation(experiment_name)
-            await self._share_trustscores_report(json_dumped)
-            await self._wait_for_trustscores_reports()
-            await self._wait_for_trustscores_forwarding_drain()
-            self._finalize_trustscores_aggregation()
+            await self._finish_dfl_trustscores_exchange(trust_config, experiment_name)
         elif federation == "SDFL":
-            pass
+            await self._finish_sdfl_trustscores_exchange(trust_config, experiment_name)
         else:
             cm = CommunicationsManager.get_instance()
 
@@ -252,6 +211,56 @@ class TrustWorkloadTrainer(TrustWorkload):
                 allow_after_learning_finished=True,
             )
 
+    # -------------------------------------------------------------------------
+    # DFL trustscores flow
+    # -------------------------------------------------------------------------
+
+    async def _finish_dfl_trustscores_exchange(self, trust_config, experiment_name):
+        self._end_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        await self._prepare_trustscores_exchange()
+
+        weights = self._load_local_trustscores_weights(experiment_name)
+        json_dumped = await asyncio.to_thread(
+            self._compute_local_trustscores_report,
+            experiment_name,
+            trust_config,
+            weights,
+            "DFL",
+        )
+        logging.info("JSON_dumped=%s", json_dumped)
+        self._initialize_local_trustscores_aggregation(experiment_name)
+        await self._share_trustscores_report(json_dumped)
+        await self._wait_for_trustscores_reports()
+        await self._wait_for_trustscores_forwarding_drain()
+        self._finalize_trustscores_aggregation()
+
+    # -------------------------------------------------------------------------
+    # SDFL trustscores flow
+    # -------------------------------------------------------------------------
+
+    async def _finish_sdfl_trustscores_exchange(self, trust_config, experiment_name):
+        self._end_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        await self._prepare_sdfl_trustscores_exchange()
+
+        weights = self._load_local_trustscores_weights(experiment_name)
+        local_trust_report_json = await asyncio.to_thread(
+            self._compute_local_trustscores_report,
+            experiment_name,
+            trust_config,
+            weights,
+            "DFL",
+        )
+
+        if self._is_sdfl_aggregator_node():
+            self._initialize_sdfl_global_trustscores_aggregation(experiment_name)
+
+        await self._share_sdfl_trustscores_report(local_trust_report_json)
+        await self._wait_for_sdfl_trustscores_reports()
+        await self._wait_for_sdfl_trustscores_forwarding_drain()
+
+        if self._is_sdfl_aggregator_node():
+            self._finalize_sdfl_global_trustscores_aggregation()
+
     def _compute_local_trustscores_report(self, experiment_name, trust_config, weights, federation) -> str:
         compute_trust_local_dfl(experiment_name, self._idx, trust_config, self._start_time, self._end_time)
 
@@ -259,7 +268,36 @@ class TrustWorkloadTrainer(TrustWorkload):
         trust_metric_manager.evaluate_participant(experiment_name, weights, self._idx, use_weights=True)
 
         return load_trust_report_json_dumped(experiment_name, self._idx)
-    """
+
+    def _load_local_trustscores_weights(self, experiment_name: str) -> dict:
+        data_file_path = os.path.join(os.environ.get('NEBULA_CONFIG_DIR'), experiment_name, "scenario.json")
+        with open(data_file_path, 'r') as data_file:
+            data = json.load(data_file)
+
+            return {
+                "robustness": float(data["robustness_pillar"]),
+                "resilience_to_attacks": float(data["resilience_to_attacks"]),
+                "algorithm_robustness": float(data["algorithm_robustness"]),
+                "client_reliability": float(data["client_reliability"]),
+                "privacy": float(data["privacy_pillar"]),
+                "technique": float(data["technique"]),
+                "uncertainty": float(data["uncertainty"]),
+                "indistinguishability": float(data["indistinguishability"]),
+                "fairness": float(data["fairness_pillar"]),
+                "class_distribution": float(data["class_distribution"]),
+                "explainability": float(data["explainability_pillar"]),
+                "interpretability": float(data["interpretability"]),
+                "post_hoc_methods": float(data["post_hoc_methods"]),
+                "accountability": float(data["accountability_pillar"]),
+                "factsheet_completeness": float(data["factsheet_completeness"]),
+                "architectural_soundness": float(data["architectural_soundness_pillar"]),
+                "client_management": float(data["client_management"]),
+                "optimization": float(data["optimization"]),
+                "sustainability": float(data["sustainability_pillar"]),
+                "energy_source": float(data["energy_source"]),
+                "federation_complexity": float(data["federation_complexity"]),
+            }
+
     def _reset_trustscores_exchange_state(self):
         self._expected_trustscores_sources = set()
         self._received_trustscores_node_ids = set()
@@ -268,7 +306,7 @@ class TrustWorkloadTrainer(TrustWorkload):
         self._trustscores_template_report = None
         self._trustscores_local_copy_path = None
         self._trustscores_local_report_initialized = False
-    """
+
     def _is_reputation_enabled(self) -> bool:
         defense_args = self._engine.config.participant.get("defense_args", {})
         reputation_config = defense_args.get("reputation", {})
@@ -279,25 +317,25 @@ class TrustWorkloadTrainer(TrustWorkload):
 
     def _get_trustscores_weight_for_source(self, source: str, node_id: int | str) -> float:
         if not self._is_reputation_enabled():
-            return 1.0
+            return 0.5
 
         reputation_system = self._get_reputation_system()
         if reputation_system is None:
             logging.warning(
-                "[TW DFL] Reputation is enabled but the reputation system is not available. Using fallback weight=1.0 for node_id=%s source=%s",
+                "[TW DFL] Reputation is enabled but the reputation system is not available. Using fallback weight=0.5 for node_id=%s source=%s",
                 node_id,
                 source,
             )
-            return 1.0
+            return 0.5
 
         reputation_entry = reputation_system.reputation.get(source)
         if reputation_entry is None or reputation_entry.get("reputation") is None:
             logging.warning(
-                "[TW DFL] No reputation value available for node_id=%s source=%s. Using fallback weight=1.0",
+                "[TW DFL] No reputation value available for node_id=%s source=%s. Using fallback weight=0.5",
                 node_id,
                 source,
             )
-            return 1.0
+            return 0.5
 
         return float(reputation_entry["reputation"])
 
@@ -323,14 +361,14 @@ class TrustWorkloadTrainer(TrustWorkload):
     def _log_trustscores_node_weights(self):
         if not self._is_reputation_enabled():
             logging.info(
-                "[TW DFL] Reputation system disabled. trustscores weights fallback to 1.0 for all nodes"
+                "[TW DFL] Reputation system disabled. trustscores weights fallback to 0.5 for all nodes"
             )
             return
 
         peer_weight_map = self._get_trustscores_peer_weights_from_reputation()
         if not peer_weight_map:
             logging.info(
-                "[TW DFL] Reputation system enabled, but no peer reputation weights are available yet. Falling back to 1.0 when needed"
+                "[TW DFL] Reputation system enabled, but no peer reputation weights are available yet. Falling back to 0.5 when needed"
             )
             return
 
@@ -473,7 +511,187 @@ class TrustWorkloadTrainer(TrustWorkload):
             self._trustscores_local_copy_path,
         )
 
+        graphics = Graphics(self._start_time, self._experiment_name, self._idx)
+        graphics.graphics_dfl_global(self._idx)
+
+    def _is_sdfl_aggregator_node(self) -> bool:
+        role = self._engine.rb.get_role()
+        return role in {Role.AGGREGATOR, Role.TRAINER_AGGREGATOR}
+
+    def _initialize_sdfl_global_trustscores_aggregation(self, experiment_name: str):
+        if self._trustscores_local_report_initialized:
+            return
+
+        trust_report_template = json.loads(load_trust_report_json_dumped(experiment_name, self._idx))
+        output_path = os.path.join(
+            os.environ.get("NEBULA_LOGS_DIR"),
+            experiment_name,
+            "trustworthiness",
+            "nebula_trust_results.json",
+        )
+        save_trust_report_json(output_path, trust_report_template)
+
+        self._trustscores_template_report = trust_report_template
+        self._trustscores_local_copy_path = output_path
+        accumulate_weighted_trustscores(
+            report=trust_report_template,
+            weight=1.0,
+            score_accumulator=self._trustscores_score_accumulator,
+            weight_accumulator=self._trustscores_weight_accumulator,
+        )
+        self._trustscores_local_report_initialized = True
+        logging.info(
+            "[TW SDFL] Global trustscores accumulator initialized at %s with local weight=1.0",
+            output_path,
+        )
+
+    async def _prepare_sdfl_trustscores_exchange(self):
+        cm = CommunicationsManager.get_instance()
+        self._expected_trustscores_sources = await cm.get_all_addrs_current_connections(only_direct=True)
+
+        if self._trustscores_wait_event is None:
+            self._trustscores_wait_event = asyncio.Event()
+        self._trustscores_wait_event.clear()
+
+        if len(self._received_trustscores_node_ids) >= self._expected_trustscores_reports:
+            self._trustscores_wait_event.set()
+
+        if self._expected_trustscores_reports <= 0:
+            self._trustscores_wait_event.set()
+            logging.info("[TW SDFL] No remote trustscores reports expected")
+            return
+
+        logging.info(
+            "[TW SDFL] Expecting %s trustscores reports. Initial neighbors=%s aggregator_mode=%s",
+            self._expected_trustscores_reports,
+            sorted(self._expected_trustscores_sources),
+            self._is_sdfl_aggregator_node(),
+        )
+        if self._is_sdfl_aggregator_node():
+            self._log_sdfl_trustscores_node_weights()
+
+    def _log_sdfl_trustscores_node_weights(self):
+        if not self._is_reputation_enabled():
+            logging.info(
+                "[TW SDFL] Reputation system disabled. trustscores weights fallback to 1.0 for all nodes"
+            )
+            return
+
+        peer_weight_map = self._get_trustscores_peer_weights_from_reputation()
+        if not peer_weight_map:
+            logging.info(
+                "[TW SDFL] Reputation system enabled, but no peer reputation weights are available yet. Falling back to 1.0 when needed"
+            )
+            return
+
+        logging.info(
+            "[TW SDFL] Global trustscores weights from reputation | self_node_id=%s self_weight=%s peer_weights_by_addr=%s",
+            self._idx,
+            self._get_trustscores_self_weight(),
+            peer_weight_map,
+        )
+
+        for addr, weight in sorted(peer_weight_map.items()):
+            logging.info(
+                "[TW SDFL] Global trustscores weight from reputation | self_node_id=%s target_addr=%s weight=%s",
+                self._idx,
+                addr,
+                weight,
+            )
+
+    async def _share_sdfl_trustscores_report(self, trust_report_json: str):
+        cm = CommunicationsManager.get_instance()
+        neighbors = self._expected_trustscores_sources.copy()
+
+        if not neighbors:
+            logging.info("[TW SDFL] No direct neighbors available to share trustscores")
+            return
+
+        message = cm.create_message(
+            "trustscores",
+            action="share",
+            node_id=str(self._idx),
+            trust_report_json=trust_report_json,
+        )
+
+        logging.info("[TW SDFL] Sharing local trustscores report with neighbors=%s", sorted(neighbors))
+        for neighbor in neighbors:
+            await cm.send_message(
+                neighbor,
+                message,
+                message_type="trustscores",
+                allow_after_learning_finished=True,
+            )
+
+    async def _wait_for_sdfl_trustscores_reports(self):
+        if self._trustscores_wait_event is None:
+            return
+
+        try:
+            await asyncio.wait_for(
+                self._trustscores_wait_event.wait(),
+                timeout=self.TRUSTSCORES_WAIT_TIMEOUT_SECONDS,
+            )
+            logging.info(
+                "[TW SDFL] Trustscores exchange complete (%s/%s)",
+                len(self._received_trustscores_node_ids),
+                self._expected_trustscores_reports,
+            )
+        except asyncio.TimeoutError:
+            logging.warning(
+                "[TW SDFL] Timeout waiting trustscores reports. Received=%s/%s missing=%s",
+                len(self._received_trustscores_node_ids),
+                self._expected_trustscores_reports,
+                self._expected_trustscores_reports - len(self._received_trustscores_node_ids),
+            )
+
+    async def _wait_for_sdfl_trustscores_forwarding_drain(self):
+        if not self._expected_trustscores_sources:
+            return
+
+        cm = CommunicationsManager.get_instance()
+        forwarder = getattr(cm, "forwarder", None)
+        forwarder_interval = getattr(forwarder, "interval", 0)
+        messages_interval = getattr(forwarder, "messages_interval", 0)
+        forwarding_grace = max(
+            self.TRUSTSCORES_FORWARDING_GRACE_SECONDS,
+            float(forwarder_interval) + float(messages_interval) + self.TRUSTSCORES_FORWARDING_GRACE_MARGIN_SECONDS,
+        )
+
+        logging.info(
+            "[TW SDFL] Waiting %.2fs to drain forwarded trustscores messages before shutdown",
+            forwarding_grace,
+        )
+        await asyncio.sleep(forwarding_grace)
+
+    def _finalize_sdfl_global_trustscores_aggregation(self):
+        if self._trustscores_template_report is None or self._trustscores_local_copy_path is None:
+            logging.warning("[TW SDFL] Skipping global trustscores write because the template/output is not available")
+            return
+
+        aggregated_report = build_weighted_trustscores_report(
+            template_report=self._trustscores_template_report,
+            score_accumulator=self._trustscores_score_accumulator,
+            weight_accumulator=self._trustscores_weight_accumulator,
+        )
+        save_trust_report_json(self._trustscores_local_copy_path, aggregated_report)
+        logging.info(
+            "[TW SDFL] Global weighted trustscores written to %s",
+            self._trustscores_local_copy_path,
+        )
+
+        graphics = Graphics(self._start_time, self._experiment_name, self._idx)
+        graphics.graphics_sdfl_global(self._idx)
+
     async def register_trustscores_report(self, source, message):
+        federation = self._engine.config.participant["trust_args"]["scenario"].get("federation")
+        if federation == "SDFL":
+            await self._register_sdfl_trustscores_report(source, message)
+            return
+
+        await self._register_dfl_trustscores_report(source, message)
+
+    async def _register_dfl_trustscores_report(self, source, message):
         if str(message.node_id) == str(self._idx):
             logging.info("[TW DFL] Ignoring own trustscores report from %s", source)
             return
@@ -504,6 +722,50 @@ class TrustWorkloadTrainer(TrustWorkload):
         self._received_trustscores_node_ids.add(str(message.node_id))
         logging.info(
             "[TW DFL] Trustscores progress %s/%s",
+            len(self._received_trustscores_node_ids),
+            self._expected_trustscores_reports,
+        )
+        if len(self._received_trustscores_node_ids) >= self._expected_trustscores_reports:
+            self._trustscores_wait_event.set()
+
+    async def _register_sdfl_trustscores_report(self, source, message):
+        if str(message.node_id) == str(self._idx):
+            logging.info("[TW SDFL] Ignoring own trustscores report from %s", source)
+            return
+
+        if str(message.node_id) in self._received_trustscores_node_ids:
+            logging.info(
+                "[TW SDFL] Ignoring duplicated trustscores report from node_id=%s source=%s",
+                message.node_id,
+                source,
+            )
+            return
+
+        if self._is_sdfl_aggregator_node():
+            trust_report = json.loads(message.trust_report_json)
+            remote_weight = self._get_trustscores_weight_for_source(source, message.node_id)
+            accumulate_weighted_trustscores(
+                report=trust_report,
+                weight=remote_weight,
+                score_accumulator=self._trustscores_score_accumulator,
+                weight_accumulator=self._trustscores_weight_accumulator,
+            )
+            logging.info(
+                "[TW SDFL] Trustscores report received from node_id=%s source=%s accumulated_with_weight=%s",
+                message.node_id,
+                source,
+                remote_weight,
+            )
+        else:
+            logging.info(
+                "[TW SDFL] Trustscores report received from node_id=%s source=%s forwarding_only=True",
+                message.node_id,
+                source,
+            )
+
+        self._received_trustscores_node_ids.add(str(message.node_id))
+        logging.info(
+            "[TW SDFL] Trustscores progress %s/%s",
             len(self._received_trustscores_node_ids),
             self._expected_trustscores_reports,
         )
