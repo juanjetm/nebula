@@ -48,43 +48,30 @@ def compute_trust_local_dfl(experiment_name, participant_idx, data, start_time, 
         aggregation_algorithm = data["agg_algorithm"]
         n_rounds = int(data["rounds"])
         attack = data["attack_params"]["attacks"]
-        if attack != "No Attack":
-            if attack == "Model Poisoning":
-                poisoned_node_percent = int(data["attack_params"]["poisoned_node_percent"])
-                poisoned_sample_percent = 0
-                poisoned_noise_percent = int(data["attack_params"]["poisoned_noise_percent"])
-            elif attack == "Model Poisoning":
-                poisoned_node_percent = int(data["attack_params"]["poisoned_node_percent"])
-                poisoned_sample_percent = int(data["attack_params"]["poisoned_sample_percent"])
-                poisoned_noise_percent = int(data["attack_params"]["poisoned_noise_percent"])
-            else:
-                poisoned_node_percent = 0
-                poisoned_sample_percent = 0
-                poisoned_noise_percent = 0
-        else:
-            poisoned_node_percent = 0
-            poisoned_sample_percent = 0
-            poisoned_noise_percent = 0
-        with_reputation = data["reputation"]["enabled"]
-        is_dynamic_topology = False # data["is_dynamic_topology"]
-        is_dynamic_aggregation = False # data["is_dynamic_aggregation"]
-        target_aggregation = False # data["target_aggregation"]
-        """
-        if attack != "No Attack" and with_reputation == True and is_dynamic_aggregation == True:
-            background = f"For the project setup, the most important aspects are the following: The federation architecture is {federation}, involving {n_nodes} clients, the dataset used is {dataset}, the learning algorithm is {algorithm}, the aggregation algorithm is {aggregation_algorithm} and the number of rounds is {n_rounds}. In addition, the type of attack used against the clients is {attack}, where the percentage of attacked nodes is {poisoned_node_percent}, the percentage of attacked samples of each node is {poisoned_sample_percent}, and the percent of poisoned noise is {poisoned_noise_percent}. A reputation-based defence with a dynamic aggregation based on the aggregation algorithm {target_aggregation} is used, and the trustworthiness of the project is desired."
 
-        elif attack != "No Attack" and with_reputation == True and is_dynamic_topology == True:
-            background = f"For the project setup, the most important aspects are the following: The federation architecture is {federation}, involving {n_nodes} clients, the dataset used is {dataset}, the learning algorithm is {algorithm}, the aggregation algorithm is {aggregation_algorithm} and the number of rounds is {n_rounds}. In addition, the type of attack used against the clients is {attack}, where the percentage of attacked nodes is {poisoned_node_percent}, the percentage of attacked samples of each node is {poisoned_sample_percent}, and the percent of poisoned noise is {poisoned_noise_percent}. A reputation-based defence with a dynamic topology is used, and the trustworthiness of the project is desired."
+        attack_params = data.get("attack_params", {})
+
+        poisoned_node_percent = int(attack_params.get("poisoned_node_percent", 0) or 0)
+        poisoned_sample_percent = int(attack_params.get("poisoned_sample_percent", 0) or 0)
+        poisoned_noise_percent = float(attack_params.get("poisoned_noise_percent", 0) or 0)
+
+        with_reputation = data["reputation"]["enabled"]
+        topology = data["topology"]
+
+        if attack != "No Attack" and with_reputation == True:
+            background = f"For the project setup, the most important aspects are the following: The federation architecture is {federation}, involving {n_nodes} clients, the dataset used is {dataset}, the learning algorithm is {algorithm}, the aggregation algorithm is {aggregation_algorithm} and the number of rounds is {n_rounds}. In addition, the type of attack used is {attack}. A reputation-based defence is used, and the trustworthiness of the project is desired."
 
         elif attack != "No Attack" and with_reputation == False:
-            background = f"For the project setup, the most important aspects are the following: The federation architecture is {federation}, involving {n_nodes} clients, the dataset used is {dataset}, the learning algorithm is {algorithm}, the aggregation algorithm is {aggregation_algorithm} and the number of rounds is {n_rounds}. In addition, the type of attack used against the clients is {attack}, where the percentage of attacked nodes is {poisoned_node_percent}, the percentage of attacked samples of each node is {poisoned_sample_percent}, and the percent of poisoned noise is {poisoned_noise_percent}. No defence mechanism is used, and the trustworthiness of the project is desired."
+            background = f"For the project setup, the most important aspects are the following: The federation architecture is {federation}, involving {n_nodes} clients, the dataset used is {dataset}, the learning algorithm is {algorithm}, the aggregation algorithm is {aggregation_algorithm} and the number of rounds is {n_rounds}. In addition, the type of attack used is {attack}. No defence mechanism is used, and the trustworthiness of the project is desired."
 
-        elif attack == "No Attack":
-            background = f"For the project setup, the most important aspects are the following: The federation architecture is {federation}, involving {n_nodes} clients, the dataset used is {dataset}, the learning algorithm is {algorithm}, the aggregation algorithm is {aggregation_algorithm} and the number of rounds is {n_rounds}. No attacks against clients are used, and the trustworthiness of the project is desired."
-        """
+        elif attack == "No Attack" and with_reputation == True:
+            background = f"For the project setup, the most important aspects are the following: The federation architecture is {federation}, involving {n_nodes} clients, the dataset used is {dataset}, the learning algorithm is {algorithm}, the aggregation algorithm is {aggregation_algorithm} and the number of rounds is {n_rounds}. No attacks are used. A reputation-based defence is used, and the trustworthiness of the project is desired."
 
-        #CAMBIAR
-        background = f"For the project setup, the most important aspects are the following: The federation architecture is {federation}, involving {n_nodes} clients, the dataset used is {dataset}, the learning algorithm is {algorithm}, the aggregation algorithm is {aggregation_algorithm} and the number of rounds is {n_rounds}. No attacks against clients are used, and the trustworthiness of the project is desired."
+        elif attack == "No Attack" and with_reputation == False:
+            background = f"For the project setup, the most important aspects are the following: The federation architecture is {federation}, involving {n_nodes} clients, the dataset used is {dataset}, the learning algorithm is {algorithm}, the aggregation algorithm is {aggregation_algorithm} and the number of rounds is {n_rounds}. No attacks are used. No defence mechanism is used, and the trustworthiness of the project is desired."
+
+        else:
+            background = f"This shouldn't be here xd"
 
         # Set project specifications
         factsheet["project"]["overview"] = data["scenario_title"]

@@ -1,5 +1,10 @@
 // Trustworthiness System Module
 const TrustworthinessManager = (function() {
+    function isTrustworthinessEnabled() {
+        const sw = document.getElementById("TrustworthinessSwitch");
+        return Boolean(sw?.checked);
+    }
+
     function initializeTrustworthinessSystem() {
         setupTrustworthinessSwitch();
         setupTrustworthinessFederationSwitch();
@@ -116,10 +121,26 @@ const TrustworthinessManager = (function() {
     }
 
     function validateWeights() {
+        if (!isTrustworthinessEnabled()) {
+            return null;
+        }
+
         if (isDFL()) {
             return validateWeightsDFL();
         }
         return validateWeightsCFL();
+    }
+
+    function getWeightValidationMessage(groupLabel, total) {
+        if (total > 100) {
+            return `[Trustworthiness] ${groupLabel} weights exceed 100%. Please review the configuration.`;
+        }
+
+        if (total < 100) {
+            return `[Trustworthiness] ${groupLabel} weights are below 100%. Please review the configuration.`;
+        }
+
+        return null;
     }
 
     function validateWeightsCFL() {
@@ -164,13 +185,15 @@ const TrustworthinessManager = (function() {
         const totalArchitecturalSoundnessNotion = architecturalSoundnessNotion1 + architecturalSoundnessNotion2;
         const totalSustainabilityNotion = sustainabilityNotion1 + sustainabilityNotion2 + sustainabilityNotion3;
 
-        if (totalPillar !== 100) return "[Trustworthiness] Check pillars weights";
-        if (totalRobustnessNotion !== 100) return "[Trustworthiness] Check robustness notions weights";
-        if (totalPrivacyNotion !== 100) return "[Trustworthiness] Check privacy notions weights";
-        if (totalFairnessNotion !== 100) return "[Trustworthiness] Check fairness notions weights";
-        if (totalExplainabilityNotion !== 100) return "[Trustworthiness] Check explainability notions weights";
-        if (totalArchitecturalSoundnessNotion !== 100) return "[Trustworthiness] Check architectural soundness notions weights";
-        if (totalSustainabilityNotion !== 100) return "[Trustworthiness] Check sustainability notions weights";
+        return (
+            getWeightValidationMessage("Pillars", totalPillar) ||
+            getWeightValidationMessage("Robustness notions", totalRobustnessNotion) ||
+            getWeightValidationMessage("Privacy notions", totalPrivacyNotion) ||
+            getWeightValidationMessage("Fairness notions", totalFairnessNotion) ||
+            getWeightValidationMessage("Explainability notions", totalExplainabilityNotion) ||
+            getWeightValidationMessage("Architectural soundness notions", totalArchitecturalSoundnessNotion) ||
+            getWeightValidationMessage("Sustainability notions", totalSustainabilityNotion)
+        );
     }
 
     function validateWeightsDFL() {
@@ -212,13 +235,15 @@ const TrustworthinessManager = (function() {
         const totalArchitecturalSoundnessNotion = architecturalSoundnessNotion1 + architecturalSoundnessNotion2;
         const totalSustainabilityNotion = sustainabilityNotion1 + sustainabilityNotion3;
 
-        if (totalPillar !== 100) return "[Trustworthiness] Check pillars weights";
-        if (totalRobustnessNotion !== 100) return "[Trustworthiness] Check robustness notions weights";
-        if (totalPrivacyNotion !== 100) return "[Trustworthiness] Check privacy notions weights";
-        if (totalFairnessNotion !== 100) return "[Trustworthiness] Check fairness notions weights";
-        if (totalExplainabilityNotion !== 100) return "[Trustworthiness] Check explainability notions weights";
-        if (totalArchitecturalSoundnessNotion !== 100) return "[Trustworthiness] Check architectural soundness notions weights";
-        if (totalSustainabilityNotion !== 100) return "[Trustworthiness] Check sustainability notions weights";
+        return (
+            getWeightValidationMessage("Pillars", totalPillar) ||
+            getWeightValidationMessage("Robustness notions", totalRobustnessNotion) ||
+            getWeightValidationMessage("Privacy notions", totalPrivacyNotion) ||
+            getWeightValidationMessage("Fairness notions", totalFairnessNotion) ||
+            getWeightValidationMessage("Explainability notions", totalExplainabilityNotion) ||
+            getWeightValidationMessage("Architectural soundness notions", totalArchitecturalSoundnessNotion) ||
+            getWeightValidationMessage("Sustainability notions", totalSustainabilityNotion)
+        );
     }
 
     function getTrustworthinessConfig() {
@@ -490,7 +515,8 @@ const TrustworthinessManager = (function() {
         initializeTrustworthinessSystem,
         getTrustworthinessConfig,
         setTrustworthinessConfig,
-        resetTrustworthinessConfig
+        resetTrustworthinessConfig,
+        validateWeights
     };
 })();
 

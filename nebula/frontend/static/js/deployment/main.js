@@ -111,7 +111,52 @@ const DeploymentManager = (function() {
             return false;
         }
 
+        const trustWeightsValidationMessage = validateTrustworthinessWeights();
+        if (trustWeightsValidationMessage) {
+            Utils.showAlert('error', trustWeightsValidationMessage);
+            return false;
+        }
+
         return true;
+    }
+
+    function validateTrustworthinessWeights() {
+        const manager = window.TrustworthinessManager || TrustworthinessManager;
+        if (manager && typeof manager.validateWeights === "function") {
+            return manager.validateWeights();
+        }
+
+        if (!manager || typeof manager.getTrustworthinessConfig !== "function") {
+            return null;
+        }
+
+        const config = manager.getTrustworthinessConfig();
+        if (!config?.enabled) {
+            return null;
+        }
+
+        const sumValues = (values) => values.reduce((sum, value) => sum + (parseFloat(value) || 0), 0);
+        const getWeightValidationMessage = (groupLabel, total) => {
+            if (total > 100) {
+                return `[Trustworthiness] ${groupLabel} weights exceed 100%. Please review the configuration.`;
+            }
+
+            if (total < 100) {
+                return `[Trustworthiness] ${groupLabel} weights are below 100%. Please review the configuration.`;
+            }
+
+            return null;
+        };
+
+        return (
+            getWeightValidationMessage("Pillars", sumValues(Object.values(config.pillars || {}))) ||
+            Object.entries(config.notions || {}).reduce((message, [groupName, weights]) => {
+                if (message) return message;
+
+                const label = `${groupName.charAt(0).toUpperCase()}${groupName.slice(1)} notions`;
+                return getWeightValidationMessage(label, sumValues(weights || []));
+            }, null)
+        );
     }
 
     function setupDatasetListeners() {

@@ -515,8 +515,8 @@ class TrustWorkloadTrainer(TrustWorkload):
         graphics.graphics_dfl_global(self._idx)
 
     def _is_sdfl_aggregator_node(self) -> bool:
-        role = self._engine.rb.get_role()
-        return role in {Role.AGGREGATOR, Role.TRAINER_AGGREGATOR}
+        effective_role = self._engine.rb.get_role_name(True)
+        return effective_role in {Role.AGGREGATOR.value, Role.TRAINER_AGGREGATOR.value}
 
     def _initialize_sdfl_global_trustscores_aggregation(self, experiment_name: str):
         if self._trustscores_local_report_initialized:
