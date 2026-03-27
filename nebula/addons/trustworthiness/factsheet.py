@@ -85,9 +85,6 @@ class Factsheet:
                     elif attack == "No Attack" and with_reputation == False:
                         background = f"For the project setup, the most important aspects are the following: The federation architecture is {federation}, involving {n_nodes} clients, the dataset used is {dataset}, the learning algorithm is {algorithm}, the aggregation algorithm is {aggregation_algorithm} and the number of rounds is {n_rounds}. No attacks are used. No defence mechanism is used, and the trustworthiness of the project is desired."
 
-                    else:
-                        background = f"This shouldn't be here xd"
-
                     # Set project specifications
                     factsheet["project"]["overview"] = data["scenario_title"]
                     factsheet["project"]["purpose"] = data["scenario_description"]
@@ -134,10 +131,6 @@ class Factsheet:
                     elif dataset == "BreastCancer" and algorithm == "MLP":
                         model = BreastCancerModelMLP()
                         num_classes_temp = 2
-                    # elif dataset == "Syscall" and algorithm == "MLP":
-                    #     model = SyscallModelMLP()
-                    # else:
-                    #     model = CIFAR10ModelCNN()
 
                     factsheet["configuration"]["learning_rate"] = model.get_learning_rate()
                     factsheet["configuration"]["trainable_param_num"] = model.count_parameters()
@@ -167,64 +160,14 @@ class Factsheet:
             try:
                 factsheet = json.load(f)
 
-                """
-                expected_total = int(factsheet.get("participants", {}).get("client_num", 0) or 0)
-                logging.info(f"[Factsheet] expected_total_nodes = {expected_total}")
-
-                data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "confirmation.csv")
-
-                data = read_csv(data_file)
-
-                number_files = len(data)
-
-                logger.info(f"number_files={number_files}")
-
-                while (number_files != expected_total):
-                    logger.info("WAIT")
-                    time.sleep(5)
-                    data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "confirmation.csv")
-                    data = read_csv(data_file)
-                    number_files = len(data)
-                    logger.info(f"number_files={number_files}")
-                    logger.info(f"expected_nodes={expected_total}")
-                """
-
-
-
                 dataset = factsheet["data"]["provenance"]
                 model = factsheet["configuration"]["training_model"]
 
                 files_dir = f"{os.environ.get('NEBULA_LOGS_DIR')}/{scenario_name}/trustworthiness"
 
-                #models_files = glob.glob(os.path.join(files_dir, "*final_model*")) # MANDAR MENSAJE
-                #dataloaders_files = glob.glob(os.path.join(files_dir, "*train_loader*"))
                 test_dataloader_file = f"{files_dir}/participant_{participant_idx}_test_loader.pk"
                 final_model_file = f"{files_dir}/participant_{participant_idx}_final_model.pk"
                 emissions_file = os.path.join(files_dir, "emissions.csv")
-
-                # # Entropy
-                # i = 0
-                # for file in dataloaders_files:
-                #     with open(file, "rb") as file:
-                #         dataloader = pickle.load(file)
-                #     get_entropy(i, scenario_name, dataloader)
-                #     i += 1
-
-
-                """
-                get_all_data_entropy(scenario_name)
-
-                with open(f"{files_dir}/entropy.json", "r") as file:
-                    entropy_distribution = json.load(file)
-
-                values = np.array(list(entropy_distribution.values()))
-
-                normalized_values = (values - np.min(values)) / (np.max(values) - np.min(values))
-
-                avg_entropy = np.mean(normalized_values)
-
-                factsheet["data"]["avg_entropy"] = avg_entropy
-                """
 
                 avg_class_imbalance, avg_model_size = get_avg_class_imbalance_model_size(scenario_name)
                 entropy_distribution = get_entropy_list (scenario_name)
@@ -255,16 +198,6 @@ class Factsheet:
 
                 factsheet["fairness"]["selection_cv"] = 1
 
-                """
-                count_all_class_samples(scenario_name)
-
-                with open(f"{files_dir}/count_class.json", "r") as file:
-                    class_distribution = json.load(file)
-
-                class_samples_sizes = [x for x in class_distribution.values()]
-                class_imbalance = get_cv(list=class_samples_sizes)
-                factsheet["fairness"]["class_imbalance"] = 1 if class_imbalance > 1 else class_imbalance
-                """
                 class_imbalance_score = 1 / (1+avg_class_imbalance)
                 factsheet["fairness"]["class_imbalance"] = 1 if class_imbalance_score > 1 else class_imbalance_score
 
@@ -273,7 +206,7 @@ class Factsheet:
 
                 if dataset == "MNIST" and model == "MLP":
                     model = MNISTModelMLP()
-                    num_classes_temp = 10 # CAMBIAR
+                    num_classes_temp = 10
                 elif dataset == "MNIST" and model == "CNN":
                     model = MNISTModelCNN()
                     num_classes_temp = 10
@@ -289,10 +222,6 @@ class Factsheet:
                 elif dataset == "BreastCancer" and model == "MLP":
                     model = BreastCancerModelMLP()
                     num_classes_temp = 2
-                # elif dataset == "Syscall" and model == "MLP":
-                #     model = SyscallModelMLP()
-                # else:
-                #     model = CIFAR10ModelCNN()
 
                 model.load_state_dict(lightning_model.state_dict())
 
@@ -302,33 +231,26 @@ class Factsheet:
                 test_sample = next(iter(test_dataloader))
 
                 lr = factsheet["configuration"]["learning_rate"]
-                value_clever = get_clever_score(model, test_sample, num_classes_temp, lr)
 
+                value_clever = get_clever_score(model, test_sample, num_classes_temp, lr)
                 factsheet["performance"]["test_clever"] = 1 if value_clever > 1 else value_clever
 
                 value_loss_sensitivity = get_loss_sensitivity_score(model, test_sample, num_classes_temp, lr)
-
                 factsheet["performance"]["test_loss_sensitivity"] = 1 if value_loss_sensitivity > 1 else value_loss_sensitivity
 
                 value_adv_accuracy = compute_adversarial_accuracy_art(model, test_dataloader, num_classes_temp, lr)
-
                 factsheet["performance"]["test_adv_accuracy"] = 1 if value_adv_accuracy > 1 else value_adv_accuracy
 
                 value_empirical_robustness = get_empirical_robustness_score(model, test_sample, num_classes_temp, lr)
-
                 factsheet["performance"]["test_empirical_robustness"] = 1 if value_empirical_robustness > 1 else value_empirical_robustness
 
                 value_confidence_score = get_confidence_score(model, test_sample)
-
                 factsheet["performance"]["test_confidence_score"] = 1 if value_confidence_score > 1 else value_confidence_score
-                attack_success_rate
 
                 value_attack_success_rate = attack_success_rate(model, test_sample)
-
                 factsheet["performance"]["test_attack_success_rate"] = 1 if value_attack_success_rate > 1 else value_attack_success_rate
 
                 feature_importance = get_feature_importance_cv(model, test_sample)
-
                 factsheet["performance"]["test_feature_importance_cv"] = 1 if feature_importance > 1 else feature_importance
 
                 # Set emissions metrics

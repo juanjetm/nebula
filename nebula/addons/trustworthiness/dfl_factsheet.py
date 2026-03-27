@@ -70,9 +70,6 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
         elif attack == "No Attack" and with_reputation == False:
             background = f"For the project setup, the most important aspects are the following: The federation architecture is {federation}, involving {n_nodes} clients, the dataset used is {dataset}, the learning algorithm is {algorithm}, the aggregation algorithm is {aggregation_algorithm} and the number of rounds is {n_rounds}. No attacks are used. No defence mechanism is used, and the trustworthiness of the project is desired."
 
-        else:
-            background = f"This shouldn't be here xd"
-
         # Set project specifications
         factsheet["project"]["overview"] = data["scenario_title"]
         factsheet["project"]["purpose"] = data["scenario_description"]
@@ -127,7 +124,6 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
         files_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), experiment_name, "trustworthiness")
 
         train_model_file = os.path.join(files_dir, f"participant_{participant_idx}_final_model.pk")
-        #train_model_file = os.path.join(files_dir, f"participant_{participant_idx}_train_model.pk")
         test_dataloader_file = os.path.join(files_dir, f"participant_{participant_idx}_test_loader.pk")
         emissions_file = os.path.join(files_dir, f"emissions_{participant_idx}.csv")
 
@@ -189,33 +185,26 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
         test_sample = next(iter(test_dataloader))
 
         lr = factsheet["configuration"]["learning_rate"]
-        value_clever = get_clever_score(model, test_sample, num_classes_temp, lr)
 
+        value_clever = get_clever_score(model, test_sample, num_classes_temp, lr)
         factsheet["performance"]["test_clever"] = 1 if value_clever > 1 else value_clever
 
         value_loss_sensitivity = get_loss_sensitivity_score(model, test_sample, num_classes_temp, lr)
-
         factsheet["performance"]["test_loss_sensitivity"] = 1 if value_loss_sensitivity > 1 else value_loss_sensitivity
 
         value_adv_accuracy = compute_adversarial_accuracy_art(model, test_dataloader, num_classes_temp, lr)
-
         factsheet["performance"]["test_adv_accuracy"] = 1 if value_adv_accuracy > 1 else value_adv_accuracy
 
         value_empirical_robustness = get_empirical_robustness_score(model, test_sample, num_classes_temp, lr)
-
         factsheet["performance"]["test_empirical_robustness"] = 1 if value_empirical_robustness > 1 else value_empirical_robustness
 
         value_confidence_score = get_confidence_score(model, test_sample)
-
         factsheet["performance"]["test_confidence_score"] = 1 if value_confidence_score > 1 else value_confidence_score
-        attack_success_rate
 
         value_attack_success_rate = attack_success_rate(model, test_sample)
-
         factsheet["performance"]["test_attack_success_rate"] = 1 if value_attack_success_rate > 1 else value_attack_success_rate
 
         feature_importance = get_feature_importance_cv(model, test_sample)
-
         factsheet["performance"]["test_feature_importance_cv"] = 1 if feature_importance > 1 else feature_importance
 
         f.seek(0)

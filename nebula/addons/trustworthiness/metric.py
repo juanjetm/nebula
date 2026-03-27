@@ -99,8 +99,6 @@ class TrustMetricManager:
 
         with open(factsheet_file, "r") as f, open(metrics_cfg_file, "r") as m:
             factsheet = json.load(f)
-            #metrics_cfg = json.load(m)
-            #metrics_cfg = replace_everywhere(metrics_cfg, "factsheet", f"factsheet_participant_{participant_id}")
 
             raw_metrics_cfg: str = m.read()
             raw_metrics_cfg = raw_metrics_cfg.replace("factsheet", f"factsheet_participant_{participant_id}")

@@ -448,30 +448,6 @@ def save_emissions_csv_cfl(scenario_name: str, id: int, role: str, energy_grid: 
 
 
 def save_results_csv(scenario_name: str, id: int, bytes_sent: int, bytes_recv: int, accuracy: float, loss: float):
-    """
-    try:
-        data_results_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
-    except:
-        data_results_file = os.path.join("nebula", "app", "logs", scenario_name, "trustworthiness", "data_results.csv")
-
-    if exists(data_results_file):
-        df = pd.read_csv(data_results_file)
-    else:
-        df = pd.DataFrame(columns=["id", "bytes_sent", "bytes_recv", "accuracy", "loss"])
-
-    try:
-        # Add new entry to DataFrame
-        new_data = pd.DataFrame({'id': [id], 'bytes_sent': [bytes_sent],
-                                    'bytes_recv': [bytes_recv], 'accuracy': [accuracy],
-                                    'loss': [loss]})
-        df = pd.concat([df, new_data], ignore_index=True)
-        logger.info(f"new_data={new_data}")
-
-        df.to_csv(data_results_file, encoding='utf-8', index=False)
-
-    except Exception as e:
-        logger.warning(e)
-    """
 
     try:
         data_results_id_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", f"data_results_{id}.csv")
@@ -492,28 +468,6 @@ def save_results_csv(scenario_name: str, id: int, bytes_sent: int, bytes_recv: i
         logger.info(f"new_data={new_data}")
 
         df.to_csv(data_results_id_file, encoding='utf-8', index=False)
-
-    except Exception as e:
-        logger.warning(e)
-
-def save_confirmation_csv(scenario_name: str, id: int):
-    try:
-        data_results_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "confirmation.csv")
-    except:
-        data_results_file = os.path.join("nebula", "app", "logs", scenario_name, "trustworthiness", "confirmation.csv")
-
-    if exists(data_results_file):
-        df = pd.read_csv(data_results_file)
-    else:
-        df = pd.DataFrame(columns=["id", "OK"])
-
-    try:
-        # Add new entry to DataFrame
-        new_data = pd.DataFrame({'id': [id], 'OK': ["OK"]})
-        df = pd.concat([df, new_data], ignore_index=True)
-        logger.info(f"new_data={new_data}")
-
-        df.to_csv(data_results_file, encoding='utf-8', index=False)
 
     except Exception as e:
         logger.warning(e)

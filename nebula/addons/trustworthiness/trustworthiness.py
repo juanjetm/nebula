@@ -9,7 +9,7 @@ from nebula.config.config import Config
 from nebula.core.engine import Engine
 import pickle
 from nebula.addons.trustworthiness.calculation import stop_emissions_tracking_and_save, get_bytes_final_model_id, get_class_imbalance_local
-from nebula.addons.trustworthiness.utils import save_results_csv, save_confirmation_csv, save_trustworthiness_reports_csv, load_emissions_participant, load_data_results_participant, save_results_csv_cfl, save_emissions_csv_cfl, save_class_count_per_participant, get_local_entropy, load_trust_report_json_dumped, create_local_trust_report_copy, accumulate_weighted_trustscores, build_weighted_trustscores_report, save_trust_report_json
+from nebula.addons.trustworthiness.utils import save_results_csv, save_trustworthiness_reports_csv, load_emissions_participant, load_data_results_participant, save_results_csv_cfl, save_emissions_csv_cfl, save_class_count_per_participant, get_local_entropy, load_trust_report_json_dumped, create_local_trust_report_copy, accumulate_weighted_trustscores, build_weighted_trustscores_report, save_trust_report_json
 from codecarbon import EmissionsTracker
 from nebula.addons.trustworthiness.per_round_metrics import PerRoundTrustMetrics
 from datetime import datetime
@@ -17,7 +17,8 @@ from nebula.addons.trustworthiness.factsheet import Factsheet
 from nebula.addons.trustworthiness.metric import TrustMetricManager
 from nebula.addons.trustworthiness.dfl_factsheet import populate_factsheet
 from nebula.addons.trustworthiness.graphics import Graphics
-import json, os
+import json
+import os
 from nebula.core.network.communications import CommunicationsManager
 
 """                                                     ##############################
@@ -143,21 +144,18 @@ class TrustWorkloadTrainer(TrustWorkload):
 
             server_addr = str(self._engine.config.participant["network_args"]["neighbors"]).strip()
 
-            logging.info("connections=%s", list(cm.connections.keys()))
-            logging.info("server in connections? %s", server_addr in cm.connections)
+            #logging.info("connections=%s", list(cm.connections.keys()))
+            #logging.info("server in connections? %s", server_addr in cm.connections)
 
             bytes_sent, bytes_recv, accuracy, loss = load_data_results_participant(experiment_name, self._idx)
 
             role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size = load_emissions_participant(experiment_name, self._idx)
 
             class_imbalance = get_class_imbalance_local(self._idx, experiment_name)
-            logging.info("class_imbalance=%s", class_imbalance)
 
             model_size = get_bytes_final_model_id(self._idx, experiment_name)
-            logging.info("model_size=%s", model_size)
 
             local_entropy = get_local_entropy(self._idx, experiment_name)
-            logging.info("local_entropy=%s", local_entropy)
 
             message = cm.mm.create_message(
                 "trustworthiness",
@@ -181,11 +179,11 @@ class TrustWorkloadTrainer(TrustWorkload):
                 model_size=model_size,
                 local_entropy=local_entropy,
             )
-            """
+
             logging.info(
                 "[TW SEND] dest=%s node_id=%s bytes_sent=%s bytes_recv=%s "
                 "accuracy=%s loss=%s energy_grid=%s emissions=%s workload=%s"
-                "cpu_model=%s gpu_model=%s cpu_used=%s gpu_used=%s energy_consumed=%s sample_size=%s",
+                "cpu_model=%s gpu_model=%s cpu_used=%s gpu_used=%s energy_consumed=%s sample_size=%s class_imbalance=%s model_size=%s local_entropy=%s",
                 server_addr,
                 str(self._idx),
                 bytes_sent,
@@ -202,8 +200,11 @@ class TrustWorkloadTrainer(TrustWorkload):
                 gpu_used,
                 energy_consumed,
                 sample_size,
+                class_imbalance,
+                model_size,
+                local_entropy,
             )
-            """
+
             await cm.send_message(
                 server_addr,
                 message,
@@ -573,14 +574,14 @@ class TrustWorkloadTrainer(TrustWorkload):
     def _log_sdfl_trustscores_node_weights(self):
         if not self._is_reputation_enabled():
             logging.info(
-                "[TW SDFL] Reputation system disabled. trustscores weights fallback to 1.0 for all nodes"
+                "[TW SDFL] Reputation system disabled. trustscores weights fallback to 0.5 for all nodes"
             )
             return
 
         peer_weight_map = self._get_trustscores_peer_weights_from_reputation()
         if not peer_weight_map:
             logging.info(
-                "[TW SDFL] Reputation system enabled, but no peer reputation weights are available yet. Falling back to 1.0 when needed"
+                "[TW SDFL] Reputation system enabled, but no peer reputation weights are available yet. Falling back to 0.5 when needed"
             )
             return
 
@@ -857,8 +858,6 @@ class TrustWorkloadServer(TrustWorkload):
         pass
 
     async def finish_experiment_role_post_actions(self, trust_config, experiment_name):
-        from datetime  import datetime
-
         self._end_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         self._trust_config = trust_config
         self._experiment_name = experiment_name
@@ -881,13 +880,10 @@ class TrustWorkloadServer(TrustWorkload):
             )
 
             class_imbalance = get_class_imbalance_local(self._idx, experiment_name)
-            logging.info("class_imbalance=%s", class_imbalance)
 
             model_size = get_bytes_final_model_id(self._idx, experiment_name)
-            logging.info("model_size=%s", model_size)
 
             local_entropy = get_local_entropy(self._idx, experiment_name)
-            logging.info("local_entropy=%s", local_entropy)
 
             save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss, class_imbalance, model_size, local_entropy)
             save_emissions_csv_cfl(self._experiment_name, self._idx, role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size)
@@ -914,13 +910,10 @@ class TrustWorkloadServer(TrustWorkload):
             )
 
             class_imbalance = get_class_imbalance_local(self._idx, experiment_name)
-            logging.info("class_imbalance=%s", class_imbalance)
 
             model_size = get_bytes_final_model_id(self._idx, experiment_name)
-            logging.info("model_size=%s", model_size)
 
             local_entropy = get_local_entropy(self._idx, experiment_name)
-            logging.info("local_entropy=%s", local_entropy)
 
             save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss, class_imbalance, model_size, local_entropy)
             save_emissions_csv_cfl(self._experiment_name, self._idx, role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size)
@@ -965,11 +958,6 @@ class TrustWorkloadServer(TrustWorkload):
 
 
     async def _generate_factsheet(self, trust_config, experiment_name):
-        from nebula.addons.trustworthiness.factsheet import Factsheet
-        from nebula.addons.trustworthiness.metric import TrustMetricManager
-        import json
-        import os
-
         factsheet = Factsheet()
         factsheet.populate_factsheet_pre_train(trust_config, experiment_name)
         factsheet.populate_factsheet_post_train(experiment_name, self._start_time, self._end_time, self._idx)
@@ -1063,7 +1051,6 @@ class Trustworthiness():
         self._tracker.start()
 
     async def _create_trustworthiness_directory(self):
-        import os
         trust_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), self._experiment_name, "trustworthiness")
         # Create a directory to store files used to compute trust
         os.makedirs(trust_dir, exist_ok=True)
@@ -1090,7 +1077,6 @@ class Trustworthiness():
         # Final operations
         save_results_csv(self._experiment_name, self._idx, bytes_sent, bytes_recv, last_accuracy, last_loss)
         stop_emissions_tracking_and_save(self._tracker, self._trust_dir_files, f'emissions_{self._idx}.csv', self._role.value, workload, sample_size, self._idx)
-        #save_confirmation_csv(self._experiment_name, self._idx)
         await self.tw.finish_experiment_role_post_actions(self._trust_config, self._experiment_name)
 
     def _factory_trust_workload(self, role: Role, engine: Engine, idx, trust_files_route) -> TrustWorkload:
