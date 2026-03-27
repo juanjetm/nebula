@@ -117,16 +117,6 @@ class Engine:
         self._secure_neighbors = []
         self._is_malicious = self.config.participant["adversarial_args"]["attack_params"]["attacks"] != "No Attack"
 
-        role = config.participant["device_args"]["role"]
-        self._role_behavior: RoleBehavior = factory_role_behavior(role, self, config)
-        self._role_behavior_performance_lock = Locker("role_behavior_performance_lock", async_lock=True)
-
-        print_msg_box(
-            msg=f"Name {self.name}\nRole: {self._role_behavior.get_role_name()}",
-            indent=2,
-            title="Node information",
-        )
-
         msg = f"Trainer: {self._trainer.__class__.__name__}"
         msg += f"\nDataset: {self.config.participant['data_args']['dataset']}"
         msg += f"\nIID: {self.config.participant['data_args']['iid']}"
@@ -148,6 +138,16 @@ class Engine:
         self.config.reload_config_file()
 
         self._cm = CommunicationsManager(engine=self)
+
+        role = config.participant["device_args"]["role"]
+        self._role_behavior: RoleBehavior = factory_role_behavior(role, self, config)
+        self._role_behavior_performance_lock = Locker("role_behavior_performance_lock", async_lock=True)
+
+        print_msg_box(
+            msg=f"Name {self.name}\nRole: {self._role_behavior.get_role_name()}",
+            indent=2,
+            title="Node information",
+        )
 
         self._reporter = Reporter(config=self.config, trainer=self.trainer)
 
