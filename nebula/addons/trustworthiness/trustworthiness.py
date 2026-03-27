@@ -1058,7 +1058,6 @@ class Trustworthiness():
 
     async def _process_experiment_finish_event(self, efe: ExperimentFinishEvent):
         class_counter = self._engine.trainer.datamodule.get_samples_per_label()
-        logging.info("COUNTER=%s", class_counter)
 
         save_class_count_per_participant(self._experiment_name, class_counter, self._idx)
 

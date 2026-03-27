@@ -415,7 +415,6 @@ def save_results_csv_cfl(scenario_name: str, id: int, bytes_sent: int, bytes_rec
                                     'bytes_recv': [bytes_recv], 'accuracy': [accuracy],
                                     'loss': [loss], 'class_imbalance': [class_imbalance], 'model_size': [model_size], 'local_entropy': [local_entropy]})
         df = pd.concat([df, new_data], ignore_index=True)
-        logger.info(f"new_data={new_data}")
 
         df.to_csv(data_results_file, encoding='utf-8', index=False)
 
@@ -439,7 +438,6 @@ def save_emissions_csv_cfl(scenario_name: str, id: int, role: str, energy_grid: 
                                     'emissions': [emissions], 'workload': [workload], 'CPU_model': [cpu_model], 'GPU_model': [gpu_model], 'CPU_used': [cpu_used], 'GPU_used': [gpu_used], 'energy_consumed': [energy_consumed],
                                     'sample_size': [sample_size]})
         df = pd.concat([df, new_data], ignore_index=True)
-        logger.info(f"new_data={new_data}")
 
         df.to_csv(data_results_file, encoding='utf-8', index=False)
 
@@ -465,7 +463,6 @@ def save_results_csv(scenario_name: str, id: int, bytes_sent: int, bytes_recv: i
                                     'bytes_recv': [bytes_recv], 'accuracy': [accuracy],
                                     'loss': [loss]})
         df = pd.concat([df, new_data], ignore_index=True)
-        logger.info(f"new_data={new_data}")
 
         df.to_csv(data_results_id_file, encoding='utf-8', index=False)
 
