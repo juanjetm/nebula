@@ -1,4 +1,4 @@
-# nebula/addons/trustworthiness/dfl_local.py
+# nebula/addons/trustworthiness/dfl_factsheet.py
 import json, os, shutil
 from datetime import datetime
 from nebula.addons.trustworthiness.metric import TrustMetricManager
@@ -24,7 +24,7 @@ from nebula.addons.trustworthiness.utils import count_all_class_samples, read_cs
 dirname = os.path.dirname(__file__)
 logger = logging.getLogger(__name__)
 
-def compute_trust_local_dfl(experiment_name, participant_idx, data, start_time, end_time):
+def populate_factsheet(experiment_name, participant_idx, data, start_time, end_time):
     trust_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), experiment_name, "trustworthiness")
     os.makedirs(trust_dir, exist_ok=True)
 

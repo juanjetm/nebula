@@ -15,7 +15,7 @@ from nebula.addons.trustworthiness.per_round_metrics import PerRoundTrustMetrics
 from datetime import datetime
 from nebula.addons.trustworthiness.factsheet import Factsheet
 from nebula.addons.trustworthiness.metric import TrustMetricManager
-from nebula.addons.trustworthiness.dfl_local import compute_trust_local_dfl
+from nebula.addons.trustworthiness.dfl_factsheet import populate_factsheet
 from nebula.addons.trustworthiness.graphics import Graphics
 import json, os
 from nebula.core.network.communications import CommunicationsManager
@@ -262,7 +262,7 @@ class TrustWorkloadTrainer(TrustWorkload):
             self._finalize_sdfl_global_trustscores_aggregation()
 
     def _compute_local_trustscores_report(self, experiment_name, trust_config, weights, federation) -> str:
-        compute_trust_local_dfl(experiment_name, self._idx, trust_config, self._start_time, self._end_time)
+        populate_factsheet(experiment_name, self._idx, trust_config, self._start_time, self._end_time)
 
         trust_metric_manager = TrustMetricManager(self._start_time, federation, self._idx)
         trust_metric_manager.evaluate_participant(experiment_name, weights, self._idx, use_weights=True)
