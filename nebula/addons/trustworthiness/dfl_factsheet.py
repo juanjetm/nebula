@@ -18,7 +18,7 @@ from nebula.core.models.covtype.mlp import CovtypeModelMLP
 from nebula.core.models.kddcup99.mlp import KDDCUP99ModelMLP
 from nebula.core.models.adultcensus.mlp import AdultCensusModelMLP
 from nebula.core.models.breast_cancer.mlp import BreastCancerModelMLP
-from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_models, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv, get_loss_sensitivity_score, compute_adversarial_accuracy_art,get_empirical_robustness_score,get_confidence_score,attack_success_rate, get_bytes_model
+from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_models, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv, get_loss_sensitivity_score, compute_adversarial_accuracy_art,get_empirical_robustness_score,get_confidence_score,attack_success_rate, get_bytes_model, get_underfitting_score, get_overfitting_score, get_well_calibration_error, get_generalized_entropy_index, get_theil_index, get_coefficient_of_variation, get_alpha_score, get_spread_ratio, get_spread_divergence
 from nebula.addons.trustworthiness.utils import count_all_class_samples, read_csv, check_field_filled, get_all_data_entropy
 
 dirname = os.path.dirname(__file__)
@@ -91,12 +91,17 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
         factsheet["configuration"]["visualization"] = True
         factsheet["configuration"]["total_round_num"] = n_rounds
 
+        """
         if poisoned_noise_percent != 0:
             factsheet["configuration"]["differential_privacy"] = True
             factsheet["configuration"]["dp_epsilon"] = poisoned_noise_percent
         else:
             factsheet["configuration"]["differential_privacy"] = False
             factsheet["configuration"]["dp_epsilon"] = ""
+        """
+
+        factsheet["configuration"]["differential_privacy"] = False
+        factsheet["configuration"]["dp_epsilon"] = ""
 
         if dataset == "MNIST" and algorithm == "MLP":
             model = MNISTModelMLP()
@@ -124,6 +129,7 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
         files_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), experiment_name, "trustworthiness")
 
         train_model_file = os.path.join(files_dir, f"participant_{participant_idx}_final_model.pk")
+        train_dataloader_file = os.path.join(files_dir, f"participant_{participant_idx}_train_loader.pk")
         test_dataloader_file = os.path.join(files_dir, f"participant_{participant_idx}_test_loader.pk")
         emissions_file = os.path.join(files_dir, f"emissions_{participant_idx}.csv")
 
@@ -179,10 +185,57 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
 
         model.load_state_dict(lightning_model.state_dict())
 
+        with open(train_dataloader_file, "rb") as d_file:
+            train_dataloader = pickle.load(d_file)
+
         with open(test_dataloader_file, "rb") as d_file:
             test_dataloader = pickle.load(d_file)
 
         test_sample = next(iter(test_dataloader))
+        factsheet["fairness"]["underfitting"] = get_underfitting_score(
+            factsheet["performance"]["test_acc"]
+        )
+        overfitting_value = get_overfitting_score(
+            model,
+            train_dataloader,
+            factsheet["performance"]["test_acc"],
+        )
+
+        factsheet["fairness"]["overfitting"] = 1/(1 + overfitting_value)
+
+        well_calibration_error_value = get_well_calibration_error(
+            model,
+            test_dataloader,
+        )
+
+        factsheet["fairness"]["well_calibration_error"] = 1/(1 + well_calibration_error_value)
+        generalized_entropy_index_value = get_generalized_entropy_index(
+            model,
+            test_dataloader,
+        )
+        factsheet["fairness"]["generalized_entropy_index"] = 1/(1 + generalized_entropy_index_value)
+        theil_index_value = get_theil_index(
+            model,
+            test_dataloader,
+        )
+        factsheet["fairness"]["theil_index"] = 1/(1 + theil_index_value)
+        coefficient_of_variation_value = get_coefficient_of_variation(
+            model,
+            test_dataloader,
+        )
+        factsheet["fairness"]["coefficient_of_variation"] = 1/(1 + coefficient_of_variation_value)
+        factsheet["explainability"]["alpha_score"] = get_alpha_score(
+            model,
+            test_sample,
+        )
+        factsheet["explainability"]["spread_ratio"] = get_spread_ratio(
+            model,
+            test_sample,
+        )
+        factsheet["explainability"]["spread_divergence"] = get_spread_divergence(
+            model,
+            test_sample,
+        )
 
         lr = factsheet["configuration"]["learning_rate"]
 
@@ -202,7 +255,7 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
         factsheet["performance"]["test_confidence_score"] = 1 if value_confidence_score > 1 else value_confidence_score
 
         value_attack_success_rate = attack_success_rate(model, test_sample)
-        factsheet["performance"]["test_attack_success_rate"] = 1 if value_attack_success_rate > 1 else value_attack_success_rate
+        factsheet["performance"]["test_attack_success_rate"] = 1 - value_attack_success_rate
 
         feature_importance = get_feature_importance_cv(model, test_sample)
         factsheet["performance"]["test_feature_importance_cv"] = 1 if feature_importance > 1 else feature_importance

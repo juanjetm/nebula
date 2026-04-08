@@ -836,10 +836,16 @@ class TrustWorkloadServer(TrustWorkload):
 
     async def _create_pk_files(self, experiment_name):
         # Save data to local files to compute trustworthiness
+        train_loader_filename = f"/nebula/app/logs/{experiment_name}/trustworthiness/participant_{self._idx}_train_loader.pk"
         test_loader_filename = f"/nebula/app/logs/{experiment_name}/trustworthiness/participant_{self._idx}_test_loader.pk"
+        self._engine.trainer.datamodule.setup(stage="fit")
+        train_loader = self._engine.trainer.datamodule.train_dataloader()
         self._engine.trainer.datamodule.setup(stage="test")
         test_loader = self._engine.trainer.datamodule.test_dataloader()[0]
 
+        with open(train_loader_filename, 'wb') as f:
+            pickle.dump(train_loader, f)
+            f.close()
         with open(test_loader_filename, 'wb') as f:
             pickle.dump(test_loader, f)
             f.close()

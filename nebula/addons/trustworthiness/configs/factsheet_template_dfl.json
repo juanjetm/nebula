@@ -27,6 +27,14 @@
 		"learning_rate": "",
 		"local_update_steps": ""
 	},
+	"privacy": {
+		"privacy_risk": ""
+	},
+	"explainability": {
+		"alpha_score": "",
+		"spread_ratio": "",
+		"spread_divergence": ""
+	},
 	"performance": {
 		"test_loss": "",
 		"test_acc": "",
@@ -39,7 +47,13 @@
 		"test_attack_success_rate": ""
 	},
 	"fairness": {
-		"class_imbalance": ""
+		"class_imbalance": "",
+		"underfitting": "",
+		"overfitting": "",
+		"well_calibration_error": "",
+		"generalized_entropy_index": "",
+		"theil_index": "",
+		"coefficient_of_variation": ""
 	},
 	"system": {
 		"time_minutes": "",

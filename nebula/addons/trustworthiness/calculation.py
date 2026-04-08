@@ -11,11 +11,13 @@ import json
 import numpy as np
 import pandas as pd
 import shap
+import torch
 import torch.nn
 from art.estimators.classification import PyTorchClassifier
 from art.metrics import clever_u, loss_sensitivity, empirical_robustness
 from codecarbon import EmissionsTracker
-from scipy.stats import variation
+from scipy.spatial.distance import jensenshannon
+from scipy.stats import entropy, variation
 from torch import nn, optim
 import torch.nn.functional as F
 import time
@@ -393,6 +395,367 @@ def get_avg_loss_accuracy(scenario_name):
     return avg_loss, avg_accuracy, std_accuracy
 
 
+def get_participant_loss_accuracy(scenario_name, participant_id):
+    """
+    Gets loss and accuracy for a specific participant from CFL aggregated results.
+
+    Args:
+        scenario_name (str): Scenario name.
+        participant_id (int | str): Participant identifier.
+
+    Returns:
+        tuple[float, float]: (loss, accuracy)
+    """
+    data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
+    data = read_csv(data_file)
+    row = data[data["id"] == participant_id]
+
+    if row.empty:
+        row = data[data["id"] == int(participant_id)]
+
+    loss = float(row["loss"].iloc[0])
+    accuracy = float(row["accuracy"].iloc[0])
+    return loss, accuracy
+
+
+def _get_model_accuracy(model, dataloader):
+    """
+    Calculates model accuracy over a dataloader.
+
+    Args:
+        model (torch.nn.Module): Model to evaluate.
+        dataloader (DataLoader): Dataloader with (x, y) batches.
+
+    Returns:
+        float: Accuracy in [0, 1].
+    """
+    if not isinstance(model, torch.nn.Module):
+        logger.warning("Model is not a torch.nn.Module")
+        return 0.0
+
+    try:
+        device = next(model.parameters()).device
+    except Exception:
+        device = torch.device("cpu")
+
+    model.eval()
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        for x, y in dataloader:
+            x = x.to(device)
+            y = y.to(device)
+
+            out = model(x)
+            logits = out[0] if isinstance(out, (tuple, list)) else out
+            preds = logits.argmax(dim=1)
+
+            correct += (preds == y).sum().item()
+            total += y.size(0)
+
+    return correct / total if total > 0 else 0.0
+
+def _extract_model_logits(model_output):
+    """
+    Normalize the output returned by a model forward pass into a logits tensor.
+
+    Some models may return tuples/lists; for trust metrics we always consume the
+    first element as the classification output.
+    """
+    return model_output[0] if isinstance(model_output, (tuple, list)) else model_output
+
+
+def _prepare_class_targets(y):
+    """
+    Convert different target representations into a flat class-index tensor.
+    """
+    if not torch.is_tensor(y):
+        y = torch.as_tensor(y)
+
+    if y.ndim > 1:
+        if y.size(-1) > 1:
+            y = y.argmax(dim=-1)
+        else:
+            y = y.view(-1)
+
+    return y.long().view(-1)
+
+
+def _logits_to_probabilities(logits):
+    """
+    Convert model outputs into a probability matrix of shape (N, C).
+
+    Supports:
+    - multiclass logits/log-probabilities with shape (N, C)
+    - binary logits with shape (N,) or (N, 1)
+    - already-normalized probability matrices
+    """
+    if not torch.is_tensor(logits):
+        logits = torch.as_tensor(logits)
+
+    if logits.ndim == 0:
+        logits = logits.view(1, 1)
+    elif logits.ndim == 1:
+        logits = logits.view(-1, 1)
+    elif logits.ndim > 2:
+        logits = logits.reshape(logits.shape[0], -1)
+
+    if logits.size(1) == 1:
+        pos_prob = torch.sigmoid(logits[:, 0])
+        probs = torch.stack([1.0 - pos_prob, pos_prob], dim=1)
+    else:
+        row_sums = logits.sum(dim=1)
+        looks_like_probs = (
+            torch.all(logits >= 0)
+            and torch.all(logits <= 1.0 + 1e-6)
+            and torch.allclose(row_sums, torch.ones_like(row_sums), atol=1e-4, rtol=1e-4)
+        )
+        probs = logits if looks_like_probs else torch.softmax(logits, dim=1)
+
+    probs = torch.clamp(probs, min=0.0, max=1.0)
+    probs = probs / probs.sum(dim=1, keepdim=True).clamp_min(1e-12)
+    return probs
+
+
+def _collect_classification_statistics(model, dataloader):
+    """
+    Collect prediction statistics required by calibration and inequality metrics.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        predicted labels, true labels, prediction confidences, correctness flags,
+        and probability assigned to the true class.
+    """
+    if not isinstance(model, torch.nn.Module):
+        logger.warning("Model is not a torch.nn.Module")
+        empty = np.array([], dtype=float)
+        return empty, empty, empty, empty, empty
+
+    try:
+        device = next(model.parameters()).device
+    except Exception:
+        device = torch.device("cpu")
+
+    preds_all = []
+    targets_all = []
+    confidences_all = []
+    correct_all = []
+    true_probs_all = []
+
+    model.eval()
+    with torch.no_grad():
+        for batch in dataloader:
+            if not isinstance(batch, (tuple, list)) or len(batch) < 2:
+                continue
+
+            x, y = batch[0], batch[1]
+            if not (torch.is_tensor(x) and torch.is_tensor(y)):
+                continue
+
+            x = x.to(device)
+            y = _prepare_class_targets(y).to(device)
+
+            out = model(x)
+            logits = _extract_model_logits(out)
+            probs = _logits_to_probabilities(logits)
+
+            if probs.ndim != 2 or probs.size(0) == 0:
+                continue
+
+            if y.numel() != probs.size(0):
+                n = min(int(y.numel()), int(probs.size(0)))
+                if n == 0:
+                    continue
+                y = y[:n]
+                probs = probs[:n]
+
+            valid_mask = (y >= 0) & (y < probs.size(1))
+            if not torch.any(valid_mask):
+                continue
+
+            y = y[valid_mask]
+            probs = probs[valid_mask]
+
+            conf, preds = probs.max(dim=1)
+            true_probs = probs.gather(1, y.view(-1, 1)).squeeze(1)
+            correct = preds.eq(y).float()
+
+            preds_all.extend(preds.detach().cpu().numpy().tolist())
+            targets_all.extend(y.detach().cpu().numpy().tolist())
+            confidences_all.extend(conf.detach().cpu().numpy().tolist())
+            correct_all.extend(correct.detach().cpu().numpy().tolist())
+            true_probs_all.extend(true_probs.detach().cpu().numpy().tolist())
+
+    return (
+        np.asarray(preds_all, dtype=int),
+        np.asarray(targets_all, dtype=int),
+        np.asarray(confidences_all, dtype=float),
+        np.asarray(correct_all, dtype=float),
+        np.asarray(true_probs_all, dtype=float),
+    )
+
+
+def get_underfitting_score(test_accuracy):
+    """
+    Uses test accuracy as a proxy for underfitting.
+
+    Args:
+        test_accuracy (float): Test accuracy in [0, 1].
+
+    Returns:
+        float: Underfitting proxy value.
+    """
+    try:
+        return float(test_accuracy)
+    except Exception:
+        logger.warning("Could not compute underfitting score")
+        return 0.0
+
+
+def get_overfitting_score(model, train_dataloader, test_accuracy):
+    """
+    Calculates overfitting as the positive train-test accuracy gap.
+
+    Args:
+        model (torch.nn.Module): Model to evaluate on training data.
+        train_dataloader (DataLoader): Training dataloader.
+        test_accuracy (float): Test accuracy in [0, 1].
+
+    Returns:
+        float: Positive train-test accuracy gap.
+    """
+    try:
+        train_accuracy = _get_model_accuracy(model, train_dataloader)
+        return max(0.0, float(train_accuracy) - float(test_accuracy))
+    except Exception as exc:
+        logger.warning("Could not compute overfitting score")
+        logger.warning(exc)
+        return 0.0
+
+
+def get_well_calibration_error(model, test_dataloader, n_bins=10):
+    """
+    Calculates a well-calibration error style metric using prediction confidence.
+
+    For multiclass models, confidence is taken as the max softmax probability and
+    the observed outcome is whether the prediction is correct.
+
+    Args:
+        model (torch.nn.Module): Model to evaluate.
+        test_dataloader (DataLoader): Test dataloader.
+        n_bins (int): Number of quantile bins.
+
+    Returns:
+        float: Calibration error in [0, 1] when computation succeeds.
+    """
+    if not isinstance(model, torch.nn.Module):
+        logger.warning("Model is not a torch.nn.Module")
+        return 0.0
+
+    try:
+        n_bins = max(2, int(n_bins))
+    except Exception:
+        n_bins = 10
+
+    _, _, confidences, correct, _ = _collect_classification_statistics(model, test_dataloader)
+
+    if len(confidences) == 0 or len(correct) == 0:
+        return 0.0
+
+    confidences = np.clip(np.asarray(confidences, dtype=float), 0.0, 1.0)
+    correct = np.clip(np.asarray(correct, dtype=float), 0.0, 1.0)
+
+    bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
+    ece = 0.0
+    total = float(len(confidences))
+
+    for idx in range(n_bins):
+        left = bin_edges[idx]
+        right = bin_edges[idx + 1]
+        if idx == n_bins - 1:
+            mask = (confidences >= left) & (confidences <= right)
+        else:
+            mask = (confidences >= left) & (confidences < right)
+
+        if not np.any(mask):
+            continue
+
+        bin_weight = float(mask.sum()) / total
+        bin_accuracy = float(correct[mask].mean())
+        bin_confidence = float(confidences[mask].mean())
+        ece += bin_weight * abs(bin_accuracy - bin_confidence)
+
+    return float(np.clip(ece, 0.0, 1.0))
+
+
+def get_generalized_entropy_index(model, test_dataloader, alpha=2):
+    """
+    Calculates generalized entropy index from model predictions.
+
+    Args:
+        model (torch.nn.Module): Model to evaluate.
+        test_dataloader (DataLoader): Test dataloader.
+        alpha (float): GEI alpha parameter.
+
+    Returns:
+        float: Generalized entropy index value.
+    """
+    try:
+        _, _, _, _, true_class_probs = _collect_classification_statistics(model, test_dataloader)
+        if len(true_class_probs) == 0:
+            return 0.0
+
+        # Use the probability assigned to the true class as a continuous, positive
+        # benefit. This works consistently for multiclass neural models on both
+        # images and tabular data, and avoids collapsing the metric to a coarse
+        # correct/incorrect indicator.
+        eps = 1e-12
+        b = np.clip(np.asarray(true_class_probs, dtype=float), eps, 1.0)
+        mu = float(np.mean(b))
+        if mu <= 0:
+            return 0.0
+
+        ratio = np.clip(b / mu, eps, None)
+
+        if alpha == 0:
+            val = float(np.mean(-np.log(ratio)))
+        elif alpha == 1:
+            val = float(np.mean(ratio * np.log(ratio)))
+        elif alpha == 2:
+            val = float(np.mean((ratio - 1.0) ** 2) / 2.0)
+        else:
+            val = float(np.mean(ratio**alpha - 1.0) / (alpha * (alpha - 1.0)))
+
+        if math.isnan(val) or math.isinf(val):
+            return 0.0
+        return max(0.0, val)
+    except Exception as exc:
+        logger.warning("Could not compute generalized entropy index")
+        logger.warning(exc)
+        return 0.0
+
+
+def get_theil_index(model, test_dataloader):
+    """
+    Convenience wrapper for generalized entropy index with alpha=1.
+    """
+    return get_generalized_entropy_index(model, test_dataloader, alpha=1)
+
+
+def get_coefficient_of_variation(model, test_dataloader):
+    """
+    Calculates coefficient of variation from GEI(alpha=2).
+    """
+    try:
+        gei = get_generalized_entropy_index(model, test_dataloader, alpha=2)
+        return float(np.sqrt(2 * gei))
+    except Exception as exc:
+        logger.warning("Could not compute coefficient of variation")
+        logger.warning(exc)
+        return 0.0
+
+
 def get_avg_class_imbalance_model_size(scenario_name):
     """
     Calculates the mean class imbalance and model size of the nodes.
@@ -457,31 +820,248 @@ def get_feature_importance_cv(model, test_sample):
     """
 
     try:
-        cv = 0
-        batch_size = 10
-        device = "cpu"
+        vals = np.asarray(_get_feature_importances(model, test_sample), dtype=float).reshape(-1)
+        vals = np.nan_to_num(vals, nan=0.0, posinf=0.0, neginf=0.0)
+        vals = vals[vals > 0]
 
-        if isinstance(model, torch.nn.Module):
-            batched_data, _ = test_sample
+        if len(vals) <= 1:
+            return 0.0
 
-            n = batch_size
-            m = math.floor(0.8 * n)
-
-            background = batched_data[:m].to(device)
-            test_data = batched_data[m:n].to(device)
-
-            e = shap.DeepExplainer(model, background)
-            shap_values = e.shap_values(test_data)
-            if shap_values is not None and len(shap_values) > 0:
-                sums = np.array([shap_values[i].sum() for i in range(len(shap_values))])
-                abs_sums = np.absolute(sums)
-                cv = variation(abs_sums)
-    except Exception as e:
+        cv = float(variation(vals))
+        if math.isnan(cv) or math.isinf(cv):
+            return 1.0
+        return max(0.0, cv)
+    except Exception as exc:
         logger.warning("Could not compute feature importance CV with shap")
-        cv = 1
-    if math.isnan(cv):
-        cv = 1
-    return cv
+        logger.warning(exc)
+        return 1.0
+
+
+def _get_feature_importances(model, test_sample):
+    """
+    Computes global feature importances from SHAP values.
+
+    Args:
+        model (object): The model.
+        test_sample (object): One test sample batch.
+
+    Returns:
+        np.ndarray: Global importances per feature.
+    """
+    if not isinstance(model, torch.nn.Module):
+        logger.warning("Model is not a torch.nn.Module")
+        return np.array([])
+
+    def _prepare_shap_inputs(sample):
+        if not (isinstance(sample, (tuple, list)) and len(sample) >= 1):
+            return None, None, None
+
+        batched_data = sample[0]
+        if not torch.is_tensor(batched_data) or batched_data.ndim == 0 or batched_data.size(0) == 0:
+            return None, None, None
+
+        if not torch.is_floating_point(batched_data):
+            batched_data = batched_data.float()
+
+        batch_size = int(batched_data.size(0))
+        input_shape = tuple(int(dim) for dim in batched_data.shape[1:])
+
+        if batch_size == 1:
+            return batched_data[:1], batched_data[:1], input_shape
+
+        background_size = min(max(8, batch_size // 4), 32, batch_size - 1)
+        explainable = batch_size - background_size
+        explain_size = min(max(4, explainable), 32, explainable)
+
+        background = batched_data[:background_size]
+        test_data = batched_data[background_size:background_size + explain_size]
+
+        if test_data.size(0) == 0:
+            test_data = batched_data[: min(batch_size, 32)]
+
+        return background, test_data, input_shape
+
+    def _compute_shap_values(model_ref, background, test_data):
+        explainer_errors = []
+
+        for explainer_name in ("DeepExplainer", "GradientExplainer"):
+            try:
+                if explainer_name == "DeepExplainer":
+                    explainer = shap.DeepExplainer(model_ref, background)
+                    return explainer.shap_values(test_data, check_additivity=False)
+
+                explainer = shap.GradientExplainer(model_ref, background)
+                return explainer.shap_values(test_data)
+            except Exception as exc:
+                explainer_errors.append(f"{explainer_name}: {exc}")
+
+        raise RuntimeError("; ".join(explainer_errors))
+
+    def _feature_axes_from_shape(arr_shape, input_shape, n_samples):
+        input_shape = tuple(input_shape)
+        input_rank = len(input_shape)
+
+        if input_rank == 0 or len(arr_shape) < input_rank:
+            return None
+
+        if len(arr_shape) >= input_rank + 1 and tuple(arr_shape[1:1 + input_rank]) == input_shape:
+            return tuple(range(1, 1 + input_rank))
+
+        if len(arr_shape) >= input_rank + 2 and arr_shape[1] == n_samples and tuple(arr_shape[2:2 + input_rank]) == input_shape:
+            return tuple(range(2, 2 + input_rank))
+
+        candidates = []
+        for start in range(len(arr_shape) - input_rank + 1):
+            if tuple(arr_shape[start:start + input_rank]) == input_shape:
+                candidates.append(start)
+
+        if not candidates:
+            return None
+
+        # Prefer matches that do not consume the leading sample/output axes.
+        non_leading = [start for start in candidates if start > 0]
+        if non_leading:
+            candidates = non_leading
+
+        if len(arr_shape) > 1 and arr_shape[1] == n_samples:
+            non_output_sample = [start for start in candidates if start > 1]
+            if non_output_sample:
+                candidates = non_output_sample
+
+        start = candidates[0]
+        return tuple(range(start, start + input_rank))
+
+    try:
+        try:
+            device = next(model.parameters()).device
+        except Exception:
+            device = torch.device("cpu")
+
+        background, test_data, input_shape = _prepare_shap_inputs(test_sample)
+        if background is None or test_data is None or input_shape is None:
+            return np.array([])
+
+        background = background.to(device)
+        test_data = test_data.to(device)
+
+        model.eval()
+        shap_values = _compute_shap_values(model, background, test_data)
+
+        if shap_values is None:
+            return np.array([])
+
+        if isinstance(shap_values, (list, tuple)):
+            arrays = [np.asarray(val, dtype=float) for val in shap_values if val is not None]
+            if not arrays:
+                return np.array([])
+            shap_arr = np.stack(arrays, axis=0)
+        else:
+            shap_arr = np.asarray(shap_values, dtype=float)
+
+        if shap_arr.size == 0:
+            return np.array([])
+
+        shap_arr = np.nan_to_num(shap_arr, nan=0.0, posinf=0.0, neginf=0.0)
+        feature_axes = _feature_axes_from_shape(tuple(shap_arr.shape), input_shape, int(test_data.size(0)))
+
+        if feature_axes is None:
+            # Conservative fallback: treat the first axis as samples when possible and
+            # flatten the remaining dimensions into features.
+            if shap_arr.ndim == 1:
+                importances = np.abs(shap_arr)
+            else:
+                aggregate_axes = (0,)
+                importances = np.mean(np.abs(shap_arr), axis=aggregate_axes)
+        else:
+            aggregate_axes = tuple(idx for idx in range(shap_arr.ndim) if idx not in feature_axes)
+            if aggregate_axes:
+                importances = np.mean(np.abs(shap_arr), axis=aggregate_axes)
+            else:
+                importances = np.abs(shap_arr)
+
+        importances = np.asarray(importances, dtype=float).reshape(-1)
+        importances = np.nan_to_num(importances, nan=0.0, posinf=0.0, neginf=0.0)
+        return np.maximum(importances, 0.0)
+    except Exception as exc:
+        logger.warning("Could not compute feature importances with shap")
+        logger.warning(exc)
+        return np.array([])
+
+
+def get_alpha_score(model, test_sample, alpha=0.8):
+    """
+    Computes alpha score from global feature importances.
+    """
+    try:
+        vals = np.asarray(_get_feature_importances(model, test_sample), dtype=float).reshape(-1)
+        vals = np.nan_to_num(vals, nan=0.0, posinf=0.0, neginf=0.0)
+        vals = np.maximum(vals, 0.0)
+        total_features = len(vals)
+        if total_features == 0 or np.sum(vals) <= 1e-12:
+            return 1.0
+
+        try:
+            alpha = float(alpha)
+        except Exception:
+            alpha = 0.8
+        alpha = min(max(alpha, 0.0), 1.0)
+
+        vals_sorted = np.sort(vals)[::-1]
+        cum_sum = np.cumsum(vals_sorted)
+        threshold = float(alpha) * np.sum(vals_sorted)
+        idx = np.searchsorted(cum_sum, threshold)
+        return float(min(total_features, idx + 1) / total_features)
+    except Exception as exc:
+        logger.warning("Could not compute alpha score")
+        logger.warning(exc)
+        return 1.0
+
+
+def _get_spread_base(model, test_sample, divergence=True):
+    vals = _get_feature_importances(model, test_sample)
+    tol = 1e-8
+
+    if len(vals) == 0 or np.sum(vals) < tol:
+        return 0.0 if divergence else 1.0
+    if len(vals) == 1:
+        return 0.0 if divergence else 1.0
+
+    weights = vals / np.sum(vals)
+    equal_weights = np.ones(len(vals)) / len(vals)
+
+    if divergence:
+        metric = jensenshannon(weights, equal_weights, base=2)
+    else:
+        denom = entropy(equal_weights)
+        metric = 0.0 if denom <= tol else entropy(weights) / denom
+
+    if math.isnan(metric) or math.isinf(metric):
+        return 0.0 if divergence else 1.0
+    return float(np.clip(metric, 0.0, 1.0))
+
+
+def get_spread_ratio(model, test_sample):
+    """
+    Computes spread ratio from global feature importances.
+    """
+    try:
+        return _get_spread_base(model, test_sample, divergence=False)
+    except Exception as exc:
+        logger.warning("Could not compute spread ratio")
+        logger.warning(exc)
+        return 1.0
+
+
+def get_spread_divergence(model, test_sample):
+    """
+    Computes spread divergence from global feature importances.
+    """
+    try:
+        return _get_spread_base(model, test_sample, divergence=True)
+    except Exception as exc:
+        logger.warning("Could not compute spread divergence")
+        logger.warning(exc)
+        return 0.0
 
 
 def get_clever_score(model, test_sample, nb_classes, learning_rate):
