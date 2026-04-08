@@ -45,3 +45,9 @@ class CIFAR10ModelCNN(NebulaModel):
         )
         self._optimizer = optimizer
         return optimizer
+
+    def get_learning_rate(self):
+        return self.learning_rate
+
+    def count_parameters(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)

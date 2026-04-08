@@ -16,6 +16,17 @@ from nebula.core.models.covtype.mlp import CovtypeModelMLP
 from nebula.core.models.kddcup99.mlp import KDDCUP99ModelMLP
 from nebula.core.models.adultcensus.mlp import AdultCensusModelMLP
 from nebula.core.models.breast_cancer.mlp import BreastCancerModelMLP
+from nebula.core.models.fashionmnist.mlp import FashionMNISTModelMLP
+from nebula.core.models.fashionmnist.cnn import FashionMNISTModelCNN
+from nebula.core.models.emnist.mlp import EMNISTModelMLP
+from nebula.core.models.emnist.cnn import EMNISTModelCNN
+from nebula.core.models.cifar10.cnn import CIFAR10ModelCNN
+from nebula.core.models.cifar10.cnnV2 import CIFAR10ModelCNN_V2
+from nebula.core.models.cifar10.cnnV3 import CIFAR10ModelCNN_V3
+from nebula.core.models.cifar10.fastermobilenet import FasterMobileNet
+from nebula.core.models.cifar10.resnet import CIFAR10ModelResNet
+from nebula.core.models.cifar10.simplemobilenet import SimpleMobileNetV1
+from nebula.core.models.cifar100.cnn import CIFAR100ModelCNN
 from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_models, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv, get_loss_sensitivity_score, compute_adversarial_accuracy_art,get_empirical_robustness_score,get_confidence_score,attack_success_rate, get_entropy_list, get_avg_class_imbalance_model_size, get_underfitting_score, get_overfitting_score, get_participant_loss_accuracy, get_well_calibration_error, get_generalized_entropy_index, get_theil_index, get_coefficient_of_variation, get_alpha_score, get_spread_ratio, get_spread_divergence
 from nebula.addons.trustworthiness.utils import count_all_class_samples, read_csv, check_field_filled, get_all_data_entropy
 # from nebula.core.models.syscall.mlp import SyscallModelMLP
@@ -124,18 +135,51 @@ class Factsheet:
                     elif dataset == "MNIST" and algorithm == "CNN":
                         model = MNISTModelCNN()
                         num_classes_temp = 10
+                    elif dataset == "FashionMNIST" and algorithm == "MLP":
+                        model = FashionMNISTModelMLP()
+                        num_classes_temp = 10
+                    elif dataset == "FashionMNIST" and algorithm == "CNN":
+                        model = FashionMNISTModelCNN()
+                        num_classes_temp = 10
                     elif dataset == "Covtype" and algorithm == "MLP":
                         model = CovtypeModelMLP()
                         num_classes_temp = 7
                     elif dataset == "KDDCUP99" and algorithm == "MLP":
                         model = KDDCUP99ModelMLP()
-                        num_classes_temp = 2
+                        num_classes_temp = 23
                     elif dataset == "AdultCensus" and algorithm == "MLP":
                         model = AdultCensusModelMLP()
                         num_classes_temp = 2
                     elif dataset == "BreastCancer" and algorithm == "MLP":
                         model = BreastCancerModelMLP()
                         num_classes_temp = 2
+                    elif dataset == "EMNIST" and algorithm == "MLP":
+                        model = EMNISTModelMLP()
+                        num_classes_temp = 47
+                    elif dataset == "EMNIST" and algorithm == "CNN":
+                        model = EMNISTModelCNN()
+                        num_classes_temp = 47
+                    elif dataset == "CIFAR10" and algorithm == "ResNet9":
+                        model = CIFAR10ModelResNet(classifier="resnet9")
+                        num_classes_temp = 10
+                    elif dataset == "CIFAR10" and algorithm == "fastermobilenet":
+                        model = FasterMobileNet()
+                        num_classes_temp = 10
+                    elif dataset == "CIFAR10" and algorithm == "simplemobilenet":
+                        model = SimpleMobileNetV1()
+                        num_classes_temp = 10
+                    elif dataset == "CIFAR10" and algorithm == "CNN":
+                        model = CIFAR10ModelCNN()
+                        num_classes_temp = 10
+                    elif dataset == "CIFAR10" and algorithm == "CNNv2":
+                        model = CIFAR10ModelCNN_V2()
+                        num_classes_temp = 10
+                    elif dataset == "CIFAR10" and algorithm == "CNNv3":
+                        model = CIFAR10ModelCNN_V3()
+                        num_classes_temp = 10
+                    elif dataset == "CIFAR100" and algorithm == "CNN":
+                        model = CIFAR100ModelCNN()
+                        num_classes_temp = 100
 
                     factsheet["configuration"]["learning_rate"] = model.get_learning_rate()
                     factsheet["configuration"]["trainable_param_num"] = model.count_parameters()
@@ -217,6 +261,12 @@ class Factsheet:
                 elif dataset == "MNIST" and model == "CNN":
                     model = MNISTModelCNN()
                     num_classes_temp = 10
+                elif dataset == "FashionMNIST" and model == "MLP":
+                    model = FashionMNISTModelMLP()
+                    num_classes_temp = 10
+                elif dataset == "FashionMNIST" and model == "CNN":
+                    model = FashionMNISTModelCNN()
+                    num_classes_temp = 10
                 elif dataset == "Covtype" and model == "MLP":
                     model = CovtypeModelMLP()
                     num_classes_temp = 7
@@ -229,6 +279,33 @@ class Factsheet:
                 elif dataset == "BreastCancer" and model == "MLP":
                     model = BreastCancerModelMLP()
                     num_classes_temp = 2
+                elif dataset == "EMNIST" and model == "MLP":
+                    model = EMNISTModelMLP()
+                    num_classes_temp = 47
+                elif dataset == "EMNIST" and model == "CNN":
+                    model = EMNISTModelCNN()
+                    num_classes_temp = 47
+                elif dataset == "CIFAR10" and model == "ResNet9":
+                    model = CIFAR10ModelResNet(classifier="resnet9")
+                    num_classes_temp = 10
+                elif dataset == "CIFAR10" and model == "fastermobilenet":
+                    model = FasterMobileNet()
+                    num_classes_temp = 10
+                elif dataset == "CIFAR10" and model == "simplemobilenet":
+                    model = SimpleMobileNetV1()
+                    num_classes_temp = 10
+                elif dataset == "CIFAR10" and model == "CNN":
+                    model = CIFAR10ModelCNN()
+                    num_classes_temp = 10
+                elif dataset == "CIFAR10" and model == "CNNv2":
+                    model = CIFAR10ModelCNN_V2()
+                    num_classes_temp = 10
+                elif dataset == "CIFAR10" and model == "CNNv3":
+                    model = CIFAR10ModelCNN_V3()
+                    num_classes_temp = 10
+                elif dataset == "CIFAR100" and model == "CNN":
+                    model = CIFAR100ModelCNN()
+                    num_classes_temp = 100
 
                 model.load_state_dict(lightning_model.state_dict())
 
@@ -239,9 +316,7 @@ class Factsheet:
                     test_dataloader = pickle.load(file)
 
                 test_sample = next(iter(test_dataloader))
-                factsheet["fairness"]["underfitting"] = get_underfitting_score(
-                    participant_test_acc
-                )
+                factsheet["fairness"]["underfitting"] = factsheet["performance"]["test_acc_avg"]
                 overfitting_value = get_overfitting_score(
                     model,
                     train_dataloader,

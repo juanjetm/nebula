@@ -3,6 +3,8 @@ import math
 import numbers
 import os.path
 import statistics
+import copy
+import gc
 from datetime import datetime
 from math import e
 from os.path import exists
@@ -852,6 +854,18 @@ def _get_feature_importances(model, test_sample):
         logger.warning("Model is not a torch.nn.Module")
         return np.array([])
 
+    def _clone_model(model_ref, device):
+        try:
+            model_clone = copy.deepcopy(model_ref)
+            model_clone.to(device)
+            model_clone.eval()
+            return model_clone
+        except Exception as exc:
+            logger.warning("Could not clone model for SHAP, using original model")
+            logger.warning(exc)
+            model_ref.eval()
+            return model_ref
+
     def _prepare_shap_inputs(sample):
         if not (isinstance(sample, (tuple, list)) and len(sample) >= 1):
             return None, None, None
@@ -864,7 +878,15 @@ def _get_feature_importances(model, test_sample):
             batched_data = batched_data.float()
 
         batch_size = int(batched_data.size(0))
-        input_shape = tuple(int(dim) for dim in batched_data.shape[1:])
+        if batched_data.ndim == 4:
+            # SHAP image explainers operate more naturally on channel-last images.
+            input_shape = (
+                int(batched_data.shape[2]),
+                int(batched_data.shape[3]),
+                int(batched_data.shape[1]),
+            )
+        else:
+            input_shape = tuple(int(dim) for dim in batched_data.shape[1:])
 
         if batch_size == 1:
             return batched_data[:1], batched_data[:1], input_shape
@@ -884,7 +906,41 @@ def _get_feature_importances(model, test_sample):
     def _compute_shap_values(model_ref, background, test_data):
         explainer_errors = []
 
+        if test_data.ndim == 4:
+            def predict_fn(images):
+                if isinstance(images, list):
+                    images = np.asarray(images)
+
+                image_tensor = torch.as_tensor(images, dtype=test_data.dtype, device=background.device)
+                if image_tensor.ndim == 3:
+                    image_tensor = image_tensor.unsqueeze(0)
+
+                if image_tensor.ndim != 4:
+                    raise ValueError(f"Expected 4D image batch for SHAP, got shape {tuple(image_tensor.shape)}")
+
+                # SHAP image maskers provide NHWC arrays; convert back to NCHW for the model.
+                image_tensor = image_tensor.permute(0, 3, 1, 2).contiguous()
+
+                with torch.no_grad():
+                    logits = _extract_model_logits(model_ref(image_tensor))
+                    probs = _logits_to_probabilities(logits)
+                return probs.detach().cpu().numpy()
+
+            try:
+                test_images = test_data.detach().cpu().numpy().transpose(0, 2, 3, 1)
+                masker = shap.maskers.Image("blur(8,8)", test_images[0].shape)
+                explainer = shap.Explainer(predict_fn, masker)
+                explanation = explainer(
+                    test_images[: min(int(test_images.shape[0]), 4)],
+                    max_evals=128,
+                    batch_size=8,
+                )
+                return explanation.values
+            except Exception as exc:
+                explainer_errors.append(f"ImageExplainer: {exc}")
+
         for explainer_name in ("DeepExplainer", "GradientExplainer"):
+            explainer = None
             try:
                 if explainer_name == "DeepExplainer":
                     explainer = shap.DeepExplainer(model_ref, background)
@@ -894,6 +950,11 @@ def _get_feature_importances(model, test_sample):
                 return explainer.shap_values(test_data)
             except Exception as exc:
                 explainer_errors.append(f"{explainer_name}: {exc}")
+            finally:
+                # SHAP explainers may register autograd hooks. If we explain on the
+                # original model, those hooks can leak into later ART metrics.
+                del explainer
+                gc.collect()
 
         raise RuntimeError("; ".join(explainer_errors))
 
@@ -944,8 +1005,10 @@ def _get_feature_importances(model, test_sample):
         background = background.to(device)
         test_data = test_data.to(device)
 
-        model.eval()
-        shap_values = _compute_shap_values(model, background, test_data)
+        shap_model = _clone_model(model, device)
+        shap_values = _compute_shap_values(shap_model, background, test_data)
+        del shap_model
+        gc.collect()
 
         if shap_values is None:
             return np.array([])

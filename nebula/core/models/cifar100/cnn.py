@@ -100,3 +100,9 @@ class CIFAR100ModelCNN(NebulaModel):
             betas=(self.config["beta1"], self.config["beta2"]),
             amsgrad=self.config["amsgrad"],
         )
+
+    def get_learning_rate(self):
+        return self.learning_rate
+
+    def count_parameters(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)

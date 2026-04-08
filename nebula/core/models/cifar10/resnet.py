@@ -149,3 +149,9 @@ class CIFAR10ModelResNet(NebulaModel):
         else:
             optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate, weight_decay=1e-4)
         return optimizer
+
+    def get_learning_rate(self):
+        return self.learning_rate
+
+    def count_parameters(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)

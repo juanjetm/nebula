@@ -76,3 +76,9 @@ class CIFAR10ModelCNN_V3(NebulaModel):
             amsgrad=self.config["amsgrad"],
         )
         return optimizer
+
+    def get_learning_rate(self):
+        return self.learning_rate
+
+    def count_parameters(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)

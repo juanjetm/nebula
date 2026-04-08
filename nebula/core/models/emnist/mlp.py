@@ -35,6 +35,12 @@ class EMNISTModelMLP(NebulaModel):
         x = self.l3(x)
         return x
 
+    def get_learning_rate(self):
+        return self.learning_rate
+
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
         return optimizer
+
+    def count_parameters(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
