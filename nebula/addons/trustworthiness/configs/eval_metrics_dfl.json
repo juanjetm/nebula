@@ -42,7 +42,7 @@
             "description": "",
             "weight": 0.1
           },
-          "emprical_robustness": {
+          "empirical_robustness": {
             "inputs": [
               {
                 "source": "factsheet",
@@ -177,14 +177,38 @@
             "type": "true_score",
             "direction": "desc",
             "description": "A worst-case approximation of the maximal risk for distinguishing two clients.",
-            "weight": 1
+            "weight": 0.2
+          },
+          "epsilon_star": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "privacy/epsilon_star_score"
+              }
+            ],
+            "operation": "get_value",
+            "type": "true_score",
+            "description": "Empirical privacy leakage estimated from the separability of train and test loss distributions.",
+            "weight": 0.4
+          },
+          "mia_auc_score": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "privacy/mia_auc_score"
+              }
+            ],
+            "operation": "get_value",
+            "type": "true_score",
+            "description": "Trust-oriented score derived from the ROC-AUC of a loss-based membership inference attack.",
+            "weight": 0.4
           }
         }
       }
     },
     "fairness": {
       "class_distribution": {
-        "weight": 1,
+        "weight": 0.5,
         "metrics": {
           "class_imbalance": {
             "inputs": [
@@ -198,6 +222,83 @@
             "direction": "desc",
             "description": "Variation of the sample size per class.",
             "weight": 1
+          }
+        }
+      },
+      "outcome_fairness": {
+        "weight": 0.5,
+        "metrics": {
+          "underfitting": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "fairness/underfitting"
+              }
+            ],
+            "operation": "get_value",
+            "type": "true_score",
+            "description": "Held-out performance proxy used as an outcome-level fairness signal.",
+            "weight": 0.1667
+          },
+          "overfitting": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "fairness/overfitting"
+              }
+            ],
+            "operation": "get_value",
+            "type": "true_score",
+            "description": "Generalization quality proxy transformed so higher is better.",
+            "weight": 0.1667
+          },
+          "well_calibration_error": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "fairness/well_calibration_error"
+              }
+            ],
+            "operation": "get_value",
+            "type": "true_score",
+            "description": "Calibration quality of the predictive outputs represented as a trust-oriented score.",
+            "weight": 0.1667
+          },
+          "generalized_entropy_index": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "fairness/generalized_entropy_index"
+              }
+            ],
+            "operation": "get_value",
+            "type": "true_score",
+            "description": "Outcome inequality score transformed so higher values indicate better fairness.",
+            "weight": 0.1667
+          },
+          "theil_index": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "fairness/theil_index"
+              }
+            ],
+            "operation": "get_value",
+            "type": "true_score",
+            "description": "Theil-based outcome inequality score transformed so higher values indicate better fairness.",
+            "weight": 0.1667
+          },
+          "coefficient_of_variation": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "fairness/coefficient_of_variation"
+              }
+            ],
+            "operation": "get_value",
+            "type": "true_score",
+            "description": "Coefficient-of-variation-based outcome fairness score.",
+            "weight": 0.1665
           }
         }
       }
@@ -262,7 +363,45 @@
             "operation": "get_value",
             "type": "true_score",
             "description": "Variation of feature importance scores of all the features.",
-            "weight": 0.5
+            "weight": 0.2
+          },
+          "alpha_score": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "explainability/alpha_score"
+              }
+            ],
+            "operation": "get_value",
+            "type": "true_score",
+            "direction": "desc",
+            "description": "Fraction of features needed to explain most of the attribution mass; lower values indicate sparser and more focused explanations.",
+            "weight": 0.2
+          },
+          "spread_ratio": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "explainability/spread_ratio"
+              }
+            ],
+            "operation": "get_value",
+            "type": "true_score",
+            "direction": "desc",
+            "description": "Normalized entropy of the attribution distribution; lower values indicate explanations concentrated on fewer features.",
+            "weight": 0.2
+          },
+          "spread_divergence": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "explainability/spread_divergence"
+              }
+            ],
+            "operation": "get_value",
+            "type": "true_score",
+            "description": "Jensen-Shannon divergence between the attribution distribution and a uniform distribution; higher values indicate more selective explanations.",
+            "weight": 0.2
           },
           "visualization": {
             "inputs": [
@@ -274,7 +413,7 @@
             "operation": "get_value",
             "type": "true_score",
             "description": "The use of graphical capabilities to show the explainability.",
-            "weight": 0.5
+            "weight": 0.2
           }
         }
       }

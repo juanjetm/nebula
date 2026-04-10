@@ -125,6 +125,7 @@ const ScenarioManager = (function () {
                             selection_fairness: "0",
                             performance_fairness: "0",
                             class_distribution: document.getElementById("dfl-fairness-notion-3")?.value || "0",
+                            outcome_fairness: document.getElementById("dfl-fairness-notion-4")?.value || "0",
 
                             explainability_pillar: document.getElementById("dfl-explainability-pillar")?.value || "0",
                             interpretability: document.getElementById("dfl-explainability-notion-1")?.value || "0",
@@ -160,6 +161,7 @@ const ScenarioManager = (function () {
                         selection_fairness: document.getElementById("cfl-fairness-notion-1")?.value || "0",
                         performance_fairness: document.getElementById("cfl-fairness-notion-2")?.value || "0",
                         class_distribution: document.getElementById("cfl-fairness-notion-3")?.value || "0",
+                        outcome_fairness: document.getElementById("cfl-fairness-notion-4")?.value || "0",
 
                         explainability_pillar: document.getElementById("cfl-explainability-pillar")?.value || "0",
                         interpretability: document.getElementById("cfl-explainability-notion-1")?.value || "0",
@@ -191,6 +193,7 @@ const ScenarioManager = (function () {
                     selection_fairness: "0",
                     performance_fairness: "0",
                     class_distribution: "0",
+                    outcome_fairness: "0",
                     explainability_pillar: "0",
                     interpretability: "0",
                     post_hoc_methods: "0",

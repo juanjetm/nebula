@@ -78,6 +78,7 @@ const TrustworthinessManager = (function() {
             "cfl-fairness-notion-1",
             "cfl-fairness-notion-2",
             "cfl-fairness-notion-3",
+            "cfl-fairness-notion-4",
             "cfl-explainability-notion-1",
             "cfl-explainability-notion-2",
             "cfl-accountability-notion-1",
@@ -105,6 +106,7 @@ const TrustworthinessManager = (function() {
             "dfl-privacy-notion-2",
             "dfl-privacy-notion-3",
             "dfl-fairness-notion-3",
+            "dfl-fairness-notion-4",
             "dfl-explainability-notion-1",
             "dfl-explainability-notion-2",
             "dfl-accountability-notion-1",
@@ -163,6 +165,7 @@ const TrustworthinessManager = (function() {
         const fairnessNotion1 = parseFloat(document.getElementById("cfl-fairness-notion-1").value) || 0;
         const fairnessNotion2 = parseFloat(document.getElementById("cfl-fairness-notion-2").value) || 0;
         const fairnessNotion3 = parseFloat(document.getElementById("cfl-fairness-notion-3").value) || 0;
+        const fairnessNotion4 = parseFloat(document.getElementById("cfl-fairness-notion-4").value) || 0;
 
         const explainabilityNotion1 = parseFloat(document.getElementById("cfl-explainability-notion-1").value) || 0;
         const explainabilityNotion2 = parseFloat(document.getElementById("cfl-explainability-notion-2").value) || 0;
@@ -180,7 +183,7 @@ const TrustworthinessManager = (function() {
 
         const totalRobustnessNotion = robustnessNotion1 + robustnessNotion2 + robustnessNotion3;
         const totalPrivacyNotion = privacyNotion1 + privacyNotion2 + privacyNotion3;
-        const totalFairnessNotion = fairnessNotion1 + fairnessNotion2 + fairnessNotion3;
+        const totalFairnessNotion = fairnessNotion1 + fairnessNotion2 + fairnessNotion3 + fairnessNotion4;
         const totalExplainabilityNotion = explainabilityNotion1 + explainabilityNotion2;
         const totalArchitecturalSoundnessNotion = architecturalSoundnessNotion1 + architecturalSoundnessNotion2;
         const totalSustainabilityNotion = sustainabilityNotion1 + sustainabilityNotion2 + sustainabilityNotion3;
@@ -214,6 +217,7 @@ const TrustworthinessManager = (function() {
         const privacyNotion3 = parseFloat(document.getElementById("dfl-privacy-notion-3").value) || 0;
 
         const fairnessNotion3 = parseFloat(document.getElementById("dfl-fairness-notion-3").value) || 0;
+        const fairnessNotion4 = parseFloat(document.getElementById("dfl-fairness-notion-4").value) || 0;
 
         const explainabilityNotion1 = parseFloat(document.getElementById("dfl-explainability-notion-1").value) || 0;
         const explainabilityNotion2 = parseFloat(document.getElementById("dfl-explainability-notion-2").value) || 0;
@@ -230,7 +234,7 @@ const TrustworthinessManager = (function() {
 
         const totalRobustnessNotion = robustnessNotion1 + robustnessNotion2 + robustnessNotion3;
         const totalPrivacyNotion = privacyNotion1 + privacyNotion2 + privacyNotion3;
-        const totalFairnessNotion = fairnessNotion3;
+        const totalFairnessNotion = fairnessNotion3 + fairnessNotion4;
         const totalExplainabilityNotion = explainabilityNotion1 + explainabilityNotion2;
         const totalArchitecturalSoundnessNotion = architecturalSoundnessNotion1 + architecturalSoundnessNotion2;
         const totalSustainabilityNotion = sustainabilityNotion1 + sustainabilityNotion3;
@@ -279,7 +283,8 @@ const TrustworthinessManager = (function() {
             fairness: [
                 parseFloat(document.getElementById("cfl-fairness-notion-1").value) || 0,
                 parseFloat(document.getElementById("cfl-fairness-notion-2").value) || 0,
-                parseFloat(document.getElementById("cfl-fairness-notion-3").value) || 0
+                parseFloat(document.getElementById("cfl-fairness-notion-3").value) || 0,
+                parseFloat(document.getElementById("cfl-fairness-notion-4").value) || 0
             ],
             explainability: [
                 parseFloat(document.getElementById("cfl-explainability-notion-1").value) || 0,
@@ -325,7 +330,8 @@ const TrustworthinessManager = (function() {
                 parseFloat(document.getElementById("dfl-privacy-notion-3").value) || 0
             ],
             fairness: [
-                parseFloat(document.getElementById("dfl-fairness-notion-3").value) || 0
+                parseFloat(document.getElementById("dfl-fairness-notion-3").value) || 0,
+                parseFloat(document.getElementById("dfl-fairness-notion-4").value) || 0
             ],
             explainability: [
                 parseFloat(document.getElementById("dfl-explainability-notion-1").value) || 0,
@@ -378,10 +384,11 @@ const TrustworthinessManager = (function() {
             document.getElementById("cfl-privacy-notion-2").value = p[1];
             document.getElementById("cfl-privacy-notion-3").value = p[2];
 
-            const f = config.notions.fairness || [0, 0, 0];
+            const f = config.notions.fairness || [0, 0, 0, 0];
             document.getElementById("cfl-fairness-notion-1").value = f[0];
             document.getElementById("cfl-fairness-notion-2").value = f[1];
             document.getElementById("cfl-fairness-notion-3").value = f[2];
+            document.getElementById("cfl-fairness-notion-4").value = f[3];
 
             const e = config.notions.explainability || [0, 0];
             document.getElementById("cfl-explainability-notion-1").value = e[0];
@@ -420,8 +427,9 @@ const TrustworthinessManager = (function() {
             document.getElementById("dfl-privacy-notion-2").value = p[1];
             document.getElementById("dfl-privacy-notion-3").value = p[2];
 
-            const f = config.notions.fairness || [0];
+            const f = config.notions.fairness || [0, 0];
             document.getElementById("dfl-fairness-notion-3").value = f[0];
+            document.getElementById("dfl-fairness-notion-4").value = f[1];
 
             const e = config.notions.explainability || [0, 0];
             document.getElementById("dfl-explainability-notion-1").value = e[0];
@@ -470,6 +478,7 @@ const TrustworthinessManager = (function() {
         document.getElementById("cfl-fairness-notion-1").value = "0";
         document.getElementById("cfl-fairness-notion-2").value = "0";
         document.getElementById("cfl-fairness-notion-3").value = "0";
+        document.getElementById("cfl-fairness-notion-4").value = "0";
 
         document.getElementById("cfl-explainability-notion-1").value = "0";
         document.getElementById("cfl-explainability-notion-2").value = "0";
@@ -500,6 +509,7 @@ const TrustworthinessManager = (function() {
         document.getElementById("dfl-privacy-notion-3").value = "0";
 
         document.getElementById("dfl-fairness-notion-3").value = "0";
+        document.getElementById("dfl-fairness-notion-4").value = "0";
 
         document.getElementById("dfl-explainability-notion-1").value = "0";
         document.getElementById("dfl-explainability-notion-2").value = "0";

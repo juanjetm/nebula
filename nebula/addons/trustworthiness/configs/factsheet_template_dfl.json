@@ -28,7 +28,11 @@
 		"local_update_steps": ""
 	},
 	"privacy": {
-		"privacy_risk": ""
+		"privacy_risk": "",
+		"epsilon_star": "",
+		"epsilon_star_score": "",
+		"mia_auc": "",
+		"mia_auc_score": ""
 	},
 	"explainability": {
 		"alpha_score": "",
