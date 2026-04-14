@@ -13,12 +13,14 @@
 		"client_num": "",
 		"sample_client_rate": "",
 		"client_selector": "",
-		"avg_dataset_size": ""
+		"avg_dataset_size": "",
+		"avg_neighbor_reputation": ""
 	},
 	"configuration": {
 		"aggregation_algorithm": "",
 		"training_model": "",
 		"personalization": "",
+		"reputation_enabled": "",
 		"visualization": "",
 		"differential_privacy": "",
 		"dp_epsilon": "",
@@ -42,6 +44,7 @@
 	"performance": {
 		"test_loss_avg": "",
 		"test_acc_avg": "",
+		"test_macro_f1": "",
 		"test_feature_importance_cv": "",
 		"test_clever": "",
 		"test_loss_sensitivity": "",

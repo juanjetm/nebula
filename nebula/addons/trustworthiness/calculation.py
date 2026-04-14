@@ -20,7 +20,7 @@ from art.metrics import clever_u, loss_sensitivity, empirical_robustness
 from codecarbon import EmissionsTracker
 from scipy.spatial.distance import jensenshannon
 from scipy.stats import entropy, variation
-from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.metrics import f1_score, roc_auc_score, roc_curve
 from torch import nn, optim
 import torch.nn.functional as F
 import time
@@ -607,6 +607,48 @@ def _get_model_accuracy(model, dataloader):
             total += y.size(0)
 
     return correct / total if total > 0 else 0.0
+
+
+def get_macro_f1_score(model, dataloader):
+    """
+    Calculates macro F1 score over a dataloader.
+
+    Args:
+        model (torch.nn.Module): Model to evaluate.
+        dataloader (DataLoader): Dataloader with (x, y) batches.
+
+    Returns:
+        float: Macro F1 score in [0, 1].
+    """
+    if not isinstance(model, torch.nn.Module):
+        logger.warning("Model is not a torch.nn.Module")
+        return 0.0
+
+    try:
+        device = next(model.parameters()).device
+    except Exception:
+        device = torch.device("cpu")
+
+    model.eval()
+    y_true = []
+    y_pred = []
+
+    with torch.no_grad():
+        for x, y in dataloader:
+            x = x.to(device)
+            y = y.to(device)
+
+            out = model(x)
+            logits = out[0] if isinstance(out, (tuple, list)) else out
+            preds = logits.argmax(dim=1)
+
+            y_true.extend(y.detach().cpu().numpy().tolist())
+            y_pred.extend(preds.detach().cpu().numpy().tolist())
+
+    if not y_true:
+        return 0.0
+
+    return float(f1_score(y_true, y_pred, average="macro", zero_division=0))
 
 def _extract_model_logits(model_output):
     """
@@ -1236,49 +1278,97 @@ def get_spread_divergence(model, test_sample):
         return 0.0
 
 
-def get_clever_score(model, test_sample, nb_classes, learning_rate):
+def get_explainability_metrics_summary(model, test_dataloader, max_batches=4):
     """
-    Calculates the CLEVER score.
+    Computes explainability metrics over multiple test batches and returns
+    their mean values.
 
     Args:
         model (object): The model.
-        test_sample (object): One test sample to calculate the CLEVER score.
-        nb_classes (int): The nb_classes of the model.
-        learning_rate (float): The learning rate of the model.
+        test_dataloader: Test dataloader providing batches.
+        max_batches (int): Maximum number of batches to use.
 
     Returns:
-        float: The CLEVER score.
+        dict: Mean values for feature_importance_cv, alpha_score,
+        spread_ratio and spread_divergence.
     """
+    summary = {
+        "feature_importance_cv": 1.0,
+        "alpha_score": 1.0,
+        "spread_ratio": 1.0,
+        "spread_divergence": 0.0,
+    }
+
+    if test_dataloader is None:
+        return summary
+
+    try:
+        max_batches = max(1, int(max_batches))
+    except Exception:
+        max_batches = 4
+
+    fi_values = []
+    alpha_values = []
+    spread_ratio_values = []
+    spread_divergence_values = []
+
+    try:
+        for batch_idx, test_sample in enumerate(test_dataloader):
+            if batch_idx >= max_batches:
+                break
+
+            fi_values.append(float(get_feature_importance_cv(model, test_sample)))
+            alpha_values.append(float(get_alpha_score(model, test_sample)))
+            spread_ratio_values.append(float(get_spread_ratio(model, test_sample)))
+            spread_divergence_values.append(float(get_spread_divergence(model, test_sample)))
+    except Exception as exc:
+        logger.warning("Could not compute explainability metrics summary")
+        logger.warning(exc)
+
+    if fi_values:
+        summary["feature_importance_cv"] = float(np.mean(fi_values))
+    if alpha_values:
+        summary["alpha_score"] = float(np.mean(alpha_values))
+    if spread_ratio_values:
+        summary["spread_ratio"] = float(np.mean(spread_ratio_values))
+    if spread_divergence_values:
+        summary["spread_divergence"] = float(np.mean(spread_divergence_values))
+
+    return summary
 
 
+def get_clever_score(model, test_sample, nb_classes, learning_rate, max_samples=8):
+    """
+    Calculates the CLEVER score as the mean score over multiple samples.
+
+    Args:
+        model (object): The model.
+        test_sample (object): A batch from the test dataloader.
+        nb_classes (int): The nb_classes of the model.
+        learning_rate (float): The learning rate of the model.
+        max_samples (int): Maximum number of samples from the batch to evaluate.
+
+    Returns:
+        float: Mean CLEVER score across the selected samples.
+    """
     samples, _ = test_sample
-    input_shape = None
 
-    if torch.is_tensor(samples) and samples.dim() >= 1 and samples.shape[0] != 0:
-        pass
-    else:
+    if not (torch.is_tensor(samples) and samples.dim() >= 1 and samples.shape[0] != 0):
         raise ValueError("`test_sample[0]` must be a non-empty torch.Tensor.")
 
-    if input_shape is None:
-        if samples.dim() >= 2:
-            # (B, ...) -> input_shape = (...)
-            input_shape = tuple(samples.shape[1:])
-        else:
-            # (...) without batch
-            input_shape = tuple(samples.shape)
+    input_shape = tuple(samples.shape[1:]) if samples.dim() >= 2 else tuple(samples.shape)
 
-    background = samples[-1] if samples.dim() >= 2 else samples
+    try:
+        max_samples = max(1, int(max_samples))
+    except Exception:
+        max_samples = 8
 
-    x = background.detach().cpu().numpy()
-
-    if tuple(x.shape) == tuple(input_shape):
-        x = x.reshape((1,) + tuple(input_shape))
-
+    n_samples = min(int(samples.shape[0]), max_samples)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), learning_rate)
 
-    # Create the ART classifier
+    # Create the ART classifier once and reuse it for all selected samples.
     classifier = PyTorchClassifier(
         model=model,
         loss=criterion,
@@ -1287,17 +1377,32 @@ def get_clever_score(model, test_sample, nb_classes, learning_rate):
         nb_classes=nb_classes,
     )
 
-    score_untargeted = clever_u(
-        classifier,
-        background.numpy(),
-        10,
-        5,
-        R_L2,
-        norm=2,
-        pool_factor=3,
-        verbose=False,
-    )
-    return score_untargeted
+    clever_scores = []
+    for idx in range(n_samples):
+        background = samples[idx].detach().cpu()
+        sample_np = background.numpy()
+
+        try:
+            score_untargeted = clever_u(
+                classifier,
+                sample_np,
+                10,
+                5,
+                R_L2,
+                norm=2,
+                pool_factor=3,
+                verbose=False,
+            )
+            if score_untargeted is not None and not math.isnan(float(score_untargeted)):
+                clever_scores.append(float(score_untargeted))
+        except Exception as exc:
+            logger.warning("Could not compute CLEVER score for sample index %s", idx)
+            logger.warning(exc)
+
+    if not clever_scores:
+        return 0.0
+
+    return float(np.mean(clever_scores))
 
 
 def stop_emissions_tracking_and_save(
@@ -1390,45 +1495,67 @@ def comm_efficiency(bytes_up: int, bytes_down: int, test_acc_avg: float, eps: fl
 
     return total_bytes / acc
 
-def get_loss_sensitivity_score(model, test_sample, nb_classes, learning_rate):
+def get_loss_sensitivity_score(model, test_sample, nb_classes, learning_rate, max_samples=8):
 
     """
-    Calculates the loss sensitivity score.
+    Calculates the loss sensitivity score as the mean score over multiple samples.
 
     Args:
         model (object): The model.
-        test_sample (object): One test sample to calculate the loss sensitivity score.
+        test_sample (object): A batch from the test dataloader.
         nb_classes (int): The nb_classes of the model.
         learning_rate (float): The learning rate of the model.
+        max_samples (int): Maximum number of samples from the batch to evaluate.
 
     Returns:
-        float: The loss sensitivity score.
+        float: Mean loss sensitivity score across the selected samples.
     """
-
     samples, labels = test_sample
-    sample = samples[-1].unsqueeze(0)
-    label = labels[-1].unsqueeze(0)
 
-    label = F.one_hot(label, num_classes=nb_classes).float()
+    if not (torch.is_tensor(samples) and torch.is_tensor(labels) and samples.shape[0] > 0):
+        raise ValueError("`test_sample` must contain non-empty tensors for samples and labels.")
+
+    try:
+        max_samples = max(1, int(max_samples))
+    except Exception:
+        max_samples = 8
+
+    n_samples = min(int(samples.shape[0]), max_samples)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), learning_rate)
 
-    # Create the ART classifier
+    # Create the ART classifier once and reuse it for all selected samples.
     classifier = PyTorchClassifier(
         model=model,
         loss=criterion,
         optimizer=optimizer,
-        input_shape=sample.shape[1:],
+        input_shape=samples.shape[1:],
         nb_classes=nb_classes,
     )
 
-    score = loss_sensitivity(
-        classifier,
-        sample.numpy(),
-        label.numpy(),
-    )
-    return float(score)
+    sensitivity_scores = []
+    for idx in range(n_samples):
+        sample = samples[idx].detach().cpu().unsqueeze(0)
+        label = labels[idx].detach().cpu().unsqueeze(0)
+        label = F.one_hot(label, num_classes=nb_classes).float()
+
+        try:
+            score = loss_sensitivity(
+                classifier,
+                sample.numpy(),
+                label.numpy(),
+            )
+            if score is not None and not math.isnan(float(score)):
+                sensitivity_scores.append(float(score))
+        except Exception as exc:
+            logger.warning("Could not compute loss sensitivity for sample index %s", idx)
+            logger.warning(exc)
+
+    if not sensitivity_scores:
+        return 0.0
+
+    return float(np.mean(sensitivity_scores))
 
 def compute_adversarial_accuracy_art(
     model,
@@ -1495,7 +1622,7 @@ def get_empirical_robustness_score(
     learning_rate,
     attack_name = "fgsm",
     attack_params = None,
-    max_samples = 32,
+    max_samples = 128,
 ):
     """
     Calculates the Empirical Robustness score using Adversarial Robustness Toolbox (ART).

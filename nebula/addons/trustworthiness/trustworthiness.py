@@ -263,7 +263,14 @@ class TrustWorkloadTrainer(TrustWorkload):
             self._finalize_sdfl_global_trustscores_aggregation()
 
     def _compute_local_trustscores_report(self, experiment_name, trust_config, weights, federation) -> str:
-        populate_factsheet(experiment_name, self._idx, trust_config, self._start_time, self._end_time)
+        populate_factsheet(
+            experiment_name,
+            self._idx,
+            trust_config,
+            self._start_time,
+            self._end_time,
+            reputation_summary=self._get_reputation_trust_summary(),
+        )
 
         trust_metric_manager = TrustMetricManager(self._start_time, federation, self._idx)
         trust_metric_manager.evaluate_participant(experiment_name, weights, self._idx, use_weights=True)
@@ -316,6 +323,38 @@ class TrustWorkloadTrainer(TrustWorkload):
 
     def _get_reputation_system(self):
         return getattr(self._engine, "_reputation", None)
+
+    def _get_reputation_trust_summary(self) -> dict:
+        if not self._is_reputation_enabled():
+            return {
+                "reputation_enabled": False,
+                "avg_neighbor_reputation": 0.0,
+            }
+
+        reputation_system = self._get_reputation_system()
+        reputation_values = []
+
+        if reputation_system is not None:
+            for addr, data in reputation_system.reputation.items():
+                if addr == self._engine.addr:
+                    continue
+
+                reputation_value = data.get("reputation")
+                if reputation_value is None:
+                    continue
+
+                reputation_values.append(float(reputation_value))
+
+        if reputation_values:
+            avg_neighbor_reputation = sum(reputation_values) / len(reputation_values)
+        else:
+            reputation_config = self._engine.config.participant.get("defense_args", {}).get("reputation", {})
+            avg_neighbor_reputation = float(reputation_config.get("initial_reputation", 0.0) or 0.0)
+
+        return {
+            "reputation_enabled": True,
+            "avg_neighbor_reputation": avg_neighbor_reputation,
+        }
 
     def _get_trustscores_weight_for_source(self, source: str, node_id: int | str) -> float:
         if not self._is_reputation_enabled():
@@ -967,7 +1006,13 @@ class TrustWorkloadServer(TrustWorkload):
     async def _generate_factsheet(self, trust_config, experiment_name):
         factsheet = Factsheet()
         factsheet.populate_factsheet_pre_train(trust_config, experiment_name)
-        factsheet.populate_factsheet_post_train(experiment_name, self._start_time, self._end_time, self._idx)
+        factsheet.populate_factsheet_post_train(
+            experiment_name,
+            self._start_time,
+            self._end_time,
+            self._idx,
+            reputation_summary=self._get_reputation_trust_summary(),
+        )
 
         data_file_path = os.path.join(os.environ.get('NEBULA_CONFIG_DIR'), experiment_name, "scenario.json")
         with open(data_file_path, 'r') as data_file:
@@ -1004,6 +1049,43 @@ class TrustWorkloadServer(TrustWorkload):
 
             trust_metric_manager = TrustMetricManager(self._start_time, federation)
             trust_metric_manager.evaluate(experiment_name, weights, use_weights=True)
+
+    def _is_reputation_enabled(self) -> bool:
+        defense_args = self._engine.config.participant.get("defense_args", {})
+        reputation_config = defense_args.get("reputation", {})
+        return bool(reputation_config.get("enabled", False))
+
+    def _get_reputation_system(self):
+        return getattr(self._engine, "_reputation", None)
+
+    def _get_reputation_trust_summary(self) -> dict:
+        if not self._is_reputation_enabled():
+            return {
+                "reputation_enabled": False,
+                "avg_neighbor_reputation": 0.0,
+            }
+
+        reputation_system = self._get_reputation_system()
+        reputation_values = []
+
+        if reputation_system is not None:
+            for _, data in reputation_system.reputation.items():
+                reputation_value = data.get("reputation")
+                if reputation_value is None:
+                    continue
+
+                reputation_values.append(float(reputation_value))
+
+        if reputation_values:
+            avg_neighbor_reputation = sum(reputation_values) / len(reputation_values)
+        else:
+            reputation_config = self._engine.config.participant.get("defense_args", {}).get("reputation", {})
+            avg_neighbor_reputation = float(reputation_config.get("initial_reputation", 0.0) or 0.0)
+
+        return {
+            "reputation_enabled": True,
+            "avg_neighbor_reputation": avg_neighbor_reputation,
+        }
 
     async def _process_test_metrics_event(self, tme: TestMetricsEvent):
         cur_loss, cur_acc = await tme.get_event_data()

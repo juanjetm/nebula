@@ -29,13 +29,13 @@ from nebula.core.models.cifar10.fastermobilenet import FasterMobileNet
 from nebula.core.models.cifar10.resnet import CIFAR10ModelResNet
 from nebula.core.models.cifar10.simplemobilenet import SimpleMobileNetV1
 from nebula.core.models.cifar100.cnn import CIFAR100ModelCNN
-from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_models, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv, get_loss_sensitivity_score, compute_adversarial_accuracy_art,get_empirical_robustness_score,get_confidence_score,attack_success_rate, get_bytes_model, get_underfitting_score, get_overfitting_score, get_well_calibration_error, get_generalized_entropy_index, get_theil_index, get_coefficient_of_variation, get_alpha_score, get_spread_ratio, get_spread_divergence, get_epsilon_star, get_mia_auc
+from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_models, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv, get_loss_sensitivity_score, compute_adversarial_accuracy_art,get_empirical_robustness_score,get_confidence_score,attack_success_rate, get_bytes_model, get_underfitting_score, get_overfitting_score, get_well_calibration_error, get_generalized_entropy_index, get_theil_index, get_coefficient_of_variation, get_alpha_score, get_spread_ratio, get_spread_divergence, get_epsilon_star, get_mia_auc, get_explainability_metrics_summary, get_macro_f1_score
 from nebula.addons.trustworthiness.utils import count_all_class_samples, read_csv, check_field_filled, get_all_data_entropy
 
 dirname = os.path.dirname(__file__)
 logger = logging.getLogger(__name__)
 
-def populate_factsheet(experiment_name, participant_idx, data, start_time, end_time):
+def populate_factsheet(experiment_name, participant_idx, data, start_time, end_time, reputation_summary=None):
     trust_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), experiment_name, "trustworthiness")
     os.makedirs(trust_dir, exist_ok=True)
 
@@ -99,6 +99,7 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
         factsheet["configuration"]["aggregation_algorithm"] = data["agg_algorithm"] or ""
         factsheet["configuration"]["training_model"] = data["model"] or ""
         factsheet["configuration"]["personalization"] = False
+        factsheet["configuration"]["reputation_enabled"] = bool(data.get("reputation", {}).get("enabled", False))
         factsheet["configuration"]["visualization"] = True
         factsheet["configuration"]["total_round_num"] = n_rounds
 
@@ -224,6 +225,10 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
         factsheet["sustainability"]["emissions_training_local"] = emissions_training_local
         factsheet["sustainability"]["energy_consumed_local"] = energy_consumed_local
         factsheet["participants"]["local_dataset_size"] = sample_size
+        if reputation_summary is not None:
+            factsheet["participants"]["avg_neighbor_reputation"] = reputation_summary.get("avg_neighbor_reputation", "")
+        else:
+            factsheet["participants"]["avg_neighbor_reputation"] = 0
 
         factsheet["sustainability"]["emissions_communication_local"] = (bytes_sent * 2.24e-10 * carbon_intensity_local)+(bytes_recv * 2.24e-10 * carbon_intensity_local)
 
@@ -236,6 +241,8 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
             test_dataloader = pickle.load(d_file)
 
         test_sample = next(iter(test_dataloader))
+        explainability_metrics = get_explainability_metrics_summary(model, test_dataloader)
+        factsheet["performance"]["test_macro_f1"] = get_macro_f1_score(model, test_dataloader)
         factsheet["privacy"]["epsilon_star"] = get_epsilon_star(
             model,
             train_dataloader,
@@ -281,18 +288,9 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
             test_dataloader,
         )
         factsheet["fairness"]["coefficient_of_variation"] = 1/(1 + coefficient_of_variation_value)
-        factsheet["explainability"]["alpha_score"] = get_alpha_score(
-            model,
-            test_sample,
-        )
-        factsheet["explainability"]["spread_ratio"] = get_spread_ratio(
-            model,
-            test_sample,
-        )
-        factsheet["explainability"]["spread_divergence"] = get_spread_divergence(
-            model,
-            test_sample,
-        )
+        factsheet["explainability"]["alpha_score"] = explainability_metrics["alpha_score"]
+        factsheet["explainability"]["spread_ratio"] = explainability_metrics["spread_ratio"]
+        factsheet["explainability"]["spread_divergence"] = explainability_metrics["spread_divergence"]
 
         lr = factsheet["configuration"]["learning_rate"]
 
@@ -300,7 +298,7 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
         factsheet["performance"]["test_clever"] = 1 if value_clever > 1 else value_clever
 
         value_loss_sensitivity = get_loss_sensitivity_score(model, test_sample, num_classes_temp, lr)
-        factsheet["performance"]["test_loss_sensitivity"] = 1 if value_loss_sensitivity > 1 else value_loss_sensitivity
+        factsheet["performance"]["test_loss_sensitivity"] = 1 / (1 + value_loss_sensitivity)
 
         value_adv_accuracy = compute_adversarial_accuracy_art(model, test_dataloader, num_classes_temp, lr)
         factsheet["performance"]["test_adv_accuracy"] = 1 if value_adv_accuracy > 1 else value_adv_accuracy
@@ -314,7 +312,7 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
         value_attack_success_rate = attack_success_rate(model, test_sample)
         factsheet["performance"]["test_attack_success_rate"] = 1 - value_attack_success_rate
 
-        feature_importance = get_feature_importance_cv(model, test_sample)
+        feature_importance = explainability_metrics["feature_importance_cv"]
         factsheet["performance"]["test_feature_importance_cv"] = 1 if feature_importance > 1 else feature_importance
 
         f.seek(0)
