@@ -542,6 +542,14 @@
               {
                 "source": "factsheet",
                 "field_path": "participants/client_selector"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "participants/local_dataset_size"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "participants/avg_neighbor_reputation"
               }
             ],
             "operation": "check_properties",
@@ -567,7 +575,7 @@
             "operation": "check_properties",
             "type": "property_check",
             "description": "Meta data about the data.",
-            "weight": 0.2
+            "weight": 0.1
           },
           "configuration": {
             "inputs": [
@@ -582,6 +590,14 @@
               {
                 "source": "factsheet",
                 "field_path": "configuration/personalization"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "configuration/reputation_enabled"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "configuration/visualization"
               },
               {
                 "source": "factsheet",
@@ -611,7 +627,7 @@
             "operation": "check_properties",
             "type": "property_check",
             "description": "FL model configurations.",
-            "weight": 0.2
+            "weight": 0.1
           },
           "performance": {
             "inputs": [
@@ -622,6 +638,10 @@
               {
                 "source": "factsheet",
                 "field_path": "performance/test_acc"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "performance/test_macro_f1"
               },
               {
                 "source": "factsheet",
@@ -655,13 +675,41 @@
             "operation": "check_properties",
             "type": "property_check",
             "description": "Performance evaluation results.",
-            "weight": 0.2
+            "weight": 0.1
           },
           "fairness": {
             "inputs": [
               {
                 "source": "factsheet",
                 "field_path": "fairness/class_imbalance"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "fairness/selection_cv"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "fairness/underfitting"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "fairness/overfitting"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "fairness/well_calibration_error"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "fairness/generalized_entropy_index"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "fairness/theil_index"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "fairness/coefficient_of_variation"
               }
             ],
             "operation": "check_properties",
@@ -686,6 +734,86 @@
               {
                 "source": "factsheet",
                 "field_path": "system/download_bytes"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "system/dropout_rate"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "system/timeout_rate"
+              }
+            ],
+            "operation": "check_properties",
+            "type": "property_check",
+            "description": "System usage information.",
+            "weight": 0.1
+          },
+          "privacy": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "privacy/privacy_risk"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "privacy/epsilon_star"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "privacy/epsilon_star_score"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "privacy/mia_auc"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "privacy/mia_auc_score"
+              }
+            ],
+            "operation": "check_properties",
+            "type": "property_check",
+            "description": "System usage information.",
+            "weight": 0.1
+          },
+          "explainability": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "explainability/alpha_score"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "explainability/spread_ratio"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "explainability/spread_divergence"
+              }
+            ],
+            "operation": "check_properties",
+            "type": "property_check",
+            "description": "System usage information.",
+            "weight": 0.1
+          },
+          "sustainability": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "sustainability/carbon_intensity_local"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "sustainability/emissions_training_local"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "sustainability/energy_consumed_local"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "sustainability/emissions_communication_local"
               }
             ],
             "operation": "check_properties",
