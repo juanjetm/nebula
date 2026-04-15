@@ -245,6 +245,32 @@ def get_cv(list=None, std=None, mean=None):
     return 0
 
 
+def get_participation_variation_score(participation_counts):
+    """
+    Convert participation-count dispersion into a trust-oriented score.
+
+    Args:
+        participation_counts (list[float | int]): Number of participations per client.
+
+    Returns:
+        float: Score in [0, 1] where 1 means equal participation.
+    """
+    if not participation_counts:
+        return 1.0
+
+    counts = np.asarray(participation_counts, dtype=float)
+    mean_count = float(np.mean(counts))
+
+    if mean_count <= 0:
+        return 0.0
+
+    cv = get_cv(list=counts)
+    if not np.isfinite(cv):
+        return 0.0
+
+    return float(1 / (1 + cv))
+
+
 def get_global_privacy_risk(dp, epsilon, n):
     """
     Calculates the global privacy risk by epsilon and the number of clients.

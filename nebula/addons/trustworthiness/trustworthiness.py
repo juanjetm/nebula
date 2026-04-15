@@ -1,14 +1,14 @@
 import logging
 import asyncio
 from nebula.addons.functions import print_msg_box
-from nebula.core.nebulaevents import ExperimentFinishEvent, RoundEndEvent, TestMetricsEvent
+from nebula.core.nebulaevents import AggregationEvent, ExperimentFinishEvent, RoundEndEvent, RoundStartEvent, TestMetricsEvent
 from nebula.core.eventmanager import EventManager
 from nebula.core.noderole import Role, ServerRoleBehavior
 from abc import ABC, abstractmethod
 from nebula.config.config import Config
 from nebula.core.engine import Engine
 import pickle
-from nebula.addons.trustworthiness.calculation import stop_emissions_tracking_and_save, get_bytes_final_model_id, get_class_imbalance_local
+from nebula.addons.trustworthiness.calculation import stop_emissions_tracking_and_save, get_bytes_final_model_id, get_class_imbalance_local, get_participation_variation_score
 from nebula.addons.trustworthiness.utils import save_results_csv, save_trustworthiness_reports_csv, load_emissions_participant, load_data_results_participant, save_results_csv_cfl, save_emissions_csv_cfl, save_class_count_per_participant, get_local_entropy, load_trust_report_json_dumped, create_local_trust_report_copy, accumulate_weighted_trustscores, build_weighted_trustscores_report, save_trust_report_json
 from codecarbon import EmissionsTracker
 from nebula.addons.trustworthiness.per_round_metrics import PerRoundTrustMetrics
@@ -81,11 +81,18 @@ class TrustWorkloadTrainer(TrustWorkload):
         self._trustscores_template_report = None
         self._trustscores_local_copy_path = None
         self._trustscores_local_report_initialized = False
+        self._round_participation_counts = {}
+        self._dropout_expected_total = 0
+        self._dropout_missing_total = 0
+        self._aggregation_rounds_total = 0
+        self._timed_out_rounds_total = 0
 
     async def init(self, experiment_name):
         self._experiment_name = experiment_name
         self._reset_trustscores_exchange_state()
         self._trustscores_wait_event = asyncio.Event()
+        await EventManager.get_instance().subscribe_node_event(AggregationEvent, self._process_aggregation_event)
+        await EventManager.get_instance().subscribe_node_event(RoundStartEvent, self._process_round_start_event)
         await EventManager.get_instance().subscribe_node_event(RoundEndEvent, self._process_round_end_event)
         await EventManager.get_instance().subscribe_addonevent(TestMetricsEvent, self._process_test_metrics_event)
         await EventManager.get_instance().subscribe_node_event(ExperimentFinishEvent, self._process_experiment_finished_event)
@@ -270,6 +277,8 @@ class TrustWorkloadTrainer(TrustWorkload):
             self._start_time,
             self._end_time,
             reputation_summary=self._get_reputation_trust_summary(),
+            participation_summary=self._get_participation_trust_summary(),
+            reliability_summary=self._get_system_reliability_summary(),
         )
 
         trust_metric_manager = TrustMetricManager(self._start_time, federation, self._idx)
@@ -354,6 +363,33 @@ class TrustWorkloadTrainer(TrustWorkload):
         return {
             "reputation_enabled": True,
             "avg_neighbor_reputation": avg_neighbor_reputation,
+        }
+
+    def _get_participation_trust_summary(self) -> dict:
+        total_clients = int(self._engine.config.participant["scenario_args"]["n_nodes"]) - 1
+        counts = list(self._round_participation_counts.values())
+
+        if len(counts) < total_clients:
+            counts.extend([0] * (total_clients - len(counts)))
+
+        return {
+            "selection_cv": get_participation_variation_score(counts),
+        }
+
+    def _get_system_reliability_summary(self) -> dict:
+        if self._dropout_expected_total <= 0:
+            dropout_rate = 0.0
+        else:
+            dropout_rate = self._dropout_missing_total / self._dropout_expected_total
+
+        if self._aggregation_rounds_total <= 0:
+            timeout_rate = 0.0
+        else:
+            timeout_rate = self._timed_out_rounds_total / self._aggregation_rounds_total
+
+        return {
+            "dropout_rate": float(dropout_rate),
+            "timeout_rate": float(timeout_rate),
         }
 
     def _get_trustscores_weight_for_source(self, source: str, node_id: int | str) -> float:
@@ -820,6 +856,24 @@ class TrustWorkloadTrainer(TrustWorkload):
         with open(train_model, 'wb') as f:
             pickle.dump(self._engine.trainer.model, f)
 
+    async def _process_round_start_event(self, rse: RoundStartEvent):
+        _, _, expected_nodes = await rse.get_event_data()
+        for node_addr in expected_nodes:
+            self._round_participation_counts[node_addr] = self._round_participation_counts.get(node_addr, 0) + 1
+
+    async def _process_aggregation_event(self, age: AggregationEvent):
+        _, expected_nodes, missing_nodes = await age.get_event_data()
+        self_addr = self._engine.addr
+
+        expected_without_self = {node for node in expected_nodes if node != self_addr}
+        missing_without_self = {node for node in missing_nodes if node != self_addr}
+
+        self._aggregation_rounds_total += 1
+        self._dropout_expected_total += len(expected_without_self)
+        self._dropout_missing_total += len(missing_without_self)
+        if missing_without_self:
+            self._timed_out_rounds_total += 1
+
     async def _process_test_metrics_event(self, tme: TestMetricsEvent):
         cur_loss, cur_acc = await tme.get_event_data()
         if cur_loss and cur_acc:
@@ -857,10 +911,17 @@ class TrustWorkloadServer(TrustWorkload):
         self._trust_config = None
         self._csv_completed = False
         self._finish_post = False
+        self._round_participation_counts = {}
+        self._dropout_expected_total = 0
+        self._dropout_missing_total = 0
+        self._aggregation_rounds_total = 0
+        self._timed_out_rounds_total = 0
 
     async def init(self, experiment_name):
         self._experiment_name = experiment_name
+        await EventManager.get_instance().subscribe_node_event(AggregationEvent, self._process_aggregation_event)
         await EventManager.get_instance().subscribe_addonevent(TestMetricsEvent, self._process_test_metrics_event)
+        await EventManager.get_instance().subscribe_node_event(RoundStartEvent, self._process_round_start_event)
         await EventManager.get_instance().subscribe_node_event(ExperimentFinishEvent, self._process_experiment_finished_event)
         await self._create_pk_files(experiment_name)
 
@@ -1002,6 +1063,24 @@ class TrustWorkloadServer(TrustWorkload):
             self._csv_completed = True
             logging.info(f"[TW SERVER] all reports received, waiting for finish post, csv_completed {self._csv_completed}")
 
+    async def _process_round_start_event(self, rse: RoundStartEvent):
+        _, _, expected_nodes = await rse.get_event_data()
+        for node_addr in expected_nodes:
+            self._round_participation_counts[node_addr] = self._round_participation_counts.get(node_addr, 0) + 1
+
+    async def _process_aggregation_event(self, age: AggregationEvent):
+        _, expected_nodes, missing_nodes = await age.get_event_data()
+        self_addr = self._engine.addr
+
+        expected_without_self = {node for node in expected_nodes if node != self_addr}
+        missing_without_self = {node for node in missing_nodes if node != self_addr}
+
+        self._aggregation_rounds_total += 1
+        self._dropout_expected_total += len(expected_without_self)
+        self._dropout_missing_total += len(missing_without_self)
+        if missing_without_self:
+            self._timed_out_rounds_total += 1
+
 
     async def _generate_factsheet(self, trust_config, experiment_name):
         factsheet = Factsheet()
@@ -1012,6 +1091,8 @@ class TrustWorkloadServer(TrustWorkload):
             self._end_time,
             self._idx,
             reputation_summary=self._get_reputation_trust_summary(),
+            participation_summary=self._get_participation_trust_summary(),
+            reliability_summary=self._get_system_reliability_summary(),
         )
 
         data_file_path = os.path.join(os.environ.get('NEBULA_CONFIG_DIR'), experiment_name, "scenario.json")
@@ -1085,6 +1166,33 @@ class TrustWorkloadServer(TrustWorkload):
         return {
             "reputation_enabled": True,
             "avg_neighbor_reputation": avg_neighbor_reputation,
+        }
+
+    def _get_participation_trust_summary(self) -> dict:
+        total_clients = int(self._engine.config.participant["scenario_args"]["n_nodes"]) - 1
+        counts = list(self._round_participation_counts.values())
+
+        if len(counts) < total_clients:
+            counts.extend([0] * (total_clients - len(counts)))
+
+        return {
+            "selection_cv": get_participation_variation_score(counts),
+        }
+
+    def _get_system_reliability_summary(self) -> dict:
+        if self._dropout_expected_total <= 0:
+            dropout_rate = 0.0
+        else:
+            dropout_rate = self._dropout_missing_total / self._dropout_expected_total
+
+        if self._aggregation_rounds_total <= 0:
+            timeout_rate = 0.0
+        else:
+            timeout_rate = self._timed_out_rounds_total / self._aggregation_rounds_total
+
+        return {
+            "dropout_rate": float(dropout_rate),
+            "timeout_rate": float(timeout_rate),
         }
 
     async def _process_test_metrics_event(self, tme: TestMetricsEvent):

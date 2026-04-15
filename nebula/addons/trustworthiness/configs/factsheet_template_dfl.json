@@ -54,6 +54,7 @@
 		"test_attack_success_rate": ""
 	},
 	"fairness": {
+		"selection_cv": "",
 		"class_imbalance": "",
 		"underfitting": "",
 		"overfitting": "",
@@ -66,7 +67,9 @@
 		"time_minutes": "",
 		"model_size": "",
 		"upload_bytes": "",
-		"download_bytes":""
+		"download_bytes":"",
+		"dropout_rate": "",
+		"timeout_rate": ""
 	},
 	"sustainability": {
 		"carbon_intensity_local": "",

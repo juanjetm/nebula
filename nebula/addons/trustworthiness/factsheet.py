@@ -108,7 +108,10 @@ class Factsheet:
                     # Set participants
                     factsheet["participants"]["client_num"] = data["n_nodes"] or ""
                     factsheet["participants"]["sample_client_rate"] = 1
-                    factsheet["participants"]["client_selector"] = ""
+                    if with_reputation == True:
+                        factsheet["participants"]["client_selector"] = "Reputation Based"
+                    else:
+                        factsheet["participants"]["client_selector"] = "Full Participation"
 
                     # Set configuration
                     factsheet["configuration"]["aggregation_algorithm"] = data["agg_algorithm"] or ""
@@ -194,7 +197,7 @@ class Factsheet:
                 logging.warning(f"{factsheet_file} is invalid")
                 logging.error(e)
 
-    def populate_factsheet_post_train(self, scenario_name, start_time, end_time, participant_idx, reputation_summary=None):
+    def populate_factsheet_post_train(self, scenario_name, start_time, end_time, participant_idx, reputation_summary=None, participation_summary=None, reliability_summary=None):
         """
         Populates the factsheet with values after the training.
 
@@ -247,8 +250,17 @@ class Factsheet:
                 factsheet["system"]["total_download_bytes"] = result_bytes_sent_recv[1]
                 factsheet["system"]["avg_upload_bytes"] = result_bytes_sent_recv[2]
                 factsheet["system"]["avg_download_bytes"] = result_bytes_sent_recv[3]
+                if reliability_summary is not None:
+                    factsheet["system"]["dropout_rate"] = reliability_summary.get("dropout_rate", 0.0)
+                    factsheet["system"]["timeout_rate"] = reliability_summary.get("timeout_rate", 0.0)
+                else:
+                    factsheet["system"]["dropout_rate"] = 0.0
+                    factsheet["system"]["timeout_rate"] = 0.0
 
-                factsheet["fairness"]["selection_cv"] = 1
+                if participation_summary is not None:
+                    factsheet["fairness"]["selection_cv"] = participation_summary.get("selection_cv", 1)
+                else:
+                    factsheet["fairness"]["selection_cv"] = 1
 
                 class_imbalance_score = 1 / (1+avg_class_imbalance)
                 factsheet["fairness"]["class_imbalance"] = 1 if class_imbalance_score > 1 else class_imbalance_score

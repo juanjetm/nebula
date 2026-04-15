@@ -152,7 +152,7 @@
             "direction": "desc",
             "ranges": [5, 10, 15, 20, 25, 30, 35, 40, 45, 50],
             "description": "The number of clients in the model.",
-            "weight": 0.5
+            "weight": 0.3
           },
           "average_neighbor_reputation": {
             "inputs": [
@@ -164,7 +164,33 @@
             "operation": "get_value",
             "type": "true_score",
             "description": "Average reputation score of the neighbors associated with the node.",
-            "weight": 0.5
+            "weight": 0.3
+          },
+          "dropout_rate": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "system/dropout_rate"
+              }
+            ],
+            "operation": "get_value",
+            "type": "true_score",
+            "direction": "desc",
+            "description": "Fraction of expected neighbor updates that were not received across rounds.",
+            "weight": 0.2
+          },
+          "timeout_rate": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "system/timeout_rate"
+              }
+            ],
+            "operation": "get_value",
+            "type": "true_score",
+            "direction": "desc",
+            "description": "Fraction of aggregation rounds that finished with missing expected neighbor updates.",
+            "weight": 0.2
           }
         }
       }
@@ -259,6 +285,18 @@
       "class_distribution": {
         "weight": 0.5,
         "metrics": {
+          "selection_variation": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "fairness/selection_cv"
+              }
+            ],
+            "operation": "get_value",
+            "type": "true_score",
+            "description": "Local variation in neighbor participation across rounds, transformed so higher values mean more stable participation.",
+            "weight": 0.5
+          },
           "class_imbalance": {
             "inputs": [
               {
@@ -270,7 +308,7 @@
             "type": "true_score",
             "direction": "desc",
             "description": "Variation of the sample size per class.",
-            "weight": 1
+            "weight": 0.5
           }
         }
       },
@@ -535,7 +573,7 @@
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "configuration/optimization_algorithm"
+                "field_path": "configuration/aggregation_algorithm"
               },
               {
                 "source": "factsheet",
@@ -669,10 +707,32 @@
                 "field_path": "participants/client_selector"
               }
             ],
-            "operation": "check_properties",
-            "type": "property_check",
-            "description": "The use of a client selector.",
-            "weight": 1
+            "operation": "get_value",
+            "type": "score_mapping",
+            "score_map": {
+              "Reputation Based": 1.0,
+              "Full Participation": 0.5
+            },
+            "description": "Mapping of client selection strategies to architectural soundness. Reputation-based selection is scored higher than full participation because it introduces an explicit selection mechanism.",
+            "weight": 0.5
+          },
+          "topology_type": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "data/preprocessing"
+              }
+            ],
+            "operation": "get_value",
+            "type": "score_mapping",
+            "score_map": {
+              "Fully": 1.0,
+              "Star": 0.8,
+              "Ring": 0.6,
+              "Random": 0.2
+            },
+            "description": "Mapping of network topology types to architectural soundness, assuming fully connected topologies provide the strongest structural connectivity, followed by star, ring, and random topologies.",
+            "weight": 0.5
           }
         }
       },

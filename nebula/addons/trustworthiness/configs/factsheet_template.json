@@ -70,7 +70,9 @@
 		"total_upload_bytes": "",
 		"total_download_bytes":"",
 		"avg_upload_bytes": "",
-		"avg_download_bytes": ""
+		"avg_download_bytes": "",
+		"dropout_rate": "",
+		"timeout_rate": ""
 	},
 	"sustainability": {
 		"avg_carbon_intensity_server": "",

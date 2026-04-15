@@ -35,7 +35,7 @@ from nebula.addons.trustworthiness.utils import count_all_class_samples, read_cs
 dirname = os.path.dirname(__file__)
 logger = logging.getLogger(__name__)
 
-def populate_factsheet(experiment_name, participant_idx, data, start_time, end_time, reputation_summary=None):
+def populate_factsheet(experiment_name, participant_idx, data, start_time, end_time, reputation_summary=None, participation_summary=None, reliability_summary=None):
     trust_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), experiment_name, "trustworthiness")
     os.makedirs(trust_dir, exist_ok=True)
 
@@ -93,7 +93,11 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
         # Set participants
         factsheet["participants"]["client_num"] = data["n_nodes"] or ""
         factsheet["participants"]["sample_client_rate"] = 1
-        factsheet["participants"]["client_selector"] = ""
+
+        if with_reputation == True:
+            factsheet["participants"]["client_selector"] = "Reputation Based"
+        else:
+            factsheet["participants"]["client_selector"] = "Full Participation"
 
         # Set configuration
         factsheet["configuration"]["aggregation_algorithm"] = data["agg_algorithm"] or ""
@@ -206,6 +210,12 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
 
         factsheet["system"]["upload_bytes"] = int(bytes_sent)
         factsheet["system"]["download_bytes"] = int(bytes_recv)
+        if reliability_summary is not None:
+            factsheet["system"]["dropout_rate"] = reliability_summary.get("dropout_rate", 0.0)
+            factsheet["system"]["timeout_rate"] = reliability_summary.get("timeout_rate", 0.0)
+        else:
+            factsheet["system"]["dropout_rate"] = 0.0
+            factsheet["system"]["timeout_rate"] = 0.0
 
         factsheet["system"]["time_minutes"] = get_elapsed_time(start_time, end_time)
 
@@ -218,6 +228,11 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
             factsheet["fairness"]["class_imbalance"] = 1 if class_imbalance > 1 else class_imbalance
         else:
             factsheet["fairness"]["class_imbalance"] = factsheet["fairness"].get("class_imbalance", 0.0)
+
+        if participation_summary is not None:
+            factsheet["fairness"]["selection_cv"] = participation_summary.get("selection_cv", 1)
+        else:
+            factsheet["fairness"]["selection_cv"] = 1
 
         carbon_intensity_local, emissions_training_local, energy_consumed_local, sample_size = get_emissions(emissions_file, participant_idx)
 
