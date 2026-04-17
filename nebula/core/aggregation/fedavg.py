@@ -1,6 +1,7 @@
 import gc
 
 import torch
+import logging
 
 from nebula.core.aggregation.aggregator import Aggregator
 
@@ -17,6 +18,10 @@ class FedAvg(Aggregator):
 
     def run_aggregation(self, models):
         super().run_aggregation(models)
+
+        if not models:
+            logging.warning("FedAvg received an empty update set.")
+            return None
 
         models = list(models.values())
 
