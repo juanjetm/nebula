@@ -22,6 +22,7 @@
 		"personalization": "",
 		"reputation_enabled": "",
 		"visualization": "",
+		"monitoring": "",
 		"differential_privacy": "",
 		"dp_epsilon": "",
 		"trainable_param_num": "",

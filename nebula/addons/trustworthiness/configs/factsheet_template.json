@@ -13,15 +13,14 @@
 		"client_num": "",
 		"sample_client_rate": "",
 		"client_selector": "",
-		"avg_dataset_size": "",
-		"avg_neighbor_reputation": ""
+		"avg_dataset_size": ""
 	},
 	"configuration": {
 		"aggregation_algorithm": "",
 		"training_model": "",
 		"personalization": "",
-		"reputation_enabled": "",
 		"visualization": "",
+		"monitoring": "",
 		"differential_privacy": "",
 		"dp_epsilon": "",
 		"trainable_param_num": "",

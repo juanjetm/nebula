@@ -507,7 +507,7 @@
     },
     "accountability": {
       "factsheet_completeness": {
-        "weight": 1,
+        "weight": 0.8,
         "metrics": {
           "project_specs": {
             "inputs": [
@@ -598,6 +598,10 @@
               {
                 "source": "factsheet",
                 "field_path": "configuration/visualization"
+              },
+              {
+                "source": "factsheet",
+                "field_path": "configuration/monitoring"
               },
               {
                 "source": "factsheet",
@@ -822,6 +826,23 @@
             "weight": 0.1
           }
         }
+      },
+      "monitoring": {
+        "weight": 0.2,
+        "metrics": {
+          "logs_available": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "configuration/monitoring"
+              }
+            ],
+            "operation": "get_value",
+            "type": "true_score",
+            "description": "The use of logs to show all the nodes.",
+            "weight": 1
+          }
+        }
       }
     },
     "architectural_soundness": {
@@ -842,25 +863,7 @@
               "Full Participation": 0.5
             },
             "description": "Mapping of client selection strategies to architectural soundness. Reputation-based selection is scored higher than full participation because it introduces an explicit selection mechanism.",
-            "weight": 0.5
-          },
-          "topology_type": {
-            "inputs": [
-              {
-                "source": "factsheet",
-                "field_path": "data/preprocessing"
-              }
-            ],
-            "operation": "get_value",
-            "type": "score_mapping",
-            "score_map": {
-              "Fully": 1.0,
-              "Star": 0.8,
-              "Ring": 0.6,
-              "Random": 0.2
-            },
-            "description": "Mapping of network topology types to architectural soundness, assuming fully connected topologies provide the strongest structural connectivity, followed by star, ring, and random topologies.",
-            "weight": 0.5
+            "weight": 1
           }
         }
       },
@@ -883,6 +886,29 @@
               "Median": 0.9461
             },
             "description": "The choice of a suitable aggregation algorithm.",
+            "weight": 1
+          }
+        }
+      },
+      "federation_management": {
+        "weight": 0.5,
+        "metrics": {
+          "topology_type": {
+            "inputs": [
+              {
+                "source": "factsheet",
+                "field_path": "data/preprocessing"
+              }
+            ],
+            "operation": "get_value",
+            "type": "score_mapping",
+            "score_map": {
+              "Fully": 1.0,
+              "Star": 0.8,
+              "Ring": 0.6,
+              "Random": 0.2
+            },
+            "description": "Mapping of network topology types to architectural soundness, assuming fully connected topologies provide the strongest structural connectivity, followed by star, ring, and random topologies.",
             "weight": 1
           }
         }

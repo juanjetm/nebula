@@ -119,6 +119,7 @@ class Factsheet:
                     factsheet["configuration"]["personalization"] = False
                     factsheet["configuration"]["reputation_enabled"] = bool(data.get("reputation", {}).get("enabled", False))
                     factsheet["configuration"]["visualization"] = True
+                    factsheet["configuration"]["monitoring"] = True
                     factsheet["configuration"]["total_round_num"] = n_rounds
 
                     """

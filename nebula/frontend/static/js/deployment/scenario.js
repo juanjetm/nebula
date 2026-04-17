@@ -132,11 +132,13 @@ const ScenarioManager = (function () {
                             post_hoc_methods: document.getElementById("dfl-explainability-notion-2")?.value || "0",
 
                             accountability_pillar: document.getElementById("dfl-accountability-pillar")?.value || "0",
-                            factsheet_completeness: document.getElementById("dfl-accountability-notion-1")?.value || "100",
+                            factsheet_completeness: document.getElementById("dfl-accountability-notion-1")?.value || "0",
+                            monitoring: document.getElementById("dfl-accountability-notion-2")?.value || "0",
 
                             architectural_soundness_pillar: document.getElementById("dfl-architectural-soundness-pillar")?.value || "0",
                             client_management: document.getElementById("dfl-architectural-soundness-notion-1")?.value || "0",
                             optimization: document.getElementById("dfl-architectural-soundness-notion-2")?.value || "0",
+                            federation_management: document.getElementById("dfl-architectural-soundness-notion-3")?.value || "0",
 
                             sustainability_pillar: document.getElementById("dfl-sustainability-pillar")?.value || "0",
                             energy_source: document.getElementById("dfl-sustainability-notion-1")?.value || "0",
@@ -168,11 +170,14 @@ const ScenarioManager = (function () {
                         post_hoc_methods: document.getElementById("cfl-explainability-notion-2")?.value || "0",
 
                         accountability_pillar: document.getElementById("cfl-accountability-pillar")?.value || "0",
-                        factsheet_completeness: document.getElementById("cfl-accountability-notion-1")?.value || "100",
+                        factsheet_completeness: document.getElementById("cfl-accountability-notion-1")?.value || "0",
+                        monitoring: document.getElementById("cfl-accountability-notion-2")?.value || "0",
+
 
                         architectural_soundness_pillar: document.getElementById("cfl-architectural-soundness-pillar")?.value || "0",
                         client_management: document.getElementById("cfl-architectural-soundness-notion-1")?.value || "0",
                         optimization: document.getElementById("cfl-architectural-soundness-notion-2")?.value || "0",
+                        federation_management: document.getElementById("cfl-architectural-soundness-notion-3")?.value || "0",
 
                         sustainability_pillar: document.getElementById("cfl-sustainability-pillar")?.value || "0",
                         energy_source: document.getElementById("cfl-sustainability-notion-1")?.value || "0",
@@ -198,10 +203,12 @@ const ScenarioManager = (function () {
                     interpretability: "0",
                     post_hoc_methods: "0",
                     accountability_pillar: "0",
-                    factsheet_completeness: "100",
+                    factsheet_completeness: "0",
+                    monitoring: "0",
                     architectural_soundness_pillar: "0",
                     client_management: "0",
                     optimization: "0",
+                    federation_management: "0",
                     sustainability_pillar: "0",
                     energy_source: "0",
                     hardware_efficiency: "0",

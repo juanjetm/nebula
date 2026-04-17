@@ -82,8 +82,10 @@ const TrustworthinessManager = (function() {
             "cfl-explainability-notion-1",
             "cfl-explainability-notion-2",
             "cfl-accountability-notion-1",
+            "cfl-accountability-notion-2",
             "cfl-architectural-soundness-notion-1",
             "cfl-architectural-soundness-notion-2",
+            "cfl-architectural-soundness-notion-3",
             "cfl-sustainability-notion-1",
             "cfl-sustainability-notion-2",
             "cfl-sustainability-notion-3"
@@ -110,8 +112,10 @@ const TrustworthinessManager = (function() {
             "dfl-explainability-notion-1",
             "dfl-explainability-notion-2",
             "dfl-accountability-notion-1",
+            "dfl-accountability-notion-2",
             "dfl-architectural-soundness-notion-1",
             "dfl-architectural-soundness-notion-2",
+            "dfl-architectural-soundness-notion-3",
             "dfl-sustainability-notion-1",
             "dfl-sustainability-notion-3"
         ];
@@ -172,10 +176,14 @@ const TrustworthinessManager = (function() {
 
         const architecturalSoundnessNotion1 = parseFloat(document.getElementById("cfl-architectural-soundness-notion-1").value) || 0;
         const architecturalSoundnessNotion2 = parseFloat(document.getElementById("cfl-architectural-soundness-notion-2").value) || 0;
+        const architecturalSoundnessNotion3 = parseFloat(document.getElementById("cfl-architectural-soundness-notion-3").value) || 0;
 
         const sustainabilityNotion1 = parseFloat(document.getElementById("cfl-sustainability-notion-1").value) || 0;
         const sustainabilityNotion2 = parseFloat(document.getElementById("cfl-sustainability-notion-2").value) || 0;
         const sustainabilityNotion3 = parseFloat(document.getElementById("cfl-sustainability-notion-3").value) || 0;
+
+        const accountabilityNotion1 = parseFloat(document.getElementById("cfl-accountability-notion-1").value) || 0;
+        const accountabilityNotion2 = parseFloat(document.getElementById("cfl-accountability-notion-2").value) || 0;
 
         const totalPillar =
             robustnessPercent + privacyPercent + fairnessPercent + explainabilityPercent +
@@ -185,8 +193,10 @@ const TrustworthinessManager = (function() {
         const totalPrivacyNotion = privacyNotion1 + privacyNotion2 + privacyNotion3;
         const totalFairnessNotion = fairnessNotion1 + fairnessNotion2 + fairnessNotion3 + fairnessNotion4;
         const totalExplainabilityNotion = explainabilityNotion1 + explainabilityNotion2;
-        const totalArchitecturalSoundnessNotion = architecturalSoundnessNotion1 + architecturalSoundnessNotion2;
+        const totalArchitecturalSoundnessNotion = architecturalSoundnessNotion1 + architecturalSoundnessNotion2 + architecturalSoundnessNotion3;
         const totalSustainabilityNotion = sustainabilityNotion1 + sustainabilityNotion2 + sustainabilityNotion3;
+        const totalAccountabilityNotion = accountabilityNotion1 + accountabilityNotion2;
+
 
         return (
             getWeightValidationMessage("Pillars", totalPillar) ||
@@ -195,7 +205,8 @@ const TrustworthinessManager = (function() {
             getWeightValidationMessage("Fairness notions", totalFairnessNotion) ||
             getWeightValidationMessage("Explainability notions", totalExplainabilityNotion) ||
             getWeightValidationMessage("Architectural soundness notions", totalArchitecturalSoundnessNotion) ||
-            getWeightValidationMessage("Sustainability notions", totalSustainabilityNotion)
+            getWeightValidationMessage("Sustainability notions", totalSustainabilityNotion) ||
+            getWeightValidationMessage("Accountability notions", totalAccountabilityNotion)
         );
     }
 
@@ -224,9 +235,13 @@ const TrustworthinessManager = (function() {
 
         const architecturalSoundnessNotion1 = parseFloat(document.getElementById("dfl-architectural-soundness-notion-1").value) || 0;
         const architecturalSoundnessNotion2 = parseFloat(document.getElementById("dfl-architectural-soundness-notion-2").value) || 0;
+        const architecturalSoundnessNotion3 = parseFloat(document.getElementById("dfl-architectural-soundness-notion-3").value) || 0;
 
         const sustainabilityNotion1 = parseFloat(document.getElementById("dfl-sustainability-notion-1").value) || 0;
         const sustainabilityNotion3 = parseFloat(document.getElementById("dfl-sustainability-notion-3").value) || 0;
+
+        const accountabilityNotion1 = parseFloat(document.getElementById("cfl-accountability-notion-1").value) || 0;
+        const accountabilityNotion2 = parseFloat(document.getElementById("cfl-accountability-notion-2").value) || 0;
 
         const totalPillar =
             robustnessPercent + privacyPercent + fairnessPercent + explainabilityPercent +
@@ -236,8 +251,9 @@ const TrustworthinessManager = (function() {
         const totalPrivacyNotion = privacyNotion1 + privacyNotion2 + privacyNotion3;
         const totalFairnessNotion = fairnessNotion3 + fairnessNotion4;
         const totalExplainabilityNotion = explainabilityNotion1 + explainabilityNotion2;
-        const totalArchitecturalSoundnessNotion = architecturalSoundnessNotion1 + architecturalSoundnessNotion2;
+        const totalArchitecturalSoundnessNotion = architecturalSoundnessNotion1 + architecturalSoundnessNotion2 + architecturalSoundnessNotion3;
         const totalSustainabilityNotion = sustainabilityNotion1 + sustainabilityNotion3;
+        const totalAccountabilityNotion = accountabilityNotion1 + accountabilityNotion2;
 
         return (
             getWeightValidationMessage("Pillars", totalPillar) ||
@@ -246,7 +262,8 @@ const TrustworthinessManager = (function() {
             getWeightValidationMessage("Fairness notions", totalFairnessNotion) ||
             getWeightValidationMessage("Explainability notions", totalExplainabilityNotion) ||
             getWeightValidationMessage("Architectural soundness notions", totalArchitecturalSoundnessNotion) ||
-            getWeightValidationMessage("Sustainability notions", totalSustainabilityNotion)
+            getWeightValidationMessage("Sustainability notions", totalSustainabilityNotion) ||
+            getWeightValidationMessage("Accountability notions", totalAccountabilityNotion)
         );
     }
 
@@ -291,11 +308,13 @@ const TrustworthinessManager = (function() {
                 parseFloat(document.getElementById("cfl-explainability-notion-2").value) || 0
             ],
             accountability: [
-                parseFloat(document.getElementById("cfl-accountability-notion-1")?.value) || 100
+                parseFloat(document.getElementById("cfl-accountability-notion-1")?.value) || 0,
+                parseFloat(document.getElementById("cfl-accountability-notion-2")?.value) || 0
             ],
             architecturalSoundness: [
                 parseFloat(document.getElementById("cfl-architectural-soundness-notion-1").value) || 0,
-                parseFloat(document.getElementById("cfl-architectural-soundness-notion-2").value) || 0
+                parseFloat(document.getElementById("cfl-architectural-soundness-notion-2").value) || 0,
+                parseFloat(document.getElementById("cfl-architectural-soundness-notion-3").value) || 0
             ],
             sustainability: [
                 parseFloat(document.getElementById("cfl-sustainability-notion-1").value) || 0,
@@ -338,11 +357,13 @@ const TrustworthinessManager = (function() {
                 parseFloat(document.getElementById("dfl-explainability-notion-2").value) || 0
             ],
             accountability: [
-                parseFloat(document.getElementById("dfl-accountability-notion-1")?.value) || 100
+                parseFloat(document.getElementById("dfl-accountability-notion-1")?.value) || 0,
+                parseFloat(document.getElementById("dfl-accountability-notion-2")?.value) || 0
             ],
             architecturalSoundness: [
                 parseFloat(document.getElementById("dfl-architectural-soundness-notion-1").value) || 0,
-                parseFloat(document.getElementById("dfl-architectural-soundness-notion-2").value) || 0
+                parseFloat(document.getElementById("dfl-architectural-soundness-notion-2").value) || 0,
+                parseFloat(document.getElementById("dfl-architectural-soundness-notion-3").value) || 0
             ],
             sustainability: [
                 parseFloat(document.getElementById("dfl-sustainability-notion-1").value) || 0,
@@ -394,9 +415,10 @@ const TrustworthinessManager = (function() {
             document.getElementById("cfl-explainability-notion-1").value = e[0];
             document.getElementById("cfl-explainability-notion-2").value = e[1];
 
-            const a = config.notions.architecturalSoundness || [0, 0];
+            const a = config.notions.architecturalSoundness || [0, 0, 0];
             document.getElementById("cfl-architectural-soundness-notion-1").value = a[0];
             document.getElementById("cfl-architectural-soundness-notion-2").value = a[1];
+            document.getElementById("cfl-architectural-soundness-notion-3").value = a[2];
 
             const s = config.notions.sustainability || [0, 0, 0];
             document.getElementById("cfl-sustainability-notion-1").value = s[0];
@@ -435,9 +457,10 @@ const TrustworthinessManager = (function() {
             document.getElementById("dfl-explainability-notion-1").value = e[0];
             document.getElementById("dfl-explainability-notion-2").value = e[1];
 
-            const a = config.notions.architecturalSoundness || [0, 0];
+            const a = config.notions.architecturalSoundness || [0, 0, 0];
             document.getElementById("dfl-architectural-soundness-notion-1").value = a[0];
             document.getElementById("dfl-architectural-soundness-notion-2").value = a[1];
+            document.getElementById("dfl-architectural-soundness-notion-3").value = a[2];
 
             const s = config.notions.sustainability || [0, 0];
             document.getElementById("dfl-sustainability-notion-1").value = s[0];
@@ -485,6 +508,7 @@ const TrustworthinessManager = (function() {
 
         document.getElementById("cfl-architectural-soundness-notion-1").value = "0";
         document.getElementById("cfl-architectural-soundness-notion-2").value = "0";
+        document.getElementById("cfl-architectural-soundness-notion-3").value = "0";
 
         document.getElementById("cfl-sustainability-notion-1").value = "0";
         document.getElementById("cfl-sustainability-notion-2").value = "0";
@@ -516,6 +540,7 @@ const TrustworthinessManager = (function() {
 
         document.getElementById("dfl-architectural-soundness-notion-1").value = "0";
         document.getElementById("dfl-architectural-soundness-notion-2").value = "0";
+        document.getElementById("dfl-architectural-soundness-notion-3").value = "0";
 
         document.getElementById("dfl-sustainability-notion-1").value = "0";
         document.getElementById("dfl-sustainability-notion-3").value = "0";
