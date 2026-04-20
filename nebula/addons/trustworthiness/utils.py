@@ -306,8 +306,9 @@ def load_data_results_participant(experiment_name: str, participant_id: int | st
     bytes_recv = int(float(row["bytes_recv"]))
     accuracy = float(row["accuracy"])
     loss = float(row["loss"])
+    val_accuracy = float(row["val_accuracy"])
 
-    return bytes_sent, bytes_recv, accuracy, loss
+    return bytes_sent, bytes_recv, accuracy, loss, val_accuracy
 
 
 def load_emissions_participant(experiment_name: str, participant_id: int | str):
@@ -354,7 +355,7 @@ def save_trustworthiness_reports_csv(
     with open(data_results_path, "w", newline="") as csv_file:
         writer = csv.DictWriter(
             csv_file,
-            fieldnames=["id", "bytes_sent", "bytes_recv", "accuracy", "loss", "class_imbalance", "model_size", "local_entropy"],
+            fieldnames=["id", "bytes_sent", "bytes_recv", "accuracy", "loss", "class_imbalance", "model_size", "local_entropy", "val_accuracy"],
         )
         writer.writeheader()
 
@@ -368,6 +369,7 @@ def save_trustworthiness_reports_csv(
                 "class_imbalance": report["class_imbalance"],
                 "model_size": report["model_size"],
                 "local_entropy": report["local_entropy"],
+                "val_accuracy": report["val_accuracy"],
             })
 
     with open(emissions_path, "w", newline="") as csv_file:
@@ -398,7 +400,7 @@ def save_trustworthiness_reports_csv(
         emissions_path,
     )
 
-def save_results_csv_cfl(scenario_name: str, id: int, bytes_sent: int, bytes_recv: int, accuracy: float, loss: float, class_imbalance: float, model_size: int, local_entropy: float):
+def save_results_csv_cfl(scenario_name: str, id: int, bytes_sent: int, bytes_recv: int, accuracy: float, loss: float, class_imbalance: float, model_size: int, local_entropy: float, val_accuracy: float):
     try:
         data_results_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
     except:
@@ -407,13 +409,13 @@ def save_results_csv_cfl(scenario_name: str, id: int, bytes_sent: int, bytes_rec
     if exists(data_results_file):
         df = pd.read_csv(data_results_file)
     else:
-        df = pd.DataFrame(columns=["id", "bytes_sent", "bytes_recv", "accuracy", "loss", "class_imbalance", "model_size", "local_entropy"])
+        df = pd.DataFrame(columns=["id", "bytes_sent", "bytes_recv", "accuracy", "loss", "class_imbalance", "model_size", "local_entropy", "val_accuracy"])
 
     try:
         # Add new entry to DataFrame
         new_data = pd.DataFrame({'id': [id], 'bytes_sent': [bytes_sent],
                                     'bytes_recv': [bytes_recv], 'accuracy': [accuracy],
-                                    'loss': [loss], 'class_imbalance': [class_imbalance], 'model_size': [model_size], 'local_entropy': [local_entropy]})
+                                    'loss': [loss], 'class_imbalance': [class_imbalance], 'model_size': [model_size], 'local_entropy': [local_entropy], 'val_accuracy': [val_accuracy]})
         df = pd.concat([df, new_data], ignore_index=True)
 
         df.to_csv(data_results_file, encoding='utf-8', index=False)
@@ -445,7 +447,7 @@ def save_emissions_csv_cfl(scenario_name: str, id: int, role: str, energy_grid: 
         logger.warning(e)
 
 
-def save_results_csv(scenario_name: str, id: int, bytes_sent: int, bytes_recv: int, accuracy: float, loss: float):
+def save_results_csv(scenario_name: str, id: int, bytes_sent: int, bytes_recv: int, accuracy: float, loss: float, val_accuracy: float):
 
     try:
         data_results_id_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", f"data_results_{id}.csv")
@@ -455,13 +457,13 @@ def save_results_csv(scenario_name: str, id: int, bytes_sent: int, bytes_recv: i
     if exists(data_results_id_file):
         df = pd.read_csv(data_results_id_file)
     else:
-        df = pd.DataFrame(columns=["id", "bytes_sent", "bytes_recv", "accuracy", "loss"])
+        df = pd.DataFrame(columns=["id", "bytes_sent", "bytes_recv", "accuracy", "loss", "val_accuracy"])
 
     try:
         # Add new entry to DataFrame
         new_data = pd.DataFrame({'id': [id], 'bytes_sent': [bytes_sent],
                                     'bytes_recv': [bytes_recv], 'accuracy': [accuracy],
-                                    'loss': [loss]})
+                                    'loss': [loss], 'val_accuracy': [val_accuracy]})
         df = pd.concat([df, new_data], ignore_index=True)
 
         df.to_csv(data_results_id_file, encoding='utf-8', index=False)

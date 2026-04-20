@@ -83,6 +83,11 @@ class NebulaModel(pl.LightningModule, ABC):
             f"{phase}/{key.replace('Multiclass', '').split('/')[-1]}": value.detach() for key, value in output.items()
         }
 
+        if phase == "Validation":
+            self._latest_validation_metrics = {
+                key: float(value.detach().cpu().item()) for key, value in output.items()
+            }
+
         self.logger.log_data(output, step=self.global_number[phase])
 
         metrics_str = ""
@@ -199,6 +204,7 @@ class NebulaModel(pl.LightningModule, ABC):
 
         self._current_loss = -1
         self._optimizer = None
+        self._latest_validation_metrics = {}
 
     def set_communication_manager(self, communication_manager):
         self.communication_manager = communication_manager
@@ -230,6 +236,9 @@ class NebulaModel(pl.LightningModule, ABC):
 
     def get_loss(self):
         return self._current_loss
+
+    def get_latest_validation_metrics(self):
+        return self._latest_validation_metrics
 
     def modify_learning_rate(self, new_lr):
         logging.info(f"Modifiying | learning rate, new value: {new_lr}")
@@ -306,7 +315,7 @@ class NebulaModel(pl.LightningModule, ABC):
         loss = self.criterion(y_pred, y)
         y_pred_classes = torch.argmax(y_pred, dim=1)
         accuracy = torch.mean((y_pred_classes == y).float())
-        
+
         if dataloader_idx == 0:
             self.log(f"val_loss", loss, on_epoch=True, prog_bar=False)
             self.log(f"val_accuracy", accuracy, on_epoch=True, prog_bar=False)

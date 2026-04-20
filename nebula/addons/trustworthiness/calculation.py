@@ -572,6 +572,24 @@ def get_avg_loss_accuracy(scenario_name):
 
     return avg_loss, avg_accuracy, std_accuracy
 
+def get_underfitting_score(scenario_name, id):
+    """
+    Calculates the mean val accuracy of the nodes.
+    """
+    total_val_accuracy = 0
+
+    data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
+
+    data = read_csv(data_file)
+
+    number_files = len(data)
+
+    total_val_accuracy = data["val_accuracy"].sum()
+
+    avg_val_accuracy = total_val_accuracy/ (number_files-1)
+
+    return avg_val_accuracy
+
 
 def get_participant_loss_accuracy(scenario_name, participant_id):
     """
@@ -816,22 +834,6 @@ def _collect_classification_statistics(model, dataloader):
     )
 
 
-def get_underfitting_score(test_accuracy):
-    """
-    Uses test accuracy as a proxy for underfitting.
-
-    Args:
-        test_accuracy (float): Test accuracy in [0, 1].
-
-    Returns:
-        float: Underfitting proxy value.
-    """
-    try:
-        return float(test_accuracy)
-    except Exception:
-        logger.warning("Could not compute underfitting score")
-        return 0.0
-
 
 def get_overfitting_score(model, train_dataloader, test_accuracy):
     """
@@ -852,6 +854,27 @@ def get_overfitting_score(model, train_dataloader, test_accuracy):
         logger.warning("Could not compute overfitting score")
         logger.warning(exc)
         return 0.0
+
+def get_underfitting_score_local(scenario_name, id):
+    """
+    Gets the local validation accuracy for a specific DFL/SDFL participant.
+
+    Args:
+        scenario_name (str): Scenario name.
+        participant_id (int | str): Participant identifier.
+
+    Returns:
+        float: Validation accuracy.
+    """
+    data_file = os.path.join(
+        os.environ.get('NEBULA_LOGS_DIR'),
+        scenario_name,
+        "trustworthiness",
+        f"data_results_{id}.csv",
+    )
+
+    data = read_csv(data_file)
+    return float(data["val_accuracy"].iloc[0])
 
 
 def get_well_calibration_error(model, test_dataloader, n_bins=10):

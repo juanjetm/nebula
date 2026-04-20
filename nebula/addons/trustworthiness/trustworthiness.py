@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from nebula.addons.functions import print_msg_box
-from nebula.core.nebulaevents import AggregationEvent, ExperimentFinishEvent, RoundEndEvent, RoundStartEvent, TestMetricsEvent
+from nebula.core.nebulaevents import AggregationEvent, ExperimentFinishEvent, RoundEndEvent, RoundStartEvent, TestMetricsEvent, ValidationMetricsEvent
 from nebula.core.eventmanager import EventManager
 from nebula.core.noderole import Role, ServerRoleBehavior
 from abc import ABC, abstractmethod
@@ -68,6 +68,8 @@ class TrustWorkloadTrainer(TrustWorkload):
         self._sample_size = None
         self._current_loss = None
         self._current_accuracy = None
+        self._current_val_loss = None
+        self._current_val_accuracy = None
         self._experiment_name = ""
         self._per_round = None
         self._start_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
@@ -95,6 +97,7 @@ class TrustWorkloadTrainer(TrustWorkload):
         await EventManager.get_instance().subscribe_node_event(RoundStartEvent, self._process_round_start_event)
         await EventManager.get_instance().subscribe_node_event(RoundEndEvent, self._process_round_end_event)
         await EventManager.get_instance().subscribe_addonevent(TestMetricsEvent, self._process_test_metrics_event)
+        await EventManager.get_instance().subscribe_addonevent(ValidationMetricsEvent, self._process_validation_metrics_event)
         await EventManager.get_instance().subscribe_node_event(ExperimentFinishEvent, self._process_experiment_finished_event)
         await self._create_pk_files(experiment_name)
 
@@ -134,6 +137,10 @@ class TrustWorkloadTrainer(TrustWorkload):
     def get_metrics(self):
         return (self._current_loss, self._current_accuracy)
 
+    def get_validation_metrics(self):
+        logging.info("VALIDATION ACCURACY=%s", self._current_val_accuracy)
+        return (self._current_val_loss, self._current_val_accuracy)
+
     async def finish_experiment_role_pre_actions(self):
         with open(self._train_loader_file, 'rb') as file:
             train_loader = pickle.load(file)
@@ -154,7 +161,7 @@ class TrustWorkloadTrainer(TrustWorkload):
             #logging.info("connections=%s", list(cm.connections.keys()))
             #logging.info("server in connections? %s", server_addr in cm.connections)
 
-            bytes_sent, bytes_recv, accuracy, loss = load_data_results_participant(experiment_name, self._idx)
+            bytes_sent, bytes_recv, accuracy, loss, val_accuracy = load_data_results_participant(experiment_name, self._idx)
 
             role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size = load_emissions_participant(experiment_name, self._idx)
 
@@ -185,12 +192,13 @@ class TrustWorkloadTrainer(TrustWorkload):
                 class_imbalance=class_imbalance,
                 model_size=model_size,
                 local_entropy=local_entropy,
+                val_accuracy=val_accuracy,
             )
 
             logging.info(
                 "[TW SEND] dest=%s node_id=%s bytes_sent=%s bytes_recv=%s "
                 "accuracy=%s loss=%s energy_grid=%s emissions=%s workload=%s"
-                "cpu_model=%s gpu_model=%s cpu_used=%s gpu_used=%s energy_consumed=%s sample_size=%s class_imbalance=%s model_size=%s local_entropy=%s",
+                "cpu_model=%s gpu_model=%s cpu_used=%s gpu_used=%s energy_consumed=%s sample_size=%s class_imbalance=%s model_size=%s local_entropy=%s val_accuracy=%s",
                 server_addr,
                 str(self._idx),
                 bytes_sent,
@@ -210,6 +218,7 @@ class TrustWorkloadTrainer(TrustWorkload):
                 class_imbalance,
                 model_size,
                 local_entropy,
+                val_accuracy
             )
 
             await cm.send_message(
@@ -884,6 +893,11 @@ class TrustWorkloadTrainer(TrustWorkload):
         if self._per_round is not None:
             await self._per_round.on_test_metrics(self._engine, float(cur_loss), float(cur_acc))
 
+    async def _process_validation_metrics_event(self, vme: ValidationMetricsEvent):
+        cur_loss, cur_acc = await vme.get_event_data()
+        if cur_loss is not None and cur_acc is not None:
+            self._current_val_loss, self._current_val_accuracy = cur_loss, cur_acc
+
     async def _process_experiment_finished_event(self, efe:ExperimentFinishEvent):
         model_file = f"/nebula/app/logs/{self._experiment_name}/trustworthiness/participant_{self._engine.idx}_final_model.pk"
 
@@ -900,6 +914,8 @@ class TrustWorkloadServer(TrustWorkload):
         self._sample_size = 0
         self._current_loss = None
         self._current_accuracy = None
+        self._current_val_loss = None
+        self._current_val_accuracy = None
         server_start_time: ServerRoleBehavior = engine.rb
         self._start_time = server_start_time._start_time
         self._engine: Engine = engine
@@ -923,6 +939,7 @@ class TrustWorkloadServer(TrustWorkload):
         self._experiment_name = experiment_name
         await EventManager.get_instance().subscribe_node_event(AggregationEvent, self._process_aggregation_event)
         await EventManager.get_instance().subscribe_addonevent(TestMetricsEvent, self._process_test_metrics_event)
+        await EventManager.get_instance().subscribe_addonevent(ValidationMetricsEvent, self._process_validation_metrics_event)
         await EventManager.get_instance().subscribe_node_event(RoundStartEvent, self._process_round_start_event)
         await EventManager.get_instance().subscribe_node_event(ExperimentFinishEvent, self._process_experiment_finished_event)
         await self._create_pk_files(experiment_name)
@@ -963,6 +980,9 @@ class TrustWorkloadServer(TrustWorkload):
     def get_metrics(self):
         return (self._current_loss, self._current_accuracy)
 
+    def get_validation_metrics(self):
+        return (self._current_val_loss, self._current_val_accuracy)
+
     async def finish_experiment_role_pre_actions(self):
         pass
 
@@ -973,7 +993,7 @@ class TrustWorkloadServer(TrustWorkload):
 
         if self._csv_completed == True:
             logging.info("[TW SERVER] finish_experiment_role_post_actions called, trustworthiness reports OK, starting generate_factsheet")
-            bytes_sent, bytes_recv, accuracy, loss = load_data_results_participant(
+            bytes_sent, bytes_recv, accuracy, loss, val_accuracy= load_data_results_participant(
                 self._experiment_name,
                 self._idx,
             )
@@ -994,7 +1014,7 @@ class TrustWorkloadServer(TrustWorkload):
 
             local_entropy = get_local_entropy(self._idx, experiment_name)
 
-            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss, class_imbalance, model_size, local_entropy)
+            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss, class_imbalance, model_size, local_entropy, val_accuracy)
             save_emissions_csv_cfl(self._experiment_name, self._idx, role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size)
             await self._generate_factsheet(trust_config, experiment_name)
         else:
@@ -1003,7 +1023,7 @@ class TrustWorkloadServer(TrustWorkload):
             await asyncio.sleep(60)
             if self._trustworthiness_reports != None and self._csv_completed == False:
                 save_trustworthiness_reports_csv(self._trustworthiness_reports, self._experiment_name)
-            bytes_sent, bytes_recv, accuracy, loss = load_data_results_participant(
+            bytes_sent, bytes_recv, accuracy, loss, val_accuracy = load_data_results_participant(
                 self._experiment_name,
                 self._idx,
             )
@@ -1024,7 +1044,7 @@ class TrustWorkloadServer(TrustWorkload):
 
             local_entropy = get_local_entropy(self._idx, experiment_name)
 
-            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss, class_imbalance, model_size, local_entropy)
+            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss, class_imbalance, model_size, local_entropy, val_accuracy)
             save_emissions_csv_cfl(self._experiment_name, self._idx, role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size)
             await self._generate_factsheet(trust_config, experiment_name)
         #await self._generate_factsheet(trust_config, experiment_name)
@@ -1050,6 +1070,7 @@ class TrustWorkloadServer(TrustWorkload):
             "class_imbalance": message.class_imbalance,
             "model_size": message.model_size,
             "local_entropy": message.local_entropy,
+            "val_accuracy": message.val_accuracy,
         }
 
         logging.info(
@@ -1207,6 +1228,11 @@ class TrustWorkloadServer(TrustWorkload):
         if self._per_round is not None:
             await self._per_round.on_test_metrics(self._engine, float(cur_loss), float(cur_acc))
 
+    async def _process_validation_metrics_event(self, vme: ValidationMetricsEvent):
+        cur_loss, cur_acc = await vme.get_event_data()
+        if cur_loss is not None and cur_acc is not None:
+            self._current_val_loss, self._current_val_accuracy = cur_loss, cur_acc
+
     async def _process_experiment_finished_event(self, efe:ExperimentFinishEvent):
         model_file = f"/nebula/app/logs/{self._experiment_name}/trustworthiness/participant_{self._engine.idx}_final_model.pk"
 
@@ -1266,6 +1292,9 @@ class Trustworthiness():
         await self.tw.finish_experiment_role_pre_actions()
 
         last_loss, last_accuracy = self.tw.get_metrics()
+        _, last_val_accuracy = self.tw.get_validation_metrics()
+        if last_val_accuracy is None:
+            last_val_accuracy = 0.0
 
         # Get sent/received bytes from the reporter
         bytes_sent = self._engine.reporter.acc_bytes_sent
@@ -1276,7 +1305,7 @@ class Trustworthiness():
         sample_size = self.tw.get_sample_size()
 
         # Final operations
-        save_results_csv(self._experiment_name, self._idx, bytes_sent, bytes_recv, last_accuracy, last_loss)
+        save_results_csv(self._experiment_name, self._idx, bytes_sent, bytes_recv, last_accuracy, last_loss, last_val_accuracy)
         stop_emissions_tracking_and_save(self._tracker, self._trust_dir_files, f'emissions_{self._idx}.csv', self._role.value, workload, sample_size, self._idx)
         await self.tw.finish_experiment_role_post_actions(self._trust_config, self._experiment_name)
 

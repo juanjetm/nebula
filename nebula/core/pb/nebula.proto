@@ -157,6 +157,7 @@ message TrustworthinessMessage {
   float class_imbalance = 17;
   int64 model_size = 18;
   float local_entropy = 19;
+  float val_accuracy = 20;
 }
 
 message TrustscoresMessage {

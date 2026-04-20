@@ -29,7 +29,7 @@ from nebula.core.models.cifar10.fastermobilenet import FasterMobileNet
 from nebula.core.models.cifar10.resnet import CIFAR10ModelResNet
 from nebula.core.models.cifar10.simplemobilenet import SimpleMobileNetV1
 from nebula.core.models.cifar100.cnn import CIFAR100ModelCNN
-from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_models, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv, get_loss_sensitivity_score, compute_adversarial_accuracy_art,get_empirical_robustness_score,get_confidence_score,attack_success_rate, get_bytes_model, get_underfitting_score, get_overfitting_score, get_well_calibration_error, get_generalized_entropy_index, get_theil_index, get_coefficient_of_variation, get_alpha_score, get_spread_ratio, get_spread_divergence, get_epsilon_star, get_mia_auc, get_explainability_metrics_summary, get_macro_f1_score
+from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_models, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv, get_loss_sensitivity_score, compute_adversarial_accuracy_art,get_empirical_robustness_score,get_confidence_score,attack_success_rate, get_bytes_model, get_underfitting_score, get_overfitting_score, get_well_calibration_error, get_generalized_entropy_index, get_theil_index, get_coefficient_of_variation, get_alpha_score, get_spread_ratio, get_spread_divergence, get_epsilon_star, get_mia_auc, get_explainability_metrics_summary, get_macro_f1_score, get_underfitting_score_local
 from nebula.addons.trustworthiness.utils import count_all_class_samples, read_csv, check_field_filled, get_all_data_entropy
 
 dirname = os.path.dirname(__file__)
@@ -272,9 +272,7 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
         )
 
         factsheet["privacy"]["mia_auc_score"] = 1 - 2 * abs(factsheet["privacy"]["mia_auc"] - 0.5)
-        factsheet["fairness"]["underfitting"] = get_underfitting_score(
-            factsheet["performance"]["test_acc"]
-        )
+        factsheet["fairness"]["underfitting"] = get_underfitting_score_local(experiment_name, participant_idx)
         overfitting_value = get_overfitting_score(
             model,
             train_dataloader,

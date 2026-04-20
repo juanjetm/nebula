@@ -19,7 +19,7 @@ from torch.nn import functional as F
 from nebula.config.config import TRAINING_LOGGER
 from nebula.core.utils.deterministic import enable_deterministic
 from nebula.core.utils.nebulalogger_tensorboard import NebulaTensorBoardLogger
-from nebula.core.nebulaevents import TestMetricsEvent
+from nebula.core.nebulaevents import TestMetricsEvent, ValidationMetricsEvent
 from nebula.core.eventmanager import EventManager
 
 logging_training = logging.getLogger(TRAINING_LOGGER)
@@ -295,8 +295,10 @@ class Lightning:
         try:
             self.create_trainer()
             logging.info(f"{'=' * 10} [Training] Started (check training logs for progress) {'=' * 10}")
-            await asyncio.to_thread(self._train_sync)
+            val_loss, val_accuracy = await asyncio.to_thread(self._train_sync)
             logging.info(f"{'=' * 10} [Training] Finished (check training logs for progress) {'=' * 10}")
+            vme = ValidationMetricsEvent(val_loss, val_accuracy)
+            await EventManager.get_instance().publish_addonevent(vme)
         except Exception as e:
             logging_training.error(f"Error training model: {e}")
             logging_training.error(traceback.format_exc())
@@ -304,11 +306,24 @@ class Lightning:
     def _train_sync(self):
         try:
             self._trainer.fit(self.model, self.datamodule)
+            validation_metrics = {}
+            if hasattr(self.model, "get_latest_validation_metrics"):
+                validation_metrics = self.model.get_latest_validation_metrics() or {}
+
+            loss = None
+            model_loss = getattr(self.model, "get_loss", None)
+            if callable(model_loss):
+                raw_loss = model_loss()
+                loss = raw_loss.item() if hasattr(raw_loss, "item") else raw_loss
+
+            accuracy = validation_metrics.get("Validation/Accuracy")
+            return loss, accuracy
         except Exception as e:
             logging_training.error(f"Error in _train_sync: {e}")
             tb = traceback.format_exc()
             logging_training.error(f"Traceback: {tb}")
             # If "raise", the exception will be managed by the main thread
+            return None, None
 
     async def test(self):
         try:

@@ -348,7 +348,10 @@ class Factsheet:
                     test_dataloader,
                 )
                 factsheet["privacy"]["mia_auc_score"] = 1 - 2 * abs(factsheet["privacy"]["mia_auc"] - 0.5)
-                factsheet["fairness"]["underfitting"] = factsheet["performance"]["test_acc_avg"]
+
+                underfitting_score = get_underfitting_score(scenario_name, participant_idx)
+
+                factsheet["fairness"]["underfitting"] = underfitting_score
                 overfitting_value = get_overfitting_score(
                     model,
                     train_dataloader,

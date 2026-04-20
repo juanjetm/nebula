@@ -437,6 +437,7 @@ class Engine:
                 "class_imbalance": message.class_imbalance,
                 "model_size": message.model_size,
                 "local_entropy": message.local_entropy,
+                "val_accuracy": message.val_accuracy,
             }
 
             logging.info(f"handle_trustworthiness_message | Trigger | {report}")

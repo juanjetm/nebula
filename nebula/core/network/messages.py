@@ -114,7 +114,8 @@ class MessagesManager:
                     "sample_size",
                     "class_imbalance",
                     "model_size",
-                    "local_entropy"
+                    "local_entropy",
+                    "val_accuracy"
                 ],
                 "defaults": {},
             },
