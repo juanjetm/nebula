@@ -61,7 +61,7 @@ class TrustMetricManager:
             final_score = 0
             result_print = []
             for key, value in metrics:
-                pillar = TrustPillar(key, value, input_docs, use_weights)
+                pillar = TrustPillar(key, value, input_docs, use_weights, user_weights=weights)
                 score, result = pillar.evaluate()
                 weight = weights.get(key) / 100
                 final_score += weight * score
@@ -111,7 +111,7 @@ class TrustMetricManager:
             final_score = 0
             result_print = []
             for key, value in metrics:
-                pillar = TrustPillar(key, value, input_docs, use_weights)
+                pillar = TrustPillar(key, value, input_docs, use_weights, user_weights=weights)
                 score, result = pillar.evaluate()
                 weight = weights.get(key) / 100
                 final_score += weight * score

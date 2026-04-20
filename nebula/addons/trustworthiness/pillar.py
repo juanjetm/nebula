@@ -18,12 +18,13 @@ class TrustPillar:
 
     """
 
-    def __init__(self, name, metrics, input_docs, use_weights=False):
+    def __init__(self, name, metrics, input_docs, use_weights=False, user_weights=None):
         self.name = name
         self.input_docs = input_docs
         self.metrics = metrics
         self.result = []
         self.use_weights = use_weights
+        self.user_weights = user_weights or {}
 
     def evaluate(self):
         """
@@ -35,10 +36,21 @@ class TrustPillar:
         score = 0
         avg_weight = 1 / len(self.metrics)
         for key, value in self.metrics.items():
-            weight = value.get("weight", avg_weight) if self.use_weights else avg_weight
+            weight = self._get_notion_weight(key, value, avg_weight) if self.use_weights else avg_weight
             score += weight * self.get_notion_score(key, value.get("metrics"))
         score = round(score, 2)
         return score, {self.name: {"score": score, "notions": self.result}}
+
+    def _get_notion_weight(self, notion_name, notion_config, avg_weight):
+        """
+        Resolve the weight for a notion.
+
+        Scenario-defined notion weights are stored as percentages in scenario.json.
+        When present, they must override the defaults from the metrics config.
+        """
+        if notion_name in self.user_weights:
+            return float(self.user_weights[notion_name]) / 100
+        return notion_config.get("weight", avg_weight)
 
     def get_notion_score(self, name, metrics):
         """
