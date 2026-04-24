@@ -138,8 +138,17 @@ class TrustWorkloadTrainer(TrustWorkload):
         return (self._current_loss, self._current_accuracy)
 
     def get_validation_metrics(self):
-        logging.info("VALIDATION ACCURACY=%s", self._current_val_accuracy)
         return (self._current_val_loss, self._current_val_accuracy)
+
+    def _dump_model_for_trust(self, path):
+        model = self._engine.trainer.model
+        optimizer = model._optimizer
+        model._optimizer = None
+        try:
+            with open(path, 'wb') as f:
+                pickle.dump(model, f)
+        finally:
+            model._optimizer = optimizer
 
     async def finish_experiment_role_pre_actions(self):
         with open(self._train_loader_file, 'rb') as file:
@@ -863,9 +872,7 @@ class TrustWorkloadTrainer(TrustWorkload):
     async def _process_round_end_event(self, ree: RoundEndEvent):
         scenario_name = self._engine.config.participant["scenario_args"]["name"]
         train_model = f"/nebula/app/logs/{scenario_name}/trustworthiness/participant_{self._idx}_train_model.pk"
-        # Save the training model in the trustworthiness directory
-        with open(train_model, 'wb') as f:
-            pickle.dump(self._engine.trainer.model, f)
+        self._dump_model_for_trust(train_model)
 
     async def _process_round_start_event(self, rse: RoundStartEvent):
         _, _, expected_nodes = await rse.get_event_data()
@@ -900,11 +907,7 @@ class TrustWorkloadTrainer(TrustWorkload):
 
     async def _process_experiment_finished_event(self, efe:ExperimentFinishEvent):
         model_file = f"/nebula/app/logs/{self._experiment_name}/trustworthiness/participant_{self._engine.idx}_final_model.pk"
-
-
-        # Save model in trustworthy dir
-        with open(model_file, 'wb') as f:
-            pickle.dump(self._engine.trainer.model, f)
+        self._dump_model_for_trust(model_file)
 
 
 class TrustWorkloadServer(TrustWorkload):
