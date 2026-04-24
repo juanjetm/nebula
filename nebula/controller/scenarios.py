@@ -115,6 +115,7 @@ class Scenario:
         sar_neighbor_policy,
         sar_training,
         sar_training_policy,
+        dp=None,
         physical_ips=None,
     ):
         """
@@ -192,6 +193,7 @@ class Scenario:
         self.network_subnet = network_subnet
         self.network_gateway = network_gateway
         self.epochs = epochs
+        self.dp = dp
         self.attack_params = attack_params
         self.reputation = reputation
         self.random_geo = random_geo
@@ -700,6 +702,10 @@ class ScenarioManagement:
             participant_config["data_args"]["partition_parameter"] = self.scenario.partition_parameter
             participant_config["model_args"]["model"] = self.scenario.model
             participant_config["training_args"]["epochs"] = int(self.scenario.epochs)
+            if isinstance(self.scenario.dp, dict) and "enabled" in self.scenario.dp:
+                participant_config.setdefault("training_args", {})
+                participant_config["training_args"].setdefault("dp", {})
+                participant_config["training_args"]["dp"]["enabled"] = bool(self.scenario.dp["enabled"])
             participant_config["device_args"]["accelerator"] = self.scenario.accelerator
             participant_config["device_args"]["gpu_id"] = self.scenario.gpu_id
             participant_config["device_args"]["logging"] = self.scenario.logginglevel

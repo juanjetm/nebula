@@ -74,6 +74,7 @@ const ScenarioManager = (function () {
             logginglevel: document.getElementById("loggingLevel").value === "true",
             report_status_data_queue: document.getElementById("reportingSwitch").checked,
             epochs: parseInt(document.getElementById("epochs").value),
+            dp: window.DpManager.getDpConfig(),
             attack_params: attackConfig,
             reputation: {
                 enabled: window.ReputationManager.getReputationConfig().enabled || false,
@@ -263,6 +264,9 @@ const ScenarioManager = (function () {
         document.getElementById("loggingLevel").value = scenario.logginglevel ? "true" : "false";
         document.getElementById("reportingSwitch").checked = scenario.report_status_data_queue;
         document.getElementById("epochs").value = scenario.epochs;
+        if (window.DpManager) {
+            window.DpManager.setDpConfig(scenario.dp);
+        }
 
         // Load module configurations
         if (scenario.attacks && scenario.attacks.length > 0) {
@@ -435,6 +439,9 @@ const ScenarioManager = (function () {
         }
         if (window.SaManager) {
             window.SaManager.resetSaConfig();
+        }
+        if (window.DpManager) {
+            window.DpManager.resetDpConfig();
         }
 
         // Trigger necessary events

@@ -519,6 +519,22 @@
                             style="display: inline; width: 80%">
                     </div>
                 </div>
+                <!-- Differential Privacy -->
+                <div class="form-group row container-shadow tiny grey">
+                    <h5 class="step-number">Differential Privacy <i class="fa fa-user-secret"></i>
+                    </h5>
+                    <h5 class="step-title">Enable/Disable DP</h5>
+                    <div class="form-check form-switch" style="margin-left: 23px;">
+                        <input class="form-check-input" type="checkbox" id="dpSwitch"
+                            style="display: inline; width: 80px; height: 30px;">
+                    </div>
+                    <div id="dp-settings" style="margin-top: 10px; display: none;">
+                        <small class="form-text text-muted">
+                            Additional DP parameters are still taken from
+                            <code>nebula/frontend/config/participant.json.example</code>.
+                        </small>
+                    </div>
+                </div>
                 <!-- Advanced Robustness -->
                 <div class="form-group row container-shadow tiny grey">
                     <h5 class="step-number">Robustness <i class="fa fa-shield"></i>

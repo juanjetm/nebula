@@ -50,6 +50,7 @@ from nebula.core.models.mnist.cnn import MNISTModelCNN
 from nebula.core.models.mnist.mlp import MNISTModelMLP
 from nebula.core.engine import Engine
 from nebula.core.training.lightning import Lightning
+from nebula.core.training.lightning_dp import LightningDP
 from nebula.core.training.siamese import Siamese
 
 # os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
@@ -203,8 +204,12 @@ async def main(config: Config):
 
     trainer = None
     trainer_str = config.participant["training_args"]["trainer"]
+    dp_enabled = config.participant["training_args"]["dp"]["enabled"]
     if trainer_str == "lightning":
-        trainer = Lightning
+        if dp_enabled:
+            trainer = LightningDP
+        else:
+            trainer = Lightning
     elif trainer_str == "scikit":
         raise NotImplementedError
     elif trainer_str == "siamese":
