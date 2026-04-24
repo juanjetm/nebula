@@ -14,14 +14,14 @@ class LightningDP(Lightning):
     """
     Lightning-based trainer with Differential Privacy support.
 
-    This class inherits the standard Nebula Lightning trainer but overrides
-    the synchronous training logic because Opacus needs to privatize the
-    model, optimizer and dataloader before the training loop starts.
+    This class inherits the standard Nebula Lightning trainer.
     """
 
     def __init__(self, model, datamodule, config=None):
         super().__init__(model, datamodule, config)
         self._dp_plugin = self.create_dp_plugin()
+        self.dp_epsilon = None
+        self.dp_delta = None
 
     def create_dp_plugin(self):
         dp_config = self.config.participant["training_args"].get("dp")
@@ -183,6 +183,9 @@ class LightningDP(Lightning):
         if dp_epsilon is not None:
             dp_delta = state.extras["dp_delta"]
 
+            self.dp_epsilon = float(dp_epsilon)
+            self.dp_delta = float(dp_delta)
+
             if self._logger is not None:
                 self._logger.log_data(
                     {
@@ -194,3 +197,10 @@ class LightningDP(Lightning):
             logging_training.info(
                 f"DP privacy budget | epsilon={dp_epsilon:.4f} | delta={dp_delta}"
             )
+
+    def get_privacy_metrics(self):
+        return {
+            "dp_enabled": True,
+            "dp_epsilon": self.dp_epsilon,
+            "dp_delta": self.dp_delta,
+        }

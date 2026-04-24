@@ -115,7 +115,9 @@ class MessagesManager:
                     "class_imbalance",
                     "model_size",
                     "local_entropy",
-                    "val_accuracy"
+                    "val_accuracy",
+                    "dp_enabled",
+                    "dp_epsilon"
                 ],
                 "defaults": {},
             },

@@ -42,7 +42,7 @@ class TrustWorkload(ABC):
     def get_sample_size(self) -> float:
         raise NotImplementedError
 
-    abstractmethod
+    @abstractmethod
     def get_metrics(self) -> tuple[float, float]:
         raise NotImplementedError
 
@@ -170,7 +170,7 @@ class TrustWorkloadTrainer(TrustWorkload):
             #logging.info("connections=%s", list(cm.connections.keys()))
             #logging.info("server in connections? %s", server_addr in cm.connections)
 
-            bytes_sent, bytes_recv, accuracy, loss, val_accuracy = load_data_results_participant(experiment_name, self._idx)
+            bytes_sent, bytes_recv, accuracy, loss, val_accuracy, dp_enabled, dp_epsilon = load_data_results_participant(experiment_name, self._idx)
 
             role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size = load_emissions_participant(experiment_name, self._idx)
 
@@ -202,12 +202,14 @@ class TrustWorkloadTrainer(TrustWorkload):
                 model_size=model_size,
                 local_entropy=local_entropy,
                 val_accuracy=val_accuracy,
+                dp_enabled=dp_enabled,
+                dp_epsilon=dp_epsilon
             )
 
             logging.info(
                 "[TW SEND] dest=%s node_id=%s bytes_sent=%s bytes_recv=%s "
                 "accuracy=%s loss=%s energy_grid=%s emissions=%s workload=%s"
-                "cpu_model=%s gpu_model=%s cpu_used=%s gpu_used=%s energy_consumed=%s sample_size=%s class_imbalance=%s model_size=%s local_entropy=%s val_accuracy=%s",
+                "cpu_model=%s gpu_model=%s cpu_used=%s gpu_used=%s energy_consumed=%s sample_size=%s class_imbalance=%s model_size=%s local_entropy=%s val_accuracy=%s dp_enabled=%s dp_epsilon=%s",
                 server_addr,
                 str(self._idx),
                 bytes_sent,
@@ -227,7 +229,9 @@ class TrustWorkloadTrainer(TrustWorkload):
                 class_imbalance,
                 model_size,
                 local_entropy,
-                val_accuracy
+                val_accuracy,
+                dp_enabled,
+                dp_epsilon
             )
 
             await cm.send_message(
@@ -996,7 +1000,7 @@ class TrustWorkloadServer(TrustWorkload):
 
         if self._csv_completed == True:
             logging.info("[TW SERVER] finish_experiment_role_post_actions called, trustworthiness reports OK, starting generate_factsheet")
-            bytes_sent, bytes_recv, accuracy, loss, val_accuracy= load_data_results_participant(
+            bytes_sent, bytes_recv, accuracy, loss, val_accuracy, dp_enabled, dp_epsilon= load_data_results_participant(
                 self._experiment_name,
                 self._idx,
             )
@@ -1017,7 +1021,7 @@ class TrustWorkloadServer(TrustWorkload):
 
             local_entropy = get_local_entropy(self._idx, experiment_name)
 
-            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss, class_imbalance, model_size, local_entropy, val_accuracy)
+            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss, class_imbalance, model_size, local_entropy, val_accuracy, dp_enabled, dp_epsilon)
             save_emissions_csv_cfl(self._experiment_name, self._idx, role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size)
             await self._generate_factsheet(trust_config, experiment_name)
         else:
@@ -1026,7 +1030,7 @@ class TrustWorkloadServer(TrustWorkload):
             await asyncio.sleep(60)
             if self._trustworthiness_reports != None and self._csv_completed == False:
                 save_trustworthiness_reports_csv(self._trustworthiness_reports, self._experiment_name)
-            bytes_sent, bytes_recv, accuracy, loss, val_accuracy = load_data_results_participant(
+            bytes_sent, bytes_recv, accuracy, loss, val_accuracy, dp_enabled, dp_epsilon = load_data_results_participant(
                 self._experiment_name,
                 self._idx,
             )
@@ -1047,7 +1051,7 @@ class TrustWorkloadServer(TrustWorkload):
 
             local_entropy = get_local_entropy(self._idx, experiment_name)
 
-            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss, class_imbalance, model_size, local_entropy, val_accuracy)
+            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss, class_imbalance, model_size, local_entropy, val_accuracy, dp_enabled, dp_epsilon)
             save_emissions_csv_cfl(self._experiment_name, self._idx, role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size)
             await self._generate_factsheet(trust_config, experiment_name)
         #await self._generate_factsheet(trust_config, experiment_name)
@@ -1074,6 +1078,8 @@ class TrustWorkloadServer(TrustWorkload):
             "model_size": message.model_size,
             "local_entropy": message.local_entropy,
             "val_accuracy": message.val_accuracy,
+            "dp_enabled": message.dp_enabled,
+            "dp_epsilon": message.dp_epsilon
         }
 
         logging.info(
@@ -1303,12 +1309,18 @@ class Trustworthiness():
         bytes_sent = self._engine.reporter.acc_bytes_sent
         bytes_recv = self._engine.reporter.acc_bytes_recv
 
+        privacy_metrics = self._engine.trainer.get_privacy_metrics()
+        dp_enabled=bool(privacy_metrics.get("dp_enabled", False))
+        dp_epsilon=privacy_metrics.get("dp_epsilon")
+        if dp_epsilon == None:
+            dp_epsilon=0
+
         # Get TrustWorkload information
         workload = self.tw.get_workload()
         sample_size = self.tw.get_sample_size()
 
         # Final operations
-        save_results_csv(self._experiment_name, self._idx, bytes_sent, bytes_recv, last_accuracy, last_loss, last_val_accuracy)
+        save_results_csv(self._experiment_name, self._idx, bytes_sent, bytes_recv, last_accuracy, last_loss, last_val_accuracy, dp_enabled, dp_epsilon)
         stop_emissions_tracking_and_save(self._tracker, self._trust_dir_files, f'emissions_{self._idx}.csv', self._role.value, workload, sample_size, self._idx)
         await self.tw.finish_experiment_role_post_actions(self._trust_config, self._experiment_name)
 

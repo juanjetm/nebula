@@ -388,3 +388,10 @@ class Lightning:
 
     def show_current_learning_rate(self):
         self.model.show_current_learning_rate()
+
+    def get_privacy_metrics(self):
+        return {
+            "dp_enabled": False,
+            "dp_epsilon": 0,
+            "dp_delta": 0,
+        }

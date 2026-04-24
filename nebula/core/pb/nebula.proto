@@ -158,6 +158,8 @@ message TrustworthinessMessage {
   int64 model_size = 18;
   float local_entropy = 19;
   float val_accuracy = 20;
+  bool dp_enabled = 21;
+  float dp_epsilon = 22;
 }
 
 message TrustscoresMessage {

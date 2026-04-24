@@ -876,6 +876,27 @@ def get_underfitting_score_local(scenario_name, id):
     data = read_csv(data_file)
     return float(data["val_accuracy"].iloc[0])
 
+def get_dp_local(scenario_name, id):
+    """
+    Gets the dp metrics for a specific DFL/SDFL participant.
+
+    Args:
+        scenario_name (str): Scenario name.
+        participant_id (int | str): Participant identifier.
+
+    Returns:
+        float: DP Enabled, Epsilon.
+    """
+    data_file = os.path.join(
+        os.environ.get('NEBULA_LOGS_DIR'),
+        scenario_name,
+        "trustworthiness",
+        f"data_results_{id}.csv",
+    )
+
+    data = read_csv(data_file)
+    return data["dp_enabled"].iloc[0], float(data["dp_epsilon"].iloc[0])
+
 
 def get_well_calibration_error(model, test_dataloader, n_bins=10):
     """
