@@ -1,7 +1,8 @@
 // Differential Privacy Module
 const DpManager = (function() {
     const DEFAULT_DP_CONFIG = {
-        enabled: false
+        enabled: false,
+        noise_multiplier: 1.0
     };
 
     function initializeDifferentialPrivacy() {
@@ -26,8 +27,14 @@ const DpManager = (function() {
     }
 
     function getDpConfig() {
+        const noiseMultiplierInput = document.getElementById("dpNoiseMultiplier");
+        const noiseMultiplier = parseFloat(noiseMultiplierInput?.value);
+
         return {
-            enabled: Boolean(document.getElementById("dpSwitch")?.checked)
+            enabled: Boolean(document.getElementById("dpSwitch")?.checked),
+            noise_multiplier: Number.isFinite(noiseMultiplier)
+                ? noiseMultiplier
+                : DEFAULT_DP_CONFIG.noise_multiplier
         };
     }
 
@@ -41,6 +48,10 @@ const DpManager = (function() {
         if (!dpSwitch) return;
 
         dpSwitch.checked = Boolean(dpConfig.enabled);
+        const noiseMultiplierInput = document.getElementById("dpNoiseMultiplier");
+        if (noiseMultiplierInput) {
+            noiseMultiplierInput.value = dpConfig.noise_multiplier;
+        }
         toggleDpSettings(dpSwitch.checked);
     }
 

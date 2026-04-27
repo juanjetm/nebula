@@ -14,6 +14,7 @@
 		"sample_client_rate": "",
 		"client_selector": "",
 		"local_dataset_size": "",
+		"neighbor_num": "",
 		"avg_neighbor_reputation": ""
 	},
 	"configuration": {

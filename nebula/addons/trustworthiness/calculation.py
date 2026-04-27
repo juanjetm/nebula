@@ -289,6 +289,24 @@ def get_global_privacy_risk(dp, epsilon, n):
     else:
         return 1
 
+def get_global_privacy_risk_dfl(dp, epsilon, n):
+    """
+    Calculates the global privacy risk by epsilon and the number of clients.
+
+    Args:
+        dp (bool): Indicates if differential privacy is used or not.
+        epsilon (int): The epsilon value.
+        n (int): The number of neighbours.
+
+    Returns:
+        float: The global privacy risk.
+    """
+
+    if dp is True and isinstance(epsilon, numbers.Number):
+        return 1 / (1 + (n + 1) * math.pow(e, -epsilon))
+    else:
+        return 1
+
 
 def _collect_per_sample_losses(model, dataloader, max_samples=5000):
     """
@@ -896,6 +914,35 @@ def get_dp_local(scenario_name, id):
 
     data = read_csv(data_file)
     return data["dp_enabled"].iloc[0], float(data["dp_epsilon"].iloc[0])
+
+
+def get_dp_global(scenario_name):
+    """
+    Gets the aggregated DP metrics for a CFL scenario, excluding the server node.
+
+    Args:
+        scenario_name (str): Scenario name.
+
+    Returns:
+        tuple[bool, float | str]: Whether DP is enabled, and the
+        average epsilon across client nodes.
+    """
+    total_epsilon = 0
+
+    data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
+
+    data = read_csv(data_file)
+
+    if data["dp_enabled"].iloc[0] == False:
+        return False, 0.0
+
+    number_files = len(data)
+
+    total_epsilon = data["dp_epsilon"].sum()
+
+    avg_epsilon = total_epsilon / (number_files-1)
+
+    return True, avg_epsilon
 
 
 def get_well_calibration_error(model, test_dataloader, n_bins=10):

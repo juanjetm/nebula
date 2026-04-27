@@ -361,6 +361,7 @@ class TrustWorkloadTrainer(TrustWorkload):
         if not self._is_reputation_enabled():
             return {
                 "reputation_enabled": False,
+                "neighbor_num": len(self._expected_trustscores_sources),
                 "avg_neighbor_reputation": 0.0,
             }
 
@@ -386,6 +387,7 @@ class TrustWorkloadTrainer(TrustWorkload):
 
         return {
             "reputation_enabled": True,
+            "neighbor_num": len(self._expected_trustscores_sources),
             "avg_neighbor_reputation": avg_neighbor_reputation,
         }
 

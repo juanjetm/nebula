@@ -245,10 +245,13 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
         factsheet["sustainability"]["emissions_training_local"] = emissions_training_local
         factsheet["sustainability"]["energy_consumed_local"] = energy_consumed_local
         factsheet["participants"]["local_dataset_size"] = sample_size
+
         if reputation_summary is not None:
             factsheet["participants"]["avg_neighbor_reputation"] = reputation_summary.get("avg_neighbor_reputation", "")
+            factsheet["participants"]["neighbor_num"] = reputation_summary.get("neighbor_num", 0)
         else:
             factsheet["participants"]["avg_neighbor_reputation"] = 0
+            factsheet["participants"]["neighbor_num"] = 0
 
         factsheet["sustainability"]["emissions_communication_local"] = (bytes_sent * 2.24e-10 * carbon_intensity_local)+(bytes_recv * 2.24e-10 * carbon_intensity_local)
 

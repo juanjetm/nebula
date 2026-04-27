@@ -702,10 +702,15 @@ class ScenarioManagement:
             participant_config["data_args"]["partition_parameter"] = self.scenario.partition_parameter
             participant_config["model_args"]["model"] = self.scenario.model
             participant_config["training_args"]["epochs"] = int(self.scenario.epochs)
-            if isinstance(self.scenario.dp, dict) and "enabled" in self.scenario.dp:
+            if isinstance(self.scenario.dp, dict):
                 participant_config.setdefault("training_args", {})
                 participant_config["training_args"].setdefault("dp", {})
-                participant_config["training_args"]["dp"]["enabled"] = bool(self.scenario.dp["enabled"])
+                if "enabled" in self.scenario.dp:
+                    participant_config["training_args"]["dp"]["enabled"] = bool(self.scenario.dp["enabled"])
+                if "noise_multiplier" in self.scenario.dp:
+                    participant_config["training_args"]["dp"]["noise_multiplier"] = float(
+                        self.scenario.dp["noise_multiplier"]
+                    )
             participant_config["device_args"]["accelerator"] = self.scenario.accelerator
             participant_config["device_args"]["gpu_id"] = self.scenario.gpu_id
             participant_config["device_args"]["logging"] = self.scenario.logginglevel

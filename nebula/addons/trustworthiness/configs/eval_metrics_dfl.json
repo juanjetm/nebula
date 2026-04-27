@@ -245,10 +245,10 @@
               },
               {
                 "source": "factsheet",
-                "field_path": "participants/client_num"
+                "field_path": "participants/neighbor_num"
               }
             ],
-            "operation": "get_global_privacy_risk",
+            "operation": "get_global_privacy_risk_dfl",
             "type": "true_score",
             "direction": "desc",
             "description": "A worst-case approximation of the maximal risk for distinguishing two clients.",
