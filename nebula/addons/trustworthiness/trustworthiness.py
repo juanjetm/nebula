@@ -1023,7 +1023,7 @@ class TrustWorkloadServer(TrustWorkload):
 
             local_entropy = get_local_entropy(self._idx, experiment_name)
 
-            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss, class_imbalance, model_size, local_entropy, val_accuracy, dp_enabled, dp_epsilon)
+            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, 0, 0, class_imbalance, model_size, local_entropy, val_accuracy, dp_enabled, dp_epsilon)
             save_emissions_csv_cfl(self._experiment_name, self._idx, role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size)
             await self._generate_factsheet(trust_config, experiment_name)
         else:
@@ -1053,7 +1053,7 @@ class TrustWorkloadServer(TrustWorkload):
 
             local_entropy = get_local_entropy(self._idx, experiment_name)
 
-            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, accuracy, loss, class_imbalance, model_size, local_entropy, val_accuracy, dp_enabled, dp_epsilon)
+            save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, 0, 0, class_imbalance, model_size, local_entropy, val_accuracy, dp_enabled, dp_epsilon)
             save_emissions_csv_cfl(self._experiment_name, self._idx, role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size)
             await self._generate_factsheet(trust_config, experiment_name)
         #await self._generate_factsheet(trust_config, experiment_name)

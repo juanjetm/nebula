@@ -60,7 +60,7 @@ class LightningDP(Lightning):
             logging_training.error(f"Error in _train_sync with Differential Privacy: {e}")
             tb = traceback.format_exc()
             logging_training.error(f"Traceback: {tb}")
-            return None, None
+            raise
 
     def _get_training_device(self):
         if (
@@ -88,15 +88,16 @@ class LightningDP(Lightning):
         self._logger.log_data(output, step=self.model.global_number[phase])
 
     def _fit_with_dp(self):
+        state = SimpleDPState()
+        original_configure_optimizers = self.model.configure_optimizers
+
+        self.model.train()
+        self.datamodule.setup("fit")
         train_dataloader = self.datamodule.train_dataloader()
         val_dataloader = self.datamodule.val_dataloader()
 
-        state = SimpleDPState()
-        state.extras["dataloader"] = train_dataloader
-
-        self.model.train()
         optimizer = self.model.configure_optimizers()
-        device = self._get_training_device()
+        state.extras["dataloader"] = train_dataloader
 
         try:
             self._dp_plugin.on_train_start(self.model, optimizer, state)
@@ -106,67 +107,17 @@ class LightningDP(Lightning):
             private_dataloader = state.extras["dataloader"]
 
             self.model._optimizer = private_optimizer
-            private_model.to(device)
 
-            for epoch in range(self.epochs):
-                logging_training.info(f"Starting Epoch {epoch} DP")
+            def configure_private_optimizers():
+                return private_optimizer
 
-                private_model.train()
+            self.model.configure_optimizers = configure_private_optimizers
 
-                for batch_idx, batch in enumerate(private_dataloader):
-                    inputs, labels = batch
-                    inputs = inputs.to(device)
-                    labels = labels.to(device)
-
-                    private_optimizer.zero_grad()
-
-                    outputs = private_model(inputs)
-                    loss = self.model.criterion(outputs, labels)
-
-                    self.model._current_loss = loss.detach()
-
-                    if self._logger is not None:
-                        self._logger.log_data({"Train/Loss": loss.detach()})
-
-                    self.model.train_metrics.update(
-                        torch.argmax(outputs.detach(), dim=1),
-                        labels.detach(),
-                    )
-
-                    loss.backward()
-                    private_optimizer.step()
-
-                self._log_manual_metrics("Train", self.model.train_metrics)
-                self.model.train_metrics.reset()
-                self.model.global_number["Train"] += 1
-
-                logging_training.info(f"Epoch {epoch} finished DP")
-
-                logging_training.info(f"Starting validation for Epoch {epoch} DP")
-
-                private_model.eval()
-
-                with torch.no_grad():
-                    for batch_idx, batch in enumerate(val_dataloader):
-                        inputs, labels = batch
-                        inputs = inputs.to(device)
-                        labels = labels.to(device)
-
-                        outputs = private_model(inputs)
-                        loss = self.model.criterion(outputs, labels)
-
-                        self.model._current_loss = loss.detach()
-
-                        self.model.val_metrics.update(
-                            torch.argmax(outputs.detach(), dim=1),
-                            labels.detach(),
-                        )
-
-                self._log_manual_metrics("Validation", self.model.val_metrics)
-                self.model.val_metrics.reset()
-                self.model.global_number["Validation"] += 1
-
-                logging_training.info(f"Validation for Epoch {epoch} finished DP")
+            self._trainer.fit(
+                self.model,
+                train_dataloaders=private_dataloader,
+                val_dataloaders=val_dataloader,
+            )
 
             if hasattr(private_model, "_module"):
                 self.model.load_state_dict(private_model._module.state_dict())
@@ -176,7 +127,9 @@ class LightningDP(Lightning):
             self.model.train()
 
         finally:
+            self.model.configure_optimizers = original_configure_optimizers
             self._dp_plugin.on_train_end(state)
+            self.datamodule.teardown("fit")
 
         dp_epsilon = state.extras.get("dp_epsilon")
 

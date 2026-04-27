@@ -584,8 +584,8 @@ def get_avg_loss_accuracy(scenario_name):
     total_loss = data["loss"].sum()
     total_accuracy = data["accuracy"].sum()
 
-    avg_loss = total_loss / number_files
-    avg_accuracy = total_accuracy / number_files
+    avg_loss = total_loss / (number_files-1)
+    avg_accuracy = total_accuracy / (number_files-1)
     std_accuracy = statistics.stdev(data["accuracy"])
 
     return avg_loss, avg_accuracy, std_accuracy

@@ -39,7 +39,6 @@ class DifferentialPrivacyPlugin:
             max_grad_norm=self.max_grad_norm,
             poisson_sampling=self.poisson_sampling,
             clipping=self.clipping,
-            wrap_model=False,
         )
 
         state.extras["privacy_engine"] = privacy_engine
