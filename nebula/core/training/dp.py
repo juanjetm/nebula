@@ -24,14 +24,22 @@ class DifferentialPrivacyPlugin:
         self.secure_mode = bool(secure_mode)
         self.poisson_sampling = bool(poisson_sampling)
         self.clipping = clipping
+        self._privacy_engine = None
 
     def on_train_start(self, model, optimizer, state):
         from opacus import PrivacyEngine
 
-        privacy_engine = PrivacyEngine(accountant=self.accountant, secure_mode=self.secure_mode)
         dataloader = state.extras["dataloader"]
         model.train()
-        private_model, optimizer, private_dataloader = privacy_engine.make_private(
+
+        if self._privacy_engine is None:
+            self._privacy_engine = PrivacyEngine(
+                accountant=self.accountant,
+                secure_mode=self.secure_mode,
+            )
+        privacy_engine = self._privacy_engine
+
+        private_model, private_optimizer, private_dataloader = privacy_engine.make_private(
             module=model,
             optimizer=optimizer,
             data_loader=dataloader,
@@ -43,7 +51,7 @@ class DifferentialPrivacyPlugin:
 
         state.extras["privacy_engine"] = privacy_engine
         state.extras["model"] = private_model
-        state.extras["optimizer"] = optimizer
+        state.extras["optimizer"] = private_optimizer
         state.extras["dataloader"] = private_dataloader
 
     def on_train_end(self, state):
@@ -59,10 +67,22 @@ class DifferentialPrivacyPlugin:
                 pass
 
         if private_model is not None:
-            private_model.zero_grad(set_to_none=True)
+            try:
+                private_model.zero_grad(set_to_none=True)
+            except Exception:
+                pass
+
             try:
                 private_model.forbid_grad_accumulation()
+            except Exception:
+                pass
+
+            try:
                 private_model.disable_hooks()
+            except Exception:
+                pass
+
+            try:
                 private_model.remove_hooks()
             except Exception:
                 pass

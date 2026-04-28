@@ -33,10 +33,14 @@ class MNISTModelMLP(NebulaModel):
         return x
 
     def configure_optimizers(self):
+        optimizer_override = self.get_optimizer_override()
+        if optimizer_override is not None:
+            return optimizer_override
+
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
         self._optimizer = optimizer
         return optimizer
-    
+
     def get_learning_rate(self):
         return self.learning_rate
 

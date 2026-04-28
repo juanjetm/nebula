@@ -94,6 +94,10 @@ class CIFAR100ModelCNN(NebulaModel):
         return x
 
     def configure_optimizers(self):
+        optimizer_override = self.get_optimizer_override()
+        if optimizer_override is not None:
+            return optimizer_override
+
         return torch.optim.Adam(
             self.parameters(),
             lr=self.config["lr"],

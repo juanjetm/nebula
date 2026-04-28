@@ -89,45 +89,43 @@ class LightningDP(Lightning):
 
     def _fit_with_dp(self):
         state = SimpleDPState()
-        original_configure_optimizers = self.model.configure_optimizers
 
-        self.model.train()
-        self.datamodule.setup("fit")
-        train_dataloader = self.datamodule.train_dataloader()
-        val_dataloader = self.datamodule.val_dataloader()
-
-        optimizer = self.model.configure_optimizers()
-        state.extras["dataloader"] = train_dataloader
+        if hasattr(self.model, "clear_optimizer_override"):
+            self.model.clear_optimizer_override()
 
         try:
+            self.model.train()
+            self.datamodule.setup("fit")
+            train_dataloader = self.datamodule.train_dataloader()
+            val_dataloader = self.datamodule.val_dataloader()
+
+            optimizer = self.model.configure_optimizers()
+            state.extras["dataloader"] = train_dataloader
+
             self._dp_plugin.on_train_start(self.model, optimizer, state)
 
-            private_model = state.extras["model"]
             private_optimizer = state.extras["optimizer"]
             private_dataloader = state.extras["dataloader"]
 
-            self.model._optimizer = private_optimizer
+            if not hasattr(self.model, "set_optimizer_override"):
+                raise ValueError("DP training requires the model to support optimizer overrides.")
 
-            def configure_private_optimizers():
-                return private_optimizer
-
-            self.model.configure_optimizers = configure_private_optimizers
-
+            # Opacus keeps the grad-sample hooks on self.model, while Lightning gets
+            # the original LightningModule and a DPOptimizer through configure_optimizers.
+            self.model.dp_enabled = True
+            self.model.set_optimizer_override(private_optimizer)
             self._trainer.fit(
                 self.model,
                 train_dataloaders=private_dataloader,
                 val_dataloaders=val_dataloader,
             )
 
-            if hasattr(private_model, "_module"):
-                self.model.load_state_dict(private_model._module.state_dict())
-            else:
-                self.model.load_state_dict(private_model.state_dict())
-
             self.model.train()
 
         finally:
-            self.model.configure_optimizers = original_configure_optimizers
+            self.model.dp_enabled = False
+            if hasattr(self.model, "clear_optimizer_override"):
+                self.model.clear_optimizer_override()
             self._dp_plugin.on_train_end(state)
             self.datamodule.teardown("fit")
 
@@ -138,6 +136,9 @@ class LightningDP(Lightning):
 
             self.dp_epsilon = float(dp_epsilon)
             self.dp_delta = float(dp_delta)
+
+            self.model.dp_epsilon = self.dp_epsilon
+            self.model.dp_delta = self.dp_delta
 
             if self._logger is not None:
                 self._logger.log_data(

@@ -141,6 +141,10 @@ class CIFAR10ModelResNet(NebulaModel):
         raise NotImplementedError()
 
     def configure_optimizers(self):
+        optimizer_override = self.get_optimizer_override()
+        if optimizer_override is not None:
+            return optimizer_override
+
         if self.implementation == "scratch" and self.classifier == "resnet9":
             params = []
             for key, module in self.model.items():

@@ -204,7 +204,22 @@ class NebulaModel(pl.LightningModule, ABC):
 
         self._current_loss = -1
         self._optimizer = None
+        self._optimizer_override = None
         self._latest_validation_metrics = {}
+
+        self.dp_enabled = False
+        self.dp_epsilon = None
+        self.dp_delta = None
+
+    def set_optimizer_override(self, optimizer):
+        self._optimizer_override = optimizer
+        self._optimizer = optimizer
+
+    def clear_optimizer_override(self):
+        self._optimizer_override = None
+
+    def get_optimizer_override(self):
+        return self._optimizer_override
 
     def set_communication_manager(self, communication_manager):
         self.communication_manager = communication_manager

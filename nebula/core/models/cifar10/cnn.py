@@ -37,6 +37,10 @@ class CIFAR10ModelCNN(NebulaModel):
         return x
 
     def configure_optimizers(self):
+        optimizer_override = self.get_optimizer_override()
+        if optimizer_override is not None:
+            return optimizer_override
+
         optimizer = torch.optim.Adam(
             self.parameters(),
             lr=self.learning_rate,
