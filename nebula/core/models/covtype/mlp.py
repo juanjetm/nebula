@@ -14,6 +14,7 @@ class CovtypeModelMLP(NebulaModel):
         metrics=None,
         confusion_matrix=None,
         seed=None,
+        data_type="Tabular",
     ):
         # OJO: NebulaModel está pensado para imágenes (input_channels),
         # pero en la práctica se usa ese primer argumento como "input shape info".
@@ -57,3 +58,6 @@ class CovtypeModelMLP(NebulaModel):
 
     def count_parameters(self) -> int:
         return int(sum(p.numel() for p in self.parameters() if p.requires_grad))
+
+    def get_num_classes(self):
+        return self.num_classes

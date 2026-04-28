@@ -22,6 +22,7 @@ class AdultCensusModelMLP(NebulaModel):
         hidden1: int = 256,
         hidden2: int = 128,
         dropout: float = 0.0,
+        data_type="Tabular",
     ):
         # NebulaModel expects something like input_channels first; for tabular we pass input_dim there.
         super().__init__(input_dim, num_classes, learning_rate, metrics, confusion_matrix, seed)
@@ -69,3 +70,6 @@ class AdultCensusModelMLP(NebulaModel):
 
     def count_parameters(self) -> int:
         return int(sum(p.numel() for p in self.parameters() if p.requires_grad))
+
+    def get_num_classes(self):
+        return self.num_classes

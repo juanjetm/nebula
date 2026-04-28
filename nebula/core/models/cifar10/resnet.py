@@ -39,6 +39,7 @@ class CIFAR10ModelResNet(NebulaModel):
         seed=None,
         implementation="scratch",
         classifier="resnet9",
+        data_type="Images",
     ):
         super().__init__()
         if metrics is None:
@@ -159,3 +160,6 @@ class CIFAR10ModelResNet(NebulaModel):
 
     def count_parameters(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+    def get_num_classes(self):
+        return self.num_classes

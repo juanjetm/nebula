@@ -24,6 +24,8 @@ from sklearn.metrics import f1_score, roc_auc_score, roc_curve
 from torch import nn, optim
 import torch.nn.functional as F
 import time
+import io
+
 
 from nebula.addons.trustworthiness.utils import read_csv
 
@@ -513,21 +515,19 @@ def get_bytes_model(model_file):
 
     return model_size
 
-def get_bytes_final_model_id(id, scenario_name):
+def get_bytes_final_model_id(model):
     """
-    Calculates the bytes of the final model of a node by id.
+    Calculates the serialized size in bytes of a PyTorch model state_dict.
 
     Args:
-        id: Participant ID.
+        model (nn.Module): PyTorch model.
 
     Returns:
-        float: The bytes of the model.
+        int: Model size in bytes.
     """
-
-
-    model_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", f"participant_{id}_final_model.pk")
-
-    model_size = os.path.getsize(model_file)
+    buffer: io.BytesIO = io.BytesIO()
+    torch.save(model.state_dict(), buffer)
+    model_size: int = buffer.tell()
 
     return model_size
 

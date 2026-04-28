@@ -12,6 +12,7 @@ class CIFAR10ModelCNN_V3(NebulaModel):
         metrics=None,
         confusion_matrix=None,
         seed=None,
+        data_type="Images",
     ):
         super().__init__(input_channels, num_classes, learning_rate, metrics, confusion_matrix, seed)
 
@@ -86,3 +87,6 @@ class CIFAR10ModelCNN_V3(NebulaModel):
 
     def count_parameters(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+    def get_num_classes(self):
+        return self.num_classes

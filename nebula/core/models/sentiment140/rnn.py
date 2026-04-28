@@ -12,6 +12,7 @@ class Sentiment140ModelRNN(NebulaModel):
         metrics=None,
         confusion_matrix=None,
         seed=None,
+        data_type="Tabular",
     ):
         super().__init__(input_channels, num_classes, learning_rate, metrics, confusion_matrix, seed)
 
@@ -59,3 +60,6 @@ class Sentiment140ModelRNN(NebulaModel):
 
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
         return optimizer
+
+    def get_num_classes(self):
+        return self.num_classes

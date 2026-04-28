@@ -140,6 +140,7 @@ class TrustWorkloadTrainer(TrustWorkload):
     def get_validation_metrics(self):
         return (self._current_val_loss, self._current_val_accuracy)
 
+    """
     def _dump_model_for_trust(self, path):
         model = self._engine.trainer.model
         optimizer = model._optimizer
@@ -149,6 +150,7 @@ class TrustWorkloadTrainer(TrustWorkload):
                 pickle.dump(model, f)
         finally:
             model._optimizer = optimizer
+    """
 
     async def finish_experiment_role_pre_actions(self):
         with open(self._train_loader_file, 'rb') as file:
@@ -176,7 +178,7 @@ class TrustWorkloadTrainer(TrustWorkload):
 
             class_imbalance = get_class_imbalance_local(self._idx, experiment_name)
 
-            model_size = get_bytes_final_model_id(self._idx, experiment_name)
+            model_size = get_bytes_final_model_id(self._engine.trainer.model)
 
             local_entropy = get_local_entropy(self._idx, experiment_name)
 
@@ -878,7 +880,10 @@ class TrustWorkloadTrainer(TrustWorkload):
     async def _process_round_end_event(self, ree: RoundEndEvent):
         scenario_name = self._engine.config.participant["scenario_args"]["name"]
         train_model = f"/nebula/app/logs/{scenario_name}/trustworthiness/participant_{self._idx}_train_model.pk"
-        self._dump_model_for_trust(train_model)
+        #self._dump_model_for_trust(train_model)
+        # Save the model in the trustworthiness directory
+        #with open(train_model, 'wb') as f:
+        #    pickle.dump(self._engine.trainer.model, f)
 
     async def _process_round_start_event(self, rse: RoundStartEvent):
         _, _, expected_nodes = await rse.get_event_data()
@@ -913,7 +918,10 @@ class TrustWorkloadTrainer(TrustWorkload):
 
     async def _process_experiment_finished_event(self, efe:ExperimentFinishEvent):
         model_file = f"/nebula/app/logs/{self._experiment_name}/trustworthiness/participant_{self._engine.idx}_final_model.pk"
-        self._dump_model_for_trust(model_file)
+        #self._dump_model_for_trust(model_file)
+        # Save the model in the trustworthiness directory
+        #with open(model_file, 'wb') as f:
+        #    pickle.dump(self._engine.trainer.model, f)
 
 
 class TrustWorkloadServer(TrustWorkload):
@@ -951,7 +959,6 @@ class TrustWorkloadServer(TrustWorkload):
         await EventManager.get_instance().subscribe_addonevent(ValidationMetricsEvent, self._process_validation_metrics_event)
         await EventManager.get_instance().subscribe_node_event(RoundStartEvent, self._process_round_start_event)
         await EventManager.get_instance().subscribe_node_event(ExperimentFinishEvent, self._process_experiment_finished_event)
-        await self._create_pk_files(experiment_name)
 
         self._per_round = PerRoundTrustMetrics(
             experiment_name=experiment_name,
@@ -962,23 +969,6 @@ class TrustWorkloadServer(TrustWorkload):
             enable_csv=True,
         )
         await self._per_round.setup(self._engine)
-
-    async def _create_pk_files(self, experiment_name):
-        # Save data to local files to compute trustworthiness
-        train_loader_filename = f"/nebula/app/logs/{experiment_name}/trustworthiness/participant_{self._idx}_train_loader.pk"
-        test_loader_filename = f"/nebula/app/logs/{experiment_name}/trustworthiness/participant_{self._idx}_test_loader.pk"
-        self._engine.trainer.datamodule.setup(stage="fit")
-        train_loader = self._engine.trainer.datamodule.train_dataloader()
-        self._engine.trainer.datamodule.setup(stage="test")
-        test_loader = self._engine.trainer.datamodule.test_dataloader()[0]
-
-        with open(train_loader_filename, 'wb') as f:
-            pickle.dump(train_loader, f)
-            f.close()
-        with open(test_loader_filename, 'wb') as f:
-            pickle.dump(test_loader, f)
-            f.close()
-
 
     def get_workload(self):
         return self._workload
@@ -1019,7 +1009,7 @@ class TrustWorkloadServer(TrustWorkload):
 
             class_imbalance = get_class_imbalance_local(self._idx, experiment_name)
 
-            model_size = get_bytes_final_model_id(self._idx, experiment_name)
+            model_size = get_bytes_final_model_id(self._engine.trainer.model)
 
             local_entropy = get_local_entropy(self._idx, experiment_name)
 
@@ -1049,14 +1039,13 @@ class TrustWorkloadServer(TrustWorkload):
 
             class_imbalance = get_class_imbalance_local(self._idx, experiment_name)
 
-            model_size = get_bytes_final_model_id(self._idx, experiment_name)
+            model_size = get_bytes_final_model_id(self._engine.trainer.model)
 
             local_entropy = get_local_entropy(self._idx, experiment_name)
 
             save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, 0, 0, class_imbalance, model_size, local_entropy, val_accuracy, dp_enabled, dp_epsilon)
             save_emissions_csv_cfl(self._experiment_name, self._idx, role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size)
             await self._generate_factsheet(trust_config, experiment_name)
-        #await self._generate_factsheet(trust_config, experiment_name)
 
     async def register_trustworthiness_report(self, source, message):
         self._trustworthiness_reports[message.node_id] = {
@@ -1118,12 +1107,19 @@ class TrustWorkloadServer(TrustWorkload):
 
     async def _generate_factsheet(self, trust_config, experiment_name):
         factsheet = Factsheet()
-        factsheet.populate_factsheet_pre_train(trust_config, experiment_name)
+        self._engine.trainer.datamodule.setup(stage="fit")
+        train_loader = self._engine.trainer.datamodule.train_dataloader()
+        self._engine.trainer.datamodule.setup(stage="test")
+        test_loader = self._engine.trainer.datamodule.test_dataloader()[0]
+        factsheet.populate_factsheet_pre_train(trust_config, experiment_name, self._engine.trainer.model)
         factsheet.populate_factsheet_post_train(
             experiment_name,
             self._start_time,
             self._end_time,
             self._idx,
+            self._engine.trainer.model,
+            train_loader,
+            test_loader,
             reputation_summary=self._get_reputation_trust_summary(),
             participation_summary=self._get_participation_trust_summary(),
             reliability_summary=self._get_system_reliability_summary(),

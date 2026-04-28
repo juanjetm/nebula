@@ -9,24 +9,6 @@ import numpy as np
 import pandas as pd
 import time
 
-# from nebula.core.models.cifar10.cnn import CIFAR10ModelCNN
-from nebula.core.models.mnist.mlp import MNISTModelMLP
-from nebula.core.models.mnist.cnn import MNISTModelCNN
-from nebula.core.models.covtype.mlp import CovtypeModelMLP
-from nebula.core.models.kddcup99.mlp import KDDCUP99ModelMLP
-from nebula.core.models.adultcensus.mlp import AdultCensusModelMLP
-from nebula.core.models.breast_cancer.mlp import BreastCancerModelMLP
-from nebula.core.models.fashionmnist.mlp import FashionMNISTModelMLP
-from nebula.core.models.fashionmnist.cnn import FashionMNISTModelCNN
-from nebula.core.models.emnist.mlp import EMNISTModelMLP
-from nebula.core.models.emnist.cnn import EMNISTModelCNN
-from nebula.core.models.cifar10.cnn import CIFAR10ModelCNN
-from nebula.core.models.cifar10.cnnV2 import CIFAR10ModelCNN_V2
-from nebula.core.models.cifar10.cnnV3 import CIFAR10ModelCNN_V3
-from nebula.core.models.cifar10.fastermobilenet import FasterMobileNet
-from nebula.core.models.cifar10.resnet import CIFAR10ModelResNet
-from nebula.core.models.cifar10.simplemobilenet import SimpleMobileNetV1
-from nebula.core.models.cifar100.cnn import CIFAR100ModelCNN
 from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_models, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv, get_loss_sensitivity_score, compute_adversarial_accuracy_art,get_empirical_robustness_score,get_confidence_score,attack_success_rate, get_entropy_list, get_avg_class_imbalance_model_size, get_underfitting_score, get_overfitting_score, get_participant_loss_accuracy, get_well_calibration_error, get_generalized_entropy_index, get_theil_index, get_coefficient_of_variation, get_alpha_score, get_spread_ratio, get_spread_divergence, get_epsilon_star, get_mia_auc, get_explainability_metrics_summary, get_macro_f1_score, get_dp_global
 from nebula.addons.trustworthiness.utils import count_all_class_samples, read_csv, check_field_filled, get_all_data_entropy
 # from nebula.core.models.syscall.mlp import SyscallModelMLP
@@ -42,7 +24,7 @@ class Factsheet:
         self.factsheet_file_nm = "factsheet.json"
         self.factsheet_template_file_nm = "factsheet_template.json"
 
-    def populate_factsheet_pre_train(self, data, scenario_name):
+    def populate_factsheet_pre_train(self, data, scenario_name, model):
         """
         Populates the factsheet with values before the training.
 
@@ -134,61 +116,9 @@ class Factsheet:
                     factsheet["configuration"]["differential_privacy"] = False
                     factsheet["configuration"]["dp_epsilon"] = ""
 
-                    if dataset == "MNIST" and algorithm == "MLP":
-                        model = MNISTModelMLP()
-                        num_classes_temp = 10
-                    elif dataset == "MNIST" and algorithm == "CNN":
-                        model = MNISTModelCNN()
-                        num_classes_temp = 10
-                    elif dataset == "FashionMNIST" and algorithm == "MLP":
-                        model = FashionMNISTModelMLP()
-                        num_classes_temp = 10
-                    elif dataset == "FashionMNIST" and algorithm == "CNN":
-                        model = FashionMNISTModelCNN()
-                        num_classes_temp = 10
-                    elif dataset == "Covtype" and algorithm == "MLP":
-                        model = CovtypeModelMLP()
-                        num_classes_temp = 7
-                    elif dataset == "KDDCUP99" and algorithm == "MLP":
-                        model = KDDCUP99ModelMLP()
-                        num_classes_temp = 23
-                    elif dataset == "AdultCensus" and algorithm == "MLP":
-                        model = AdultCensusModelMLP()
-                        num_classes_temp = 2
-                    elif dataset == "BreastCancer" and algorithm == "MLP":
-                        model = BreastCancerModelMLP()
-                        num_classes_temp = 2
-                    elif dataset == "EMNIST" and algorithm == "MLP":
-                        model = EMNISTModelMLP()
-                        num_classes_temp = 47
-                    elif dataset == "EMNIST" and algorithm == "CNN":
-                        model = EMNISTModelCNN()
-                        num_classes_temp = 47
-                    elif dataset == "CIFAR10" and algorithm == "ResNet9":
-                        model = CIFAR10ModelResNet(classifier="resnet9")
-                        num_classes_temp = 10
-                    elif dataset == "CIFAR10" and algorithm == "fastermobilenet":
-                        model = FasterMobileNet()
-                        num_classes_temp = 10
-                    elif dataset == "CIFAR10" and algorithm == "simplemobilenet":
-                        model = SimpleMobileNetV1()
-                        num_classes_temp = 10
-                    elif dataset == "CIFAR10" and algorithm == "CNN":
-                        model = CIFAR10ModelCNN()
-                        num_classes_temp = 10
-                    elif dataset == "CIFAR10" and algorithm == "CNNv2":
-                        model = CIFAR10ModelCNN_V2()
-                        num_classes_temp = 10
-                    elif dataset == "CIFAR10" and algorithm == "CNNv3":
-                        model = CIFAR10ModelCNN_V3()
-                        num_classes_temp = 10
-                    elif dataset == "CIFAR100" and algorithm == "CNN":
-                        model = CIFAR100ModelCNN()
-                        num_classes_temp = 100
-
                     factsheet["configuration"]["learning_rate"] = model.get_learning_rate()
                     factsheet["configuration"]["trainable_param_num"] = model.count_parameters()
-                    factsheet["configuration"]["local_update_steps"] = 1
+                    factsheet["configuration"]["local_update_steps"] = data["epochs"]
 
                     f.seek(0)
                     f.truncate()
@@ -198,7 +128,7 @@ class Factsheet:
                 logging.warning(f"{factsheet_file} is invalid")
                 logging.error(e)
 
-    def populate_factsheet_post_train(self, scenario_name, start_time, end_time, participant_idx, reputation_summary=None, participation_summary=None, reliability_summary=None):
+    def populate_factsheet_post_train(self, scenario_name, start_time, end_time, participant_idx, model, train_loader, test_loader, reputation_summary=None, participation_summary=None, reliability_summary=None):
         """
         Populates the factsheet with values after the training.
 
@@ -214,14 +144,8 @@ class Factsheet:
             try:
                 factsheet = json.load(f)
 
-                dataset = factsheet["data"]["provenance"]
-                model = factsheet["configuration"]["training_model"]
-
                 files_dir = f"{os.environ.get('NEBULA_LOGS_DIR')}/{scenario_name}/trustworthiness"
 
-                train_dataloader_file = f"{files_dir}/participant_{participant_idx}_train_loader.pk"
-                test_dataloader_file = f"{files_dir}/participant_{participant_idx}_test_loader.pk"
-                final_model_file = f"{files_dir}/participant_{participant_idx}_final_model.pk"
                 emissions_file = os.path.join(files_dir, "emissions.csv")
 
                 avg_class_imbalance, avg_model_size = get_avg_class_imbalance_model_size(scenario_name)
@@ -278,82 +202,19 @@ class Factsheet:
                 else:
                     factsheet["participants"]["avg_neighbor_reputation"] = 0
 
-                with open(final_model_file, "rb") as file:
-                    lightning_model = pickle.load(file)
-
-                if dataset == "MNIST" and model == "MLP":
-                    model = MNISTModelMLP()
-                    num_classes_temp = 10
-                elif dataset == "MNIST" and model == "CNN":
-                    model = MNISTModelCNN()
-                    num_classes_temp = 10
-                elif dataset == "FashionMNIST" and model == "MLP":
-                    model = FashionMNISTModelMLP()
-                    num_classes_temp = 10
-                elif dataset == "FashionMNIST" and model == "CNN":
-                    model = FashionMNISTModelCNN()
-                    num_classes_temp = 10
-                elif dataset == "Covtype" and model == "MLP":
-                    model = CovtypeModelMLP()
-                    num_classes_temp = 7
-                elif dataset == "KDDCUP99" and model == "MLP":
-                    model = KDDCUP99ModelMLP()
-                    num_classes_temp = 23
-                elif dataset == "AdultCensus" and model == "MLP":
-                    model = AdultCensusModelMLP()
-                    num_classes_temp = 2
-                elif dataset == "BreastCancer" and model == "MLP":
-                    model = BreastCancerModelMLP()
-                    num_classes_temp = 2
-                elif dataset == "EMNIST" and model == "MLP":
-                    model = EMNISTModelMLP()
-                    num_classes_temp = 47
-                elif dataset == "EMNIST" and model == "CNN":
-                    model = EMNISTModelCNN()
-                    num_classes_temp = 47
-                elif dataset == "CIFAR10" and model == "ResNet9":
-                    model = CIFAR10ModelResNet(classifier="resnet9")
-                    num_classes_temp = 10
-                elif dataset == "CIFAR10" and model == "fastermobilenet":
-                    model = FasterMobileNet()
-                    num_classes_temp = 10
-                elif dataset == "CIFAR10" and model == "simplemobilenet":
-                    model = SimpleMobileNetV1()
-                    num_classes_temp = 10
-                elif dataset == "CIFAR10" and model == "CNN":
-                    model = CIFAR10ModelCNN()
-                    num_classes_temp = 10
-                elif dataset == "CIFAR10" and model == "CNNv2":
-                    model = CIFAR10ModelCNN_V2()
-                    num_classes_temp = 10
-                elif dataset == "CIFAR10" and model == "CNNv3":
-                    model = CIFAR10ModelCNN_V3()
-                    num_classes_temp = 10
-                elif dataset == "CIFAR100" and model == "CNN":
-                    model = CIFAR100ModelCNN()
-                    num_classes_temp = 100
-
-                model.load_state_dict(lightning_model.state_dict())
-
-                with open(train_dataloader_file, "rb") as file:
-                    train_dataloader = pickle.load(file)
-
-                with open(test_dataloader_file, "rb") as file:
-                    test_dataloader = pickle.load(file)
-
-                test_sample = next(iter(test_dataloader))
-                explainability_metrics = get_explainability_metrics_summary(model, test_dataloader)
-                factsheet["performance"]["test_macro_f1"] = get_macro_f1_score(model, test_dataloader)
+                test_sample = next(iter(test_loader))
+                explainability_metrics = get_explainability_metrics_summary(model, test_loader)
+                factsheet["performance"]["test_macro_f1"] = get_macro_f1_score(model, test_loader)
                 factsheet["privacy"]["epsilon_star"] = get_epsilon_star(
                     model,
-                    train_dataloader,
-                    test_dataloader,
+                    train_loader,
+                    test_loader,
                 )
                 factsheet["privacy"]["epsilon_star_score"] = 1/(1 + factsheet["privacy"]["epsilon_star"])
                 factsheet["privacy"]["mia_auc"] = get_mia_auc(
                     model,
-                    train_dataloader,
-                    test_dataloader,
+                    train_loader,
+                    test_loader,
                 )
                 factsheet["privacy"]["mia_auc_score"] = 1 - 2 * abs(factsheet["privacy"]["mia_auc"] - 0.5)
 
@@ -362,29 +223,29 @@ class Factsheet:
                 factsheet["fairness"]["underfitting"] = underfitting_score
                 overfitting_value = get_overfitting_score(
                     model,
-                    train_dataloader,
+                    train_loader,
                     participant_test_acc,
                 )
                 factsheet["fairness"]["overfitting"] = 1/(1 + overfitting_value)
                 well_calibration_error_value = get_well_calibration_error(
                     model,
-                    test_dataloader,
+                    test_loader,
                 )
 
                 factsheet["fairness"]["well_calibration_error"] = 1/(1 + well_calibration_error_value)
                 generalized_entropy_index_value = get_generalized_entropy_index(
                     model,
-                    test_dataloader,
+                    test_loader,
                 )
                 factsheet["fairness"]["generalized_entropy_index"] = 1/(1 + generalized_entropy_index_value)
                 theil_index_value = get_theil_index(
                     model,
-                    test_dataloader,
+                    test_loader,
                 )
                 factsheet["fairness"]["theil_index"] = 1/(1 + theil_index_value)
                 coefficient_of_variation_value = get_coefficient_of_variation(
                     model,
-                    test_dataloader,
+                    test_loader,
                 )
                 factsheet["fairness"]["coefficient_of_variation"] = 1/(1 + coefficient_of_variation_value)
                 factsheet["explainability"]["alpha_score"] = explainability_metrics["alpha_score"]
@@ -393,16 +254,16 @@ class Factsheet:
 
                 lr = factsheet["configuration"]["learning_rate"]
 
-                value_clever = get_clever_score(model, test_sample, num_classes_temp, lr)
+                value_clever = get_clever_score(model, test_sample, model.get_num_classes(), lr)
                 factsheet["performance"]["test_clever"] = 1 if value_clever > 1 else value_clever
 
-                value_loss_sensitivity = get_loss_sensitivity_score(model, test_sample, num_classes_temp, lr)
+                value_loss_sensitivity = get_loss_sensitivity_score(model, test_sample, model.get_num_classes(), lr)
                 factsheet["performance"]["test_loss_sensitivity"] = 1 / (1 + value_loss_sensitivity)
 
-                value_adv_accuracy = compute_adversarial_accuracy_art(model, test_dataloader, num_classes_temp, lr)
+                value_adv_accuracy = compute_adversarial_accuracy_art(model, test_loader, model.get_num_classes(), lr)
                 factsheet["performance"]["test_adv_accuracy"] = 1 if value_adv_accuracy > 1 else value_adv_accuracy
 
-                value_empirical_robustness = get_empirical_robustness_score(model, test_sample, num_classes_temp, lr)
+                value_empirical_robustness = get_empirical_robustness_score(model, test_sample, model.get_num_classes(), lr)
                 factsheet["performance"]["test_empirical_robustness"] = 1 if value_empirical_robustness > 1 else value_empirical_robustness
 
                 value_confidence_score = get_confidence_score(model, test_sample)

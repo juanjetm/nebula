@@ -178,7 +178,7 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
 
         factsheet["configuration"]["learning_rate"] = model.get_learning_rate()
         factsheet["configuration"]["trainable_param_num"] = model.count_parameters()
-        factsheet["configuration"]["local_update_steps"] = 1
+        factsheet["configuration"]["local_update_steps"] = data["epochs"]
 
         files_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), experiment_name, "trustworthiness")
 

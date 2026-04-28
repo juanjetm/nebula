@@ -14,6 +14,7 @@ class Sentiment140ModelCNN(NebulaModel):
         metrics=None,
         confusion_matrix=None,
         seed=None,
+        data_type="Tabular",
     ):
         super().__init__(input_channels, num_classes, learning_rate, metrics, confusion_matrix, seed)
 
@@ -58,3 +59,6 @@ class Sentiment140ModelCNN(NebulaModel):
             amsgrad=self.config["amsgrad"],
         )
         return optimizer
+
+    def get_num_classes(self):
+        return self.num_classes
