@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from nebula.config.config import Config
 from nebula.core.engine import Engine
 import pickle
-from nebula.addons.trustworthiness.calculation import stop_emissions_tracking_and_save, get_bytes_final_model_id, get_class_imbalance_local, get_participation_variation_score
+from nebula.addons.trustworthiness.calculation import stop_emissions_tracking_and_save, get_bytes_model, get_class_imbalance_local, get_participation_variation_score
 from nebula.addons.trustworthiness.utils import save_results_csv, save_trustworthiness_reports_csv, load_emissions_participant, load_data_results_participant, save_results_csv_cfl, save_emissions_csv_cfl, save_class_count_per_participant, get_local_entropy, load_trust_report_json_dumped, create_local_trust_report_copy, accumulate_weighted_trustscores, build_weighted_trustscores_report, save_trust_report_json
 from codecarbon import EmissionsTracker
 from nebula.addons.trustworthiness.per_round_metrics import PerRoundTrustMetrics
@@ -113,6 +113,7 @@ class TrustWorkloadTrainer(TrustWorkload):
 
 
     async def _create_pk_files(self, experiment_name):
+        """
         # Save data to local files to compute trustworthiness
         train_loader_filename = f"/nebula/app/logs/{experiment_name}/trustworthiness/participant_{self._idx}_train_loader.pk"
         test_loader_filename = f"/nebula/app/logs/{experiment_name}/trustworthiness/participant_{self._idx}_test_loader.pk"
@@ -127,6 +128,8 @@ class TrustWorkloadTrainer(TrustWorkload):
         with open(test_loader_filename, 'wb') as f:
             pickle.dump(test_loader, f)
             f.close()
+        """
+        pass
 
     def get_workload(self):
         return self._workload
@@ -153,8 +156,8 @@ class TrustWorkloadTrainer(TrustWorkload):
     """
 
     async def finish_experiment_role_pre_actions(self):
-        with open(self._train_loader_file, 'rb') as file:
-            train_loader = pickle.load(file)
+        self._engine.trainer.datamodule.setup(stage="fit")
+        train_loader = self._engine.trainer.datamodule.train_dataloader()
         self._sample_size = len(train_loader)
 
     async def finish_experiment_role_post_actions(self, trust_config, experiment_name):
@@ -178,7 +181,7 @@ class TrustWorkloadTrainer(TrustWorkload):
 
             class_imbalance = get_class_imbalance_local(self._idx, experiment_name)
 
-            model_size = get_bytes_final_model_id(self._engine.trainer.model)
+            model_size = get_bytes_model(self._engine.trainer.model)
 
             local_entropy = get_local_entropy(self._idx, experiment_name)
 
@@ -294,12 +297,19 @@ class TrustWorkloadTrainer(TrustWorkload):
             self._finalize_sdfl_global_trustscores_aggregation()
 
     def _compute_local_trustscores_report(self, experiment_name, trust_config, weights, federation) -> str:
+        self._engine.trainer.datamodule.setup(stage="fit")
+        train_loader = self._engine.trainer.datamodule.train_dataloader()
+        self._engine.trainer.datamodule.setup(stage="test")
+        test_loader = self._engine.trainer.datamodule.test_dataloader()[0]
         populate_factsheet(
             experiment_name,
             self._idx,
             trust_config,
             self._start_time,
             self._end_time,
+            self._engine.trainer.model,
+            train_loader,
+            test_loader,
             reputation_summary=self._get_reputation_trust_summary(),
             participation_summary=self._get_participation_trust_summary(),
             reliability_summary=self._get_system_reliability_summary(),
@@ -878,12 +888,13 @@ class TrustWorkloadTrainer(TrustWorkload):
             self._trustscores_wait_event.set()
 
     async def _process_round_end_event(self, ree: RoundEndEvent):
-        scenario_name = self._engine.config.participant["scenario_args"]["name"]
-        train_model = f"/nebula/app/logs/{scenario_name}/trustworthiness/participant_{self._idx}_train_model.pk"
+        #scenario_name = self._engine.config.participant["scenario_args"]["name"]
+        #train_model = f"/nebula/app/logs/{scenario_name}/trustworthiness/participant_{self._idx}_train_model.pk"
         #self._dump_model_for_trust(train_model)
         # Save the model in the trustworthiness directory
         #with open(train_model, 'wb') as f:
         #    pickle.dump(self._engine.trainer.model, f)
+        pass
 
     async def _process_round_start_event(self, rse: RoundStartEvent):
         _, _, expected_nodes = await rse.get_event_data()
@@ -917,11 +928,12 @@ class TrustWorkloadTrainer(TrustWorkload):
             self._current_val_loss, self._current_val_accuracy = cur_loss, cur_acc
 
     async def _process_experiment_finished_event(self, efe:ExperimentFinishEvent):
-        model_file = f"/nebula/app/logs/{self._experiment_name}/trustworthiness/participant_{self._engine.idx}_final_model.pk"
+        #model_file = f"/nebula/app/logs/{self._experiment_name}/trustworthiness/participant_{self._engine.idx}_final_model.pk"
         #self._dump_model_for_trust(model_file)
         # Save the model in the trustworthiness directory
         #with open(model_file, 'wb') as f:
         #    pickle.dump(self._engine.trainer.model, f)
+        pass
 
 
 class TrustWorkloadServer(TrustWorkload):
@@ -1009,7 +1021,7 @@ class TrustWorkloadServer(TrustWorkload):
 
             class_imbalance = get_class_imbalance_local(self._idx, experiment_name)
 
-            model_size = get_bytes_final_model_id(self._engine.trainer.model)
+            model_size = get_bytes_model(self._engine.trainer.model)
 
             local_entropy = get_local_entropy(self._idx, experiment_name)
 
@@ -1039,7 +1051,7 @@ class TrustWorkloadServer(TrustWorkload):
 
             class_imbalance = get_class_imbalance_local(self._idx, experiment_name)
 
-            model_size = get_bytes_final_model_id(self._engine.trainer.model)
+            model_size = get_bytes_model(self._engine.trainer.model)
 
             local_entropy = get_local_entropy(self._idx, experiment_name)
 
@@ -1241,11 +1253,14 @@ class TrustWorkloadServer(TrustWorkload):
             self._current_val_loss, self._current_val_accuracy = cur_loss, cur_acc
 
     async def _process_experiment_finished_event(self, efe:ExperimentFinishEvent):
+        """
         model_file = f"/nebula/app/logs/{self._experiment_name}/trustworthiness/participant_{self._engine.idx}_final_model.pk"
 
         # Save the model in the trustworthiness directory
         with open(model_file, 'wb') as f:
             pickle.dump(self._engine.trainer.model, f)
+        """
+        pass
 
 """                                                     ##############################
                                                         #       TRUSTWORTHINESS      #

@@ -11,31 +11,13 @@ import numpy as np
 import pandas as pd
 import time
 
-# from nebula.core.models.cifar10.cnn import CIFAR10ModelCNN
-from nebula.core.models.mnist.mlp import MNISTModelMLP
-from nebula.core.models.mnist.cnn import MNISTModelCNN
-from nebula.core.models.covtype.mlp import CovtypeModelMLP
-from nebula.core.models.kddcup99.mlp import KDDCUP99ModelMLP
-from nebula.core.models.adultcensus.mlp import AdultCensusModelMLP
-from nebula.core.models.breast_cancer.mlp import BreastCancerModelMLP
-from nebula.core.models.fashionmnist.mlp import FashionMNISTModelMLP
-from nebula.core.models.fashionmnist.cnn import FashionMNISTModelCNN
-from nebula.core.models.emnist.mlp import EMNISTModelMLP
-from nebula.core.models.emnist.cnn import EMNISTModelCNN
-from nebula.core.models.cifar10.cnn import CIFAR10ModelCNN
-from nebula.core.models.cifar10.cnnV2 import CIFAR10ModelCNN_V2
-from nebula.core.models.cifar10.cnnV3 import CIFAR10ModelCNN_V3
-from nebula.core.models.cifar10.fastermobilenet import FasterMobileNet
-from nebula.core.models.cifar10.resnet import CIFAR10ModelResNet
-from nebula.core.models.cifar10.simplemobilenet import SimpleMobileNetV1
-from nebula.core.models.cifar100.cnn import CIFAR100ModelCNN
-from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_models, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv, get_loss_sensitivity_score, compute_adversarial_accuracy_art,get_empirical_robustness_score,get_confidence_score,attack_success_rate, get_bytes_model, get_underfitting_score, get_overfitting_score, get_well_calibration_error, get_generalized_entropy_index, get_theil_index, get_coefficient_of_variation, get_alpha_score, get_spread_ratio, get_spread_divergence, get_epsilon_star, get_mia_auc, get_explainability_metrics_summary, get_macro_f1_score, get_underfitting_score_local, get_dp_local
+from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv, get_loss_sensitivity_score, compute_adversarial_accuracy_art,get_empirical_robustness_score,get_confidence_score,attack_success_rate, get_bytes_model, get_underfitting_score, get_overfitting_score, get_well_calibration_error, get_generalized_entropy_index, get_theil_index, get_coefficient_of_variation, get_alpha_score, get_spread_ratio, get_spread_divergence, get_epsilon_star, get_mia_auc, get_explainability_metrics_summary, get_macro_f1_score, get_underfitting_score_local, get_dp_local
 from nebula.addons.trustworthiness.utils import count_all_class_samples, read_csv, check_field_filled, get_all_data_entropy
 
 dirname = os.path.dirname(__file__)
 logger = logging.getLogger(__name__)
 
-def populate_factsheet(experiment_name, participant_idx, data, start_time, end_time, reputation_summary=None, participation_summary=None, reliability_summary=None):
+def populate_factsheet(experiment_name, participant_idx, data, start_time, end_time, model, train_loader, test_loader, reputation_summary=None, participation_summary=None, reliability_summary=None):
     trust_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), experiment_name, "trustworthiness")
     os.makedirs(trust_dir, exist_ok=True)
 
@@ -108,14 +90,6 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
         factsheet["configuration"]["monitoring"] = True
         factsheet["configuration"]["total_round_num"] = n_rounds
 
-        """
-        if poisoned_noise_percent != 0:
-            factsheet["configuration"]["differential_privacy"] = True
-            factsheet["configuration"]["dp_epsilon"] = poisoned_noise_percent
-        else:
-            factsheet["configuration"]["differential_privacy"] = False
-            factsheet["configuration"]["dp_epsilon"] = ""
-        """
         dp_enabled, dp_epsilon = get_dp_local(experiment_name, participant_idx)
         if dp_enabled:
             factsheet["configuration"]["differential_privacy"] = True
@@ -124,71 +98,13 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
             factsheet["configuration"]["differential_privacy"] = False
             factsheet["configuration"]["dp_epsilon"] = ""
 
-        if dataset == "MNIST" and algorithm == "MLP":
-            model = MNISTModelMLP()
-            num_classes_temp = 10
-        elif dataset == "MNIST" and algorithm == "CNN":
-            model = MNISTModelCNN()
-            num_classes_temp = 10
-        elif dataset == "FashionMNIST" and algorithm == "MLP":
-            model = FashionMNISTModelMLP()
-            num_classes_temp = 10
-        elif dataset == "FashionMNIST" and algorithm == "CNN":
-            model = FashionMNISTModelCNN()
-            num_classes_temp = 10
-        elif dataset == "Covtype" and algorithm == "MLP":
-            model = CovtypeModelMLP()
-            num_classes_temp = 7
-        elif dataset == "KDDCUP99" and algorithm == "MLP":
-            model = KDDCUP99ModelMLP()
-            num_classes_temp = 23
-        elif dataset == "AdultCensus" and algorithm == "MLP":
-            model = AdultCensusModelMLP()
-            num_classes_temp = 2
-        elif dataset == "BreastCancer" and algorithm == "MLP":
-            model = BreastCancerModelMLP()
-            num_classes_temp = 2
-        elif dataset == "EMNIST" and algorithm == "MLP":
-            model = EMNISTModelMLP()
-            num_classes_temp = 47
-        elif dataset == "EMNIST" and algorithm == "CNN":
-            model = EMNISTModelCNN()
-            num_classes_temp = 47
-        elif dataset == "CIFAR10" and algorithm == "ResNet9":
-            model = CIFAR10ModelResNet(classifier="resnet9")
-            num_classes_temp = 10
-        elif dataset == "CIFAR10" and algorithm == "fastermobilenet":
-            model = FasterMobileNet()
-            num_classes_temp = 10
-        elif dataset == "CIFAR10" and algorithm == "simplemobilenet":
-            model = SimpleMobileNetV1()
-            num_classes_temp = 10
-        elif dataset == "CIFAR10" and algorithm == "CNN":
-            model = CIFAR10ModelCNN()
-            num_classes_temp = 10
-        elif dataset == "CIFAR10" and algorithm == "CNNv2":
-            model = CIFAR10ModelCNN_V2()
-            num_classes_temp = 10
-        elif dataset == "CIFAR10" and algorithm == "CNNv3":
-            model = CIFAR10ModelCNN_V3()
-            num_classes_temp = 10
-        elif dataset == "CIFAR100" and algorithm == "CNN":
-            model = CIFAR100ModelCNN()
-            num_classes_temp = 100
-
         factsheet["configuration"]["learning_rate"] = model.get_learning_rate()
         factsheet["configuration"]["trainable_param_num"] = model.count_parameters()
         factsheet["configuration"]["local_update_steps"] = data["epochs"]
 
         files_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), experiment_name, "trustworthiness")
 
-        train_model_file = os.path.join(files_dir, f"participant_{participant_idx}_final_model.pk")
-        train_dataloader_file = os.path.join(files_dir, f"participant_{participant_idx}_train_loader.pk")
-        test_dataloader_file = os.path.join(files_dir, f"participant_{participant_idx}_test_loader.pk")
         emissions_file = os.path.join(files_dir, f"emissions_{participant_idx}.csv")
-
-        with open(train_model_file, "rb") as t_file:
-            lightning_model = pickle.load(t_file)
 
         get_all_data_entropy(experiment_name)
 
@@ -210,11 +126,11 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
 
         bytes_sent, bytes_recv = get_bytes(experiment_name, participant_idx)
 
-        model_file = os.path.join(files_dir, f"participant_{participant_idx}_final_model.pk")
-        factsheet["system"]["model_size"] = get_bytes_model(model_file)
+        factsheet["system"]["model_size"] = get_bytes_model(model)
 
         factsheet["system"]["upload_bytes"] = int(bytes_sent)
         factsheet["system"]["download_bytes"] = int(bytes_recv)
+
         if reliability_summary is not None:
             factsheet["system"]["dropout_rate"] = reliability_summary.get("dropout_rate", 0.0)
             factsheet["system"]["timeout_rate"] = reliability_summary.get("timeout_rate", 0.0)
@@ -255,34 +171,26 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
 
         factsheet["sustainability"]["emissions_communication_local"] = (bytes_sent * 2.24e-10 * carbon_intensity_local)+(bytes_recv * 2.24e-10 * carbon_intensity_local)
 
-        model.load_state_dict(lightning_model.state_dict())
-
-        with open(train_dataloader_file, "rb") as d_file:
-            train_dataloader = pickle.load(d_file)
-
-        with open(test_dataloader_file, "rb") as d_file:
-            test_dataloader = pickle.load(d_file)
-
-        test_sample = next(iter(test_dataloader))
-        explainability_metrics = get_explainability_metrics_summary(model, test_dataloader)
-        factsheet["performance"]["test_macro_f1"] = get_macro_f1_score(model, test_dataloader)
+        test_sample = next(iter(test_loader))
+        explainability_metrics = get_explainability_metrics_summary(model, test_loader)
+        factsheet["performance"]["test_macro_f1"] = get_macro_f1_score(model, test_loader)
         factsheet["privacy"]["epsilon_star"] = get_epsilon_star(
             model,
-            train_dataloader,
-            test_dataloader,
+            train_loader,
+            test_loader,
         )
         factsheet["privacy"]["epsilon_star_score"] = 1/(1 + factsheet["privacy"]["epsilon_star"])
         factsheet["privacy"]["mia_auc"] = get_mia_auc(
             model,
-            train_dataloader,
-            test_dataloader,
+            train_loader,
+            test_loader,
         )
 
         factsheet["privacy"]["mia_auc_score"] = 1 - 2 * abs(factsheet["privacy"]["mia_auc"] - 0.5)
         factsheet["fairness"]["underfitting"] = get_underfitting_score_local(experiment_name, participant_idx)
         overfitting_value = get_overfitting_score(
             model,
-            train_dataloader,
+            train_loader,
             factsheet["performance"]["test_acc"],
         )
 
@@ -290,23 +198,23 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
 
         well_calibration_error_value = get_well_calibration_error(
             model,
-            test_dataloader,
+            test_loader,
         )
 
         factsheet["fairness"]["well_calibration_error"] = 1/(1 + well_calibration_error_value)
         generalized_entropy_index_value = get_generalized_entropy_index(
             model,
-            test_dataloader,
+            test_loader,
         )
         factsheet["fairness"]["generalized_entropy_index"] = 1/(1 + generalized_entropy_index_value)
         theil_index_value = get_theil_index(
             model,
-            test_dataloader,
+            test_loader,
         )
         factsheet["fairness"]["theil_index"] = 1/(1 + theil_index_value)
         coefficient_of_variation_value = get_coefficient_of_variation(
             model,
-            test_dataloader,
+            test_loader,
         )
         factsheet["fairness"]["coefficient_of_variation"] = 1/(1 + coefficient_of_variation_value)
         factsheet["explainability"]["alpha_score"] = explainability_metrics["alpha_score"]
@@ -315,16 +223,16 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
 
         lr = factsheet["configuration"]["learning_rate"]
 
-        value_clever = get_clever_score(model, test_sample, num_classes_temp, lr)
+        value_clever = get_clever_score(model, test_sample, model.get_num_classes(), lr)
         factsheet["performance"]["test_clever"] = 1 if value_clever > 1 else value_clever
 
-        value_loss_sensitivity = get_loss_sensitivity_score(model, test_sample, num_classes_temp, lr)
+        value_loss_sensitivity = get_loss_sensitivity_score(model, test_sample, model.get_num_classes(), lr)
         factsheet["performance"]["test_loss_sensitivity"] = 1 / (1 + value_loss_sensitivity)
 
-        value_adv_accuracy = compute_adversarial_accuracy_art(model, test_dataloader, num_classes_temp, lr)
+        value_adv_accuracy = compute_adversarial_accuracy_art(model, test_loader, model.get_num_classes(), lr)
         factsheet["performance"]["test_adv_accuracy"] = 1 if value_adv_accuracy > 1 else value_adv_accuracy
 
-        value_empirical_robustness = get_empirical_robustness_score(model, test_sample, num_classes_temp, lr)
+        value_empirical_robustness = get_empirical_robustness_score(model, test_sample, model.get_num_classes(), lr)
         factsheet["performance"]["test_empirical_robustness"] = 1 if value_empirical_robustness > 1 else value_empirical_robustness
 
         value_confidence_score = get_confidence_score(model, test_sample)

@@ -477,45 +477,7 @@ def get_elapsed_time(start_time, end_time):
 
     return elapsed_time
 
-
-def get_bytes_models(models_files):
-    """
-    Calculates the mean bytes of the final models of the nodes.
-
-    Args:
-        models_files (list): List of final models.
-
-    Returns:
-        float: The mean bytes of the models.
-    """
-
-    total_models_size = 0
-    number_models = len(models_files)
-
-    for file in models_files:
-        model_size = os.path.getsize(file)
-        total_models_size += model_size
-
-    avg_model_size = total_models_size / number_models
-
-    return avg_model_size
-
-def get_bytes_model(model_file):
-    """
-    Calculates the bytes of the final model of a node.
-
-    Args:
-        model_file: Final model.
-
-    Returns:
-        float: The bytes of the model.
-    """
-
-    model_size = os.path.getsize(model_file)
-
-    return model_size
-
-def get_bytes_final_model_id(model):
+def get_bytes_model(model):
     """
     Calculates the serialized size in bytes of a PyTorch model state_dict.
 
