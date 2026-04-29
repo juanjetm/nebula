@@ -32,7 +32,7 @@ def populate_factsheet(experiment_name, participant_idx, data, start_time, end_t
         factsheet = {}
         factsheet = json.load(f)
 
-        logging.info("DFL FactSheet: Populating factsheet with pre training metrics")
+        logging.info("DFL FactSheet: Populating factsheet")
 
         federation = data["federation"]
         n_nodes = int(data["n_nodes"])

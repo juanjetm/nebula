@@ -17,7 +17,7 @@ class TrustMetricManager:
     """
 
     def __init__(self, scenario_start_time, federation, participant=None):
-        if federation == "DFL":
+        if federation == "DFL" or federation == "SDFL":
             self.factsheet_file_nm = f"factsheet_participant_{participant}.json"
             self.eval_metrics_file_nm = "eval_metrics_dfl.json"
             self.nebula_trust_results_nm = f"nebula_trust_results_{participant}.json"
