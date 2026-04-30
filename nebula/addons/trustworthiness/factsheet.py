@@ -104,18 +104,6 @@ class Factsheet:
                     factsheet["configuration"]["monitoring"] = True
                     factsheet["configuration"]["total_round_num"] = n_rounds
 
-                    """
-                    if poisoned_noise_percent != 0:
-                        factsheet["configuration"]["differential_privacy"] = True
-                        factsheet["configuration"]["dp_epsilon"] = poisoned_noise_percent
-                    else:
-                        factsheet["configuration"]["differential_privacy"] = False
-                        factsheet["configuration"]["dp_epsilon"] = ""
-                    """
-
-                    factsheet["configuration"]["differential_privacy"] = False
-                    factsheet["configuration"]["dp_epsilon"] = ""
-
                     factsheet["configuration"]["learning_rate"] = model.get_learning_rate()
                     factsheet["configuration"]["trainable_param_num"] = model.count_parameters()
                     factsheet["configuration"]["local_update_steps"] = data["epochs"]

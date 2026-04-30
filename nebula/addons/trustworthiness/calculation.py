@@ -23,7 +23,6 @@ from scipy.stats import entropy, variation
 from sklearn.metrics import f1_score, roc_auc_score, roc_curve
 from torch import nn, optim
 import torch.nn.functional as F
-import time
 import io
 
 
@@ -36,6 +35,10 @@ R_L1 = 40
 R_L2 = 2
 R_LI = 0.1
 
+
+# ---------------------------------------------------------------------------
+# Generic score mapping helpers used by eval_metrics*.json
+# ---------------------------------------------------------------------------
 
 def get_mapped_score(score_key, score_map):
     """
@@ -71,7 +74,15 @@ def get_normalized_scores(scores):
     Returns:
         list: The normalized list.
     """
-    normalized = [(x - np.min(scores)) / (np.max(scores) - np.min(scores)) for x in scores]
+    if scores is None or len(scores) == 0:
+        return []
+
+    min_score = np.min(scores)
+    max_score = np.max(scores)
+    if max_score == min_score:
+        return [1.0 for _ in scores]
+
+    normalized = [(x - min_score) / (max_score - min_score) for x in scores]
     return normalized
 
 
@@ -168,7 +179,7 @@ def get_scaled_score(value, scale: list, direction: str):
     except Exception:
         logger.warning("Score minimum or score maximum is missing. The minimum has been set to 0 and the maximum to 1")
         value_min, value_max = 0, 1
-    if not value:
+    if value is None or value == "":
         logger.warning("Score value is missing. Set value to zero")
     else:
         low, high = 0, 1
@@ -214,6 +225,11 @@ def check_properties(*args):
     result = map(lambda x: x is not None and x != "", args)
     return np.mean(list(result))
 
+
+# ---------------------------------------------------------------------------
+# Local/global data distribution and participation metrics
+# ---------------------------------------------------------------------------
+
 def get_class_imbalance_local(participant_id, experiment_name):
     data_class_count_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), experiment_name, "trustworthiness", f"{str(participant_id)}_class_count.json")
 
@@ -239,10 +255,15 @@ def get_cv(list=None, std=None, mean=None):
         float: The coefficient of variation calculated.
     """
     if std is not None and mean is not None:
+        if mean == 0:
+            return 0
         return std / mean
 
     if list is not None:
-        return np.std(list) / np.mean(list)
+        mean_value = np.mean(list)
+        if mean_value == 0:
+            return 0
+        return np.std(list) / mean_value
 
     return 0
 
@@ -271,6 +292,11 @@ def get_participation_variation_score(participation_counts):
         return 0.0
 
     return float(1 / (1 + cv))
+
+
+# ---------------------------------------------------------------------------
+# Privacy metrics
+# ---------------------------------------------------------------------------
 
 
 def get_global_privacy_risk(dp, epsilon, n):
@@ -459,6 +485,10 @@ def get_mia_auc(model, train_dataloader, test_dataloader, max_samples=5000):
         return 0.5
 
 
+# ---------------------------------------------------------------------------
+# Scenario report readers and aggregate system metrics
+# ---------------------------------------------------------------------------
+
 def get_elapsed_time(start_time, end_time):
     """
     Calculates the elapsed time during the execution of the scenario.
@@ -476,6 +506,42 @@ def get_elapsed_time(start_time, end_time):
     elapsed_time = (end_date - start_date).total_seconds() / 60
 
     return elapsed_time
+
+
+def _trustworthiness_dir(scenario_name):
+    return os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness")
+
+
+def _global_data_results_path(scenario_name):
+    return os.path.join(_trustworthiness_dir(scenario_name), "data_results.csv")
+
+
+def _participant_data_results_path(scenario_name, participant_id):
+    return os.path.join(_trustworthiness_dir(scenario_name), f"data_results_{participant_id}.csv")
+
+
+def _read_global_results(scenario_name):
+    return read_csv(_global_data_results_path(scenario_name))
+
+
+def _read_participant_results(scenario_name, participant_id):
+    return read_csv(_participant_data_results_path(scenario_name, participant_id))
+
+
+def _find_participant_row(data, participant_id, source_name):
+    row = data[data["id"] == participant_id]
+
+    if row.empty:
+        try:
+            row = data[data["id"] == int(participant_id)]
+        except (TypeError, ValueError):
+            row = data.iloc[0:0]
+
+    if row.empty:
+        raise ValueError(f"Participant {participant_id} not found in {source_name}")
+
+    return row.iloc[0]
+
 
 def get_bytes_model(model):
     """
@@ -505,12 +571,7 @@ def get_bytes_sent_recv(scenario_name):
     Returns:
         4-tupla: The total bytes sent, the total bytes received, the mean bytes sent and the mean bytes received of the nodes.
     """
-    total_upload_bytes = 0
-    total_download_bytes = 0
-
-    data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
-
-    data = read_csv(data_file)
+    data = _read_global_results(scenario_name)
 
     number_files = len(data)
 
@@ -534,21 +595,17 @@ def get_avg_loss_accuracy(scenario_name):
     Returns:
         3-tupla: The mean loss of the models, the mean accuracies of the models, the standard deviation of the accuracies of the models.
     """
-    total_accuracy = 0
-    total_loss = 0
-
-    data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
-
-    data = read_csv(data_file)
+    data = _read_global_results(scenario_name)
 
     number_files = len(data)
 
     total_loss = data["loss"].sum()
     total_accuracy = data["accuracy"].sum()
 
-    avg_loss = total_loss / (number_files-1)
-    avg_accuracy = total_accuracy / (number_files-1)
-    std_accuracy = statistics.stdev(data["accuracy"])
+    denominator = max(1, number_files - 1)
+    avg_loss = total_loss / denominator
+    avg_accuracy = total_accuracy / denominator
+    std_accuracy = statistics.stdev(data["accuracy"]) if number_files > 1 else 0.0
 
     return avg_loss, avg_accuracy, std_accuracy
 
@@ -556,17 +613,13 @@ def get_underfitting_score(scenario_name, id):
     """
     Calculates the mean val accuracy of the nodes.
     """
-    total_val_accuracy = 0
-
-    data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
-
-    data = read_csv(data_file)
+    data = _read_global_results(scenario_name)
 
     number_files = len(data)
 
     total_val_accuracy = data["val_accuracy"].sum()
 
-    avg_val_accuracy = total_val_accuracy/ (number_files-1)
+    avg_val_accuracy = total_val_accuracy / max(1, number_files - 1)
 
     return avg_val_accuracy
 
@@ -582,16 +635,17 @@ def get_participant_loss_accuracy(scenario_name, participant_id):
     Returns:
         tuple[float, float]: (loss, accuracy)
     """
-    data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
-    data = read_csv(data_file)
-    row = data[data["id"] == participant_id]
+    data_file = _global_data_results_path(scenario_name)
+    row = _find_participant_row(read_csv(data_file), participant_id, data_file)
 
-    if row.empty:
-        row = data[data["id"] == int(participant_id)]
-
-    loss = float(row["loss"].iloc[0])
-    accuracy = float(row["accuracy"].iloc[0])
+    loss = float(row["loss"])
+    accuracy = float(row["accuracy"])
     return loss, accuracy
+
+
+# ---------------------------------------------------------------------------
+# Model performance metrics
+# ---------------------------------------------------------------------------
 
 
 def _get_model_accuracy(model, dataloader):
@@ -846,14 +900,7 @@ def get_underfitting_score_local(scenario_name, id):
     Returns:
         float: Validation accuracy.
     """
-    data_file = os.path.join(
-        os.environ.get('NEBULA_LOGS_DIR'),
-        scenario_name,
-        "trustworthiness",
-        f"data_results_{id}.csv",
-    )
-
-    data = read_csv(data_file)
+    data = _read_participant_results(scenario_name, id)
     return float(data["val_accuracy"].iloc[0])
 
 def get_dp_local(scenario_name, id):
@@ -867,14 +914,7 @@ def get_dp_local(scenario_name, id):
     Returns:
         float: DP Enabled, Epsilon.
     """
-    data_file = os.path.join(
-        os.environ.get('NEBULA_LOGS_DIR'),
-        scenario_name,
-        "trustworthiness",
-        f"data_results_{id}.csv",
-    )
-
-    data = read_csv(data_file)
+    data = _read_participant_results(scenario_name, id)
     return data["dp_enabled"].iloc[0], float(data["dp_epsilon"].iloc[0])
 
 
@@ -889,23 +929,21 @@ def get_dp_global(scenario_name):
         tuple[bool, float | str]: Whether DP is enabled, and the
         average epsilon across client nodes.
     """
-    total_epsilon = 0
-
-    data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
-
-    data = read_csv(data_file)
+    data = _read_global_results(scenario_name)
 
     if data["dp_enabled"].iloc[0] == False:
         return False, 0.0
 
     number_files = len(data)
 
-    total_epsilon = data["dp_epsilon"].sum()
-
-    avg_epsilon = total_epsilon / (number_files-1)
+    avg_epsilon = data["dp_epsilon"].sum() / max(1, number_files - 1)
 
     return True, avg_epsilon
 
+
+# ---------------------------------------------------------------------------
+# Fairness and calibration metrics
+# ---------------------------------------------------------------------------
 
 def get_well_calibration_error(model, test_dataloader, n_bins=10):
     """
@@ -1039,12 +1077,7 @@ def get_avg_class_imbalance_model_size(scenario_name):
     Returns:
         2-tupla: The mean class imbalance mean and model size mean of the nodes.
     """
-    total_class_imbalance = 0
-    total_model_size = 0
-
-    data_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", "data_results.csv")
-
-    data = read_csv(data_file)
+    data = _read_global_results(scenario_name)
 
     number_files = len(data)
 
@@ -1067,18 +1100,16 @@ def get_entropy_list(scenario_name):
     Returns:
         list: Lista con los valores de entropy
     """
-    data_file = os.path.join(
-        os.environ.get('NEBULA_LOGS_DIR'),
-        scenario_name,
-        "trustworthiness",
-        "data_results.csv"
-    )
-
-    data = read_csv(data_file)
+    data = _read_global_results(scenario_name)
 
     entropy_list = data["local_entropy"].tolist()
 
     return entropy_list
+
+
+# ---------------------------------------------------------------------------
+# Explainability metrics
+# ---------------------------------------------------------------------------
 
 def get_feature_importance_cv(model, test_sample):
     """
@@ -1126,8 +1157,19 @@ def _get_feature_importances(model, test_sample):
         return np.array([])
 
     def _clone_model(model_ref, device):
+        optimizer_attrs = ("_optimizer", "_optimizer_override")
+        optimizer_state = {}
         try:
+            for attr in optimizer_attrs:
+                if hasattr(model_ref, attr):
+                    optimizer_state[attr] = getattr(model_ref, attr)
+                    setattr(model_ref, attr, None)
+
             model_clone = copy.deepcopy(model_ref)
+            for attr in optimizer_attrs:
+                if hasattr(model_clone, attr):
+                    setattr(model_clone, attr, None)
+
             model_clone.to(device)
             model_clone.eval()
             return model_clone
@@ -1136,6 +1178,9 @@ def _get_feature_importances(model, test_sample):
             logger.warning(exc)
             model_ref.eval()
             return model_ref
+        finally:
+            for attr, value in optimizer_state.items():
+                setattr(model_ref, attr, value)
 
     def _prepare_shap_inputs(sample):
         if not (isinstance(sample, (tuple, list)) and len(sample) >= 1):
@@ -1416,6 +1461,41 @@ def get_explainability_metrics_summary(model, test_dataloader, max_batches=4):
     return summary
 
 
+# ---------------------------------------------------------------------------
+# Robustness metrics based on ART estimators
+# ---------------------------------------------------------------------------
+
+def _build_art_classifier(model, input_shape, nb_classes, learning_rate):
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), learning_rate)
+
+    return PyTorchClassifier(
+        model=model,
+        loss=criterion,
+        optimizer=optimizer,
+        input_shape=tuple(input_shape),
+        nb_classes=nb_classes,
+    )
+
+
+def _validate_test_sample_tensors(test_sample):
+    if not (isinstance(test_sample, (tuple, list)) and len(test_sample) >= 2):
+        raise ValueError("`test_sample` must contain samples and labels.")
+
+    samples, labels = test_sample[0], test_sample[1]
+    if not (torch.is_tensor(samples) and torch.is_tensor(labels) and samples.shape[0] > 0):
+        raise ValueError("`test_sample` must contain non-empty tensors for samples and labels.")
+
+    return samples, labels
+
+
+def _coerce_max_samples(max_samples, default=8):
+    try:
+        return max(1, int(max_samples))
+    except Exception:
+        return default
+
+
 def get_clever_score(model, test_sample, nb_classes, learning_rate, max_samples=8):
     """
     Calculates the CLEVER score as the mean score over multiple samples.
@@ -1430,31 +1510,15 @@ def get_clever_score(model, test_sample, nb_classes, learning_rate, max_samples=
     Returns:
         float: Mean CLEVER score across the selected samples.
     """
-    samples, _ = test_sample
-
-    if not (torch.is_tensor(samples) and samples.dim() >= 1 and samples.shape[0] != 0):
-        raise ValueError("`test_sample[0]` must be a non-empty torch.Tensor.")
+    samples, _ = _validate_test_sample_tensors(test_sample)
 
     input_shape = tuple(samples.shape[1:]) if samples.dim() >= 2 else tuple(samples.shape)
 
-    try:
-        max_samples = max(1, int(max_samples))
-    except Exception:
-        max_samples = 8
-
+    max_samples = _coerce_max_samples(max_samples)
     n_samples = min(int(samples.shape[0]), max_samples)
 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), learning_rate)
-
     # Create the ART classifier once and reuse it for all selected samples.
-    classifier = PyTorchClassifier(
-        model=model,
-        loss=criterion,
-        optimizer=optimizer,
-        input_shape=input_shape,
-        nb_classes=nb_classes,
-    )
+    classifier = _build_art_classifier(model, input_shape, nb_classes, learning_rate)
 
     clever_scores = []
     for idx in range(n_samples):
@@ -1483,6 +1547,10 @@ def get_clever_score(model, test_sample, nb_classes, learning_rate, max_samples=
 
     return float(np.mean(clever_scores))
 
+
+# ---------------------------------------------------------------------------
+# Sustainability and communication metrics
+# ---------------------------------------------------------------------------
 
 def stop_emissions_tracking_and_save(
     tracker: EmissionsTracker,
@@ -1574,6 +1642,11 @@ def comm_efficiency(bytes_up: int, bytes_down: int, test_acc_avg: float, eps: fl
 
     return total_bytes / acc
 
+
+# ---------------------------------------------------------------------------
+# Additional robustness and adversarial metrics
+# ---------------------------------------------------------------------------
+
 def get_loss_sensitivity_score(model, test_sample, nb_classes, learning_rate, max_samples=8):
 
     """
@@ -1589,29 +1662,13 @@ def get_loss_sensitivity_score(model, test_sample, nb_classes, learning_rate, ma
     Returns:
         float: Mean loss sensitivity score across the selected samples.
     """
-    samples, labels = test_sample
+    samples, labels = _validate_test_sample_tensors(test_sample)
 
-    if not (torch.is_tensor(samples) and torch.is_tensor(labels) and samples.shape[0] > 0):
-        raise ValueError("`test_sample` must contain non-empty tensors for samples and labels.")
-
-    try:
-        max_samples = max(1, int(max_samples))
-    except Exception:
-        max_samples = 8
-
+    max_samples = _coerce_max_samples(max_samples)
     n_samples = min(int(samples.shape[0]), max_samples)
 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), learning_rate)
-
     # Create the ART classifier once and reuse it for all selected samples.
-    classifier = PyTorchClassifier(
-        model=model,
-        loss=criterion,
-        optimizer=optimizer,
-        input_shape=samples.shape[1:],
-        nb_classes=nb_classes,
-    )
+    classifier = _build_art_classifier(model, samples.shape[1:], nb_classes, learning_rate)
 
     sensitivity_scores = []
     for idx in range(n_samples):
@@ -1661,21 +1718,6 @@ def compute_adversarial_accuracy_art(
     model.eval()
     model.to(device)
 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
-    sample_batch = next(iter(test_loader))
-    samples, _ = sample_batch
-    input_shape = samples.shape[1:]
-
-    classifier = PyTorchClassifier(
-        model=model,
-        loss=criterion,
-        optimizer=optimizer,
-        input_shape=input_shape,
-        nb_classes=nb_classes,
-    )
-
     correct = 0
     total = 0
 
@@ -1687,12 +1729,13 @@ def compute_adversarial_accuracy_art(
 
         with torch.no_grad():
             outputs = model(x_adv)
-            preds = outputs.argmax(dim=1)
+            logits = outputs[0] if isinstance(outputs, (tuple, list)) else outputs
+            preds = logits.argmax(dim=1)
 
         correct += (preds == labels).sum().item()
         total += labels.size(0)
 
-    return correct / total
+    return correct / total if total > 0 else 0.0
 
 def get_empirical_robustness_score(
     model,
@@ -1719,24 +1762,13 @@ def get_empirical_robustness_score(
         float: Empirical robustness score (>= 0.0). If it cannot be computed, returns 0.0.
     """
     try:
-        samples, _ = test_sample
+        samples, _ = _validate_test_sample_tensors(test_sample)
 
         batch_size: int = int(samples.shape[0])
         n: int = int(min(max_samples, batch_size))
         x = samples[:n].detach().cpu().numpy()
 
-        input_shape = tuple(samples.shape[1:])
-
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(model.parameters(), learning_rate)
-
-        classifier = PyTorchClassifier(
-            model=model,
-            loss=criterion,
-            optimizer=optimizer,
-            input_shape=input_shape,
-            nb_classes=nb_classes,
-        )
+        classifier = _build_art_classifier(model, samples.shape[1:], nb_classes, learning_rate)
 
         score = empirical_robustness(
             classifier=classifier,
@@ -1773,12 +1805,18 @@ def fgsm_attack(model, samples, labels, epsilon=0.03):
         Returns:
             torch.Tensor: Adversarially perturbed samples with the same shape as `samples`.
     """
-    samples = samples.clone().detach().to(samples.device)
-    labels = labels.to(samples.device)
+    try:
+        device = next(model.parameters()).device
+    except Exception:
+        device = samples.device
+
+    samples = samples.clone().detach().to(device)
+    labels = labels.to(device)
     samples.requires_grad = True
 
     outputs = model(samples)
-    loss = nn.CrossEntropyLoss()(outputs, labels)
+    logits = outputs[0] if isinstance(outputs, (tuple, list)) else outputs
+    loss = nn.CrossEntropyLoss()(logits, labels)
     model.zero_grad()
     loss.backward()
 
@@ -1862,6 +1900,7 @@ def attack_success_rate(model, test_sample,epsilon=0.03):
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.eval()
+    model.to(device)
 
     images, labels = test_sample
     images = images.to(device)
@@ -1869,7 +1908,8 @@ def attack_success_rate(model, test_sample,epsilon=0.03):
 
     with torch.no_grad():
         outputs = model(images)
-        preds = outputs.argmax(dim=1)
+        logits = outputs[0] if isinstance(outputs, (tuple, list)) else outputs
+        preds = logits.argmax(dim=1)
 
     correct_mask = preds.eq(labels)
     num_correct = correct_mask.sum().item()
@@ -1881,7 +1921,8 @@ def attack_success_rate(model, test_sample,epsilon=0.03):
 
     with torch.no_grad():
         outputs_adv = model(x_adv)
-        preds_adv = outputs_adv.argmax(dim=1)
+        logits_adv = outputs_adv[0] if isinstance(outputs_adv, (tuple, list)) else outputs_adv
+        preds_adv = logits_adv.argmax(dim=1)
 
     successful_attacks = (correct_mask & preds_adv.ne(labels)).sum().item()
 

@@ -2,7 +2,8 @@
 const DpManager = (function() {
     const DEFAULT_DP_CONFIG = {
         enabled: false,
-        noise_multiplier: 1.0
+        noise_multiplier: 1.0,
+        max_grad_norm: 1.0
     };
 
     function initializeDifferentialPrivacy() {
@@ -29,12 +30,17 @@ const DpManager = (function() {
     function getDpConfig() {
         const noiseMultiplierInput = document.getElementById("dpNoiseMultiplier");
         const noiseMultiplier = parseFloat(noiseMultiplierInput?.value);
+        const maxGradNormInput = document.getElementById("dpMaxGradNorm");
+        const maxGradNorm = parseFloat(maxGradNormInput?.value);
 
         return {
             enabled: Boolean(document.getElementById("dpSwitch")?.checked),
             noise_multiplier: Number.isFinite(noiseMultiplier)
                 ? noiseMultiplier
-                : DEFAULT_DP_CONFIG.noise_multiplier
+                : DEFAULT_DP_CONFIG.noise_multiplier,
+            max_grad_norm: Number.isFinite(maxGradNorm)
+                ? maxGradNorm
+                : DEFAULT_DP_CONFIG.max_grad_norm
         };
     }
 
@@ -51,6 +57,10 @@ const DpManager = (function() {
         const noiseMultiplierInput = document.getElementById("dpNoiseMultiplier");
         if (noiseMultiplierInput) {
             noiseMultiplierInput.value = dpConfig.noise_multiplier;
+        }
+        const maxGradNormInput = document.getElementById("dpMaxGradNorm");
+        if (maxGradNormInput) {
+            maxGradNormInput.value = dpConfig.max_grad_norm;
         }
         toggleDpSettings(dpSwitch.checked);
     }

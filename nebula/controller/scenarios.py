@@ -711,6 +711,10 @@ class ScenarioManagement:
                     participant_config["training_args"]["dp"]["noise_multiplier"] = float(
                         self.scenario.dp["noise_multiplier"]
                     )
+                if "max_grad_norm" in self.scenario.dp:
+                    participant_config["training_args"]["dp"]["max_grad_norm"] = float(
+                        self.scenario.dp["max_grad_norm"]
+                    )
             participant_config["device_args"]["accelerator"] = self.scenario.accelerator
             participant_config["device_args"]["gpu_id"] = self.scenario.gpu_id
             participant_config["device_args"]["logging"] = self.scenario.logginglevel
@@ -977,7 +981,7 @@ class ScenarioManagement:
 
                 logging.info(f"Configuration | additional nodes |  participant: {self.n_nodes + i + 1}")
                 last_ip = participant_config["network_args"]["ip"]
-                logging.info(f"Valores de la ultima ip: ({last_ip})")
+                logging.info(f"Last ip values: ({last_ip})")
                 participant_config["scenario_args"]["n_nodes"] = self.n_nodes + additional_nodes  # self.n_nodes + i + 1
                 participant_config["device_args"]["idx"] = last_participant_index + i
                 participant_config["network_args"]["neighbors"] = ""
@@ -1018,9 +1022,6 @@ class ScenarioManagement:
         dataset_name = self.scenario.dataset
         dataset = None
 
-
-        logging.info(f"[DEBUG] dataset_name received: {dataset_name!r}")
-        logging.info("SALE YA")
         if dataset_name == "MNIST":
             dataset = MNISTDataset(
                 num_classes=10,
@@ -1052,7 +1053,6 @@ class ScenarioManagement:
                 config_dir=self.config_dir,
             )
         elif dataset_name == "KDDCUP99":
-            logging.info("[DEBUG] entrando en rama KDDCUP99 para crear dataset")
             dataset = KDDCUP99Dataset(
                 num_classes=2,
                 partitions_number=self.n_nodes,
@@ -1117,15 +1117,7 @@ class ScenarioManagement:
 
         logging.info(f"Splitting {dataset_name} dataset...")
         dataset.initialize_dataset()
-        logging.info(
-            f"[DEBUG] train_set is None? {dataset.train_set is None} | "
-            f"test_set is None? {dataset.test_set is None}"
-        )
 
-        if dataset.train_set is not None and hasattr(dataset.train_set, "data"):
-            logging.info(f"[DEBUG] Dataset train_set.data.shape = {dataset.train_set.data.shape}")
-        else:
-            logging.info("[DEBUG] Dataset train_set has no .data yet (or train_set is None)")
         logging.info(f"Splitting {dataset_name} dataset... Done")
 
         if self.scenario.deployment in ["docker", "process", "physical"]:

@@ -228,7 +228,7 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
         self._sample_size = len(train_loader)
 
     async def finish_experiment_role_post_actions(self, trust_config, experiment_name):
-        federation = trust_config.get("federation")  # "CFL" or "DFL"
+        federation = trust_config.get("federation")
 
         if federation == "DFL" or federation == "SDFL":
             await self._finish_trustscores_exchange(federation, trust_config, experiment_name)

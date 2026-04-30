@@ -307,7 +307,7 @@ def load_data_results_participant(experiment_name: str, participant_id: int | st
     accuracy = float(row["accuracy"])
     loss = float(row["loss"])
     val_accuracy = float(row["val_accuracy"])
-    dp_enabled = bool(row["dp_enabled"])
+    dp_enabled = row["dp_enabled"].lower() == "true"
     dp_epsilon = float(row["dp_epsilon"])
 
     return bytes_sent, bytes_recv, accuracy, loss, val_accuracy, dp_enabled, dp_epsilon
