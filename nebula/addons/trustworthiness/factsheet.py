@@ -1,16 +1,33 @@
 import json
 import logging
 import os
-import glob
 import shutil
 from json import JSONDecodeError
-import pickle
 import numpy as np
 import pandas as pd
-import time
 
-from nebula.addons.trustworthiness.calculation import get_elapsed_time, get_bytes_sent_recv, get_avg_loss_accuracy, get_cv, get_clever_score, get_feature_importance_cv, get_loss_sensitivity_score, compute_adversarial_accuracy_art,get_empirical_robustness_score,get_confidence_score,attack_success_rate, get_entropy_list, get_avg_class_imbalance_model_size, get_underfitting_score, get_overfitting_score, get_participant_loss_accuracy, get_well_calibration_error, get_generalized_entropy_index, get_theil_index, get_coefficient_of_variation, get_alpha_score, get_spread_ratio, get_spread_divergence, get_epsilon_star, get_mia_auc, get_explainability_metrics_summary, get_macro_f1_score, get_dp_global
-from nebula.addons.trustworthiness.utils import count_all_class_samples, read_csv, check_field_filled, get_all_data_entropy
+from nebula.addons.trustworthiness.calculation import (
+    get_avg_class_imbalance_model_size,
+    get_avg_loss_accuracy,
+    get_bytes_sent_recv,
+    get_cv,
+    get_dp_global,
+    get_elapsed_time,
+    get_entropy_list,
+    get_participant_loss_accuracy,
+    get_underfitting_score,
+)
+from nebula.addons.trustworthiness.factsheet_common import (
+    cap_score,
+    inverse_score,
+    populate_common_pre_train_sections,
+    populate_model_quality_metrics,
+    populate_participation,
+    populate_reliability,
+    populate_reputation,
+    set_dp_configuration,
+)
+from nebula.addons.trustworthiness.utils import read_csv, check_field_filled
 # from nebula.core.models.syscall.mlp import SyscallModelMLP
 
 dirname = os.path.dirname(__file__)
@@ -33,7 +50,12 @@ class Factsheet:
             scenario_name (string): The name of the scenario.
         """
 
-        factsheet_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", self.factsheet_file_nm)
+        factsheet_file = os.path.join(
+            os.environ.get('NEBULA_LOGS_DIR'),
+            scenario_name,
+            "trustworthiness",
+            self.factsheet_file_nm,
+        )
 
         factsheet_template = os.path.join(dirname, "configs", self.factsheet_template_file_nm)
 
@@ -49,64 +71,7 @@ class Factsheet:
                 if data is not None:
                     logging.info("FactSheet: Populating factsheet with pre training metrics")
 
-                    federation = data["federation"]
-                    n_nodes = int(data["n_nodes"])
-                    dataset = data["dataset"]
-                    algorithm = data["model"]
-                    aggregation_algorithm = data["agg_algorithm"]
-                    n_rounds = int(data["rounds"])
-                    attack = data["attack_params"]["attacks"]
-
-                    attack_params = data.get("attack_params", {})
-
-                    poisoned_node_percent = int(attack_params.get("poisoned_node_percent", 0) or 0)
-                    poisoned_sample_percent = int(attack_params.get("poisoned_sample_percent", 0) or 0)
-                    poisoned_noise_percent = float(attack_params.get("poisoned_noise_percent", 0) or 0)
-
-                    with_reputation = data["reputation"]["enabled"]
-                    topology = data["topology"]
-
-                    if attack != "No Attack" and with_reputation == True:
-                        background = f"For the project setup, the most important aspects are the following: The federation architecture is {federation}, involving {n_nodes} clients, the dataset used is {dataset}, the learning algorithm is {algorithm}, the aggregation algorithm is {aggregation_algorithm} and the number of rounds is {n_rounds}. In addition, the type of attack used is {attack}. A reputation-based defence is used, and the trustworthiness of the project is desired."
-
-                    elif attack != "No Attack" and with_reputation == False:
-                        background = f"For the project setup, the most important aspects are the following: The federation architecture is {federation}, involving {n_nodes} clients, the dataset used is {dataset}, the learning algorithm is {algorithm}, the aggregation algorithm is {aggregation_algorithm} and the number of rounds is {n_rounds}. In addition, the type of attack used is {attack}. No defence mechanism is used, and the trustworthiness of the project is desired."
-
-                    elif attack == "No Attack" and with_reputation == True:
-                        background = f"For the project setup, the most important aspects are the following: The federation architecture is {federation}, involving {n_nodes} clients, the dataset used is {dataset}, the learning algorithm is {algorithm}, the aggregation algorithm is {aggregation_algorithm} and the number of rounds is {n_rounds}. No attacks are used. A reputation-based defence is used, and the trustworthiness of the project is desired."
-
-                    elif attack == "No Attack" and with_reputation == False:
-                        background = f"For the project setup, the most important aspects are the following: The federation architecture is {federation}, involving {n_nodes} clients, the dataset used is {dataset}, the learning algorithm is {algorithm}, the aggregation algorithm is {aggregation_algorithm} and the number of rounds is {n_rounds}. No attacks are used. No defence mechanism is used, and the trustworthiness of the project is desired."
-
-                    # Set project specifications
-                    factsheet["project"]["overview"] = data["scenario_title"]
-                    factsheet["project"]["purpose"] = data["scenario_description"]
-                    factsheet["project"]["background"] = background
-
-                    # Set data specifications
-                    factsheet["data"]["provenance"] = data["dataset"]
-                    factsheet["data"]["preprocessing"] = data["topology"]
-
-                    # Set participants
-                    factsheet["participants"]["client_num"] = data["n_nodes"] or ""
-                    factsheet["participants"]["sample_client_rate"] = 1
-                    if with_reputation == True:
-                        factsheet["participants"]["client_selector"] = "Reputation Based"
-                    else:
-                        factsheet["participants"]["client_selector"] = "Full Participation"
-
-                    # Set configuration
-                    factsheet["configuration"]["aggregation_algorithm"] = data["agg_algorithm"] or ""
-                    factsheet["configuration"]["training_model"] = data["model"] or ""
-                    factsheet["configuration"]["personalization"] = False
-                    factsheet["configuration"]["reputation_enabled"] = bool(data.get("reputation", {}).get("enabled", False))
-                    factsheet["configuration"]["visualization"] = True
-                    factsheet["configuration"]["monitoring"] = True
-                    factsheet["configuration"]["total_round_num"] = n_rounds
-
-                    factsheet["configuration"]["learning_rate"] = model.get_learning_rate()
-                    factsheet["configuration"]["trainable_param_num"] = model.count_parameters()
-                    factsheet["configuration"]["local_update_steps"] = data["epochs"]
+                    populate_common_pre_train_sections(factsheet, data, model)
 
                     f.seek(0)
                     f.truncate()
@@ -116,14 +81,31 @@ class Factsheet:
                 logging.warning(f"{factsheet_file} is invalid")
                 logging.error(e)
 
-    def populate_factsheet_post_train(self, scenario_name, start_time, end_time, participant_idx, model, train_loader, test_loader, reputation_summary=None, participation_summary=None, reliability_summary=None):
+    def populate_factsheet_post_train(
+        self,
+        scenario_name,
+        start_time,
+        end_time,
+        participant_idx,
+        model,
+        train_loader,
+        test_loader,
+        reputation_summary=None,
+        participation_summary=None,
+        reliability_summary=None,
+    ):
         """
         Populates the factsheet with values after the training.
 
         Args:
             scenario (object): The scenario object.
         """
-        factsheet_file = os.path.join(f"{os.environ.get('NEBULA_LOGS_DIR')}{scenario_name}/trustworthiness/{self.factsheet_file_nm}")
+        factsheet_file = os.path.join(
+            os.environ.get('NEBULA_LOGS_DIR'),
+            scenario_name,
+            "trustworthiness",
+            self.factsheet_file_nm,
+        )
 
         logging.info("FactSheet: Populating factsheet with post training metrics")
 
@@ -156,12 +138,7 @@ class Factsheet:
                 _, participant_test_acc = get_participant_loss_accuracy(scenario_name, participant_idx)
 
                 dp_enabled, dp_epsilon = get_dp_global(scenario_name)
-                if dp_enabled:
-                    factsheet["configuration"]["differential_privacy"] = True
-                    factsheet["configuration"]["dp_epsilon"] = dp_epsilon
-                else:
-                    factsheet["configuration"]["differential_privacy"] = False
-                    factsheet["configuration"]["dp_epsilon"] = ""
+                set_dp_configuration(factsheet, dp_enabled, dp_epsilon)
 
                 factsheet["system"]["avg_time_minutes"] = get_elapsed_time(start_time, end_time)
                 factsheet["system"]["avg_model_size"] = avg_model_size
@@ -171,97 +148,23 @@ class Factsheet:
                 factsheet["system"]["total_download_bytes"] = result_bytes_sent_recv[1]
                 factsheet["system"]["avg_upload_bytes"] = result_bytes_sent_recv[2]
                 factsheet["system"]["avg_download_bytes"] = result_bytes_sent_recv[3]
-                if reliability_summary is not None:
-                    factsheet["system"]["dropout_rate"] = reliability_summary.get("dropout_rate", 0.0)
-                    factsheet["system"]["timeout_rate"] = reliability_summary.get("timeout_rate", 0.0)
-                else:
-                    factsheet["system"]["dropout_rate"] = 0.0
-                    factsheet["system"]["timeout_rate"] = 0.0
+                populate_reliability(factsheet, reliability_summary)
+                populate_participation(factsheet, participation_summary)
 
-                if participation_summary is not None:
-                    factsheet["fairness"]["selection_cv"] = participation_summary.get("selection_cv", 1)
-                else:
-                    factsheet["fairness"]["selection_cv"] = 1
-
-                class_imbalance_score = 1 / (1+avg_class_imbalance)
-                factsheet["fairness"]["class_imbalance"] = 1 if class_imbalance_score > 1 else class_imbalance_score
-                if reputation_summary is not None:
-                    factsheet["participants"]["avg_neighbor_reputation"] = reputation_summary.get("avg_neighbor_reputation", "")
-                else:
-                    factsheet["participants"]["avg_neighbor_reputation"] = 0
-
-                test_sample = next(iter(test_loader))
-                explainability_metrics = get_explainability_metrics_summary(model, test_loader)
-                factsheet["performance"]["test_macro_f1"] = get_macro_f1_score(model, test_loader)
-                factsheet["privacy"]["epsilon_star"] = get_epsilon_star(
-                    model,
-                    train_loader,
-                    test_loader,
-                )
-                factsheet["privacy"]["epsilon_star_score"] = 1/(1 + factsheet["privacy"]["epsilon_star"])
-                factsheet["privacy"]["mia_auc"] = get_mia_auc(
-                    model,
-                    train_loader,
-                    test_loader,
-                )
-                factsheet["privacy"]["mia_auc_score"] = 1 - 2 * abs(factsheet["privacy"]["mia_auc"] - 0.5)
+                class_imbalance_score = inverse_score(avg_class_imbalance)
+                factsheet["fairness"]["class_imbalance"] = cap_score(class_imbalance_score)
+                populate_reputation(factsheet, reputation_summary)
 
                 underfitting_score = get_underfitting_score(scenario_name, participant_idx)
 
                 factsheet["fairness"]["underfitting"] = underfitting_score
-                overfitting_value = get_overfitting_score(
+                populate_model_quality_metrics(
+                    factsheet,
                     model,
                     train_loader,
+                    test_loader,
                     participant_test_acc,
                 )
-                factsheet["fairness"]["overfitting"] = 1/(1 + overfitting_value)
-                well_calibration_error_value = get_well_calibration_error(
-                    model,
-                    test_loader,
-                )
-
-                factsheet["fairness"]["well_calibration_error"] = 1/(1 + well_calibration_error_value)
-                generalized_entropy_index_value = get_generalized_entropy_index(
-                    model,
-                    test_loader,
-                )
-                factsheet["fairness"]["generalized_entropy_index"] = 1/(1 + generalized_entropy_index_value)
-                theil_index_value = get_theil_index(
-                    model,
-                    test_loader,
-                )
-                factsheet["fairness"]["theil_index"] = 1/(1 + theil_index_value)
-                coefficient_of_variation_value = get_coefficient_of_variation(
-                    model,
-                    test_loader,
-                )
-                factsheet["fairness"]["coefficient_of_variation"] = 1/(1 + coefficient_of_variation_value)
-                factsheet["explainability"]["alpha_score"] = explainability_metrics["alpha_score"]
-                factsheet["explainability"]["spread_ratio"] = explainability_metrics["spread_ratio"]
-                factsheet["explainability"]["spread_divergence"] = explainability_metrics["spread_divergence"]
-
-                lr = factsheet["configuration"]["learning_rate"]
-
-                value_clever = get_clever_score(model, test_sample, model.get_num_classes(), lr)
-                factsheet["performance"]["test_clever"] = 1 if value_clever > 1 else value_clever
-
-                value_loss_sensitivity = get_loss_sensitivity_score(model, test_sample, model.get_num_classes(), lr)
-                factsheet["performance"]["test_loss_sensitivity"] = 1 / (1 + value_loss_sensitivity)
-
-                value_adv_accuracy = compute_adversarial_accuracy_art(model, test_loader, model.get_num_classes(), lr)
-                factsheet["performance"]["test_adv_accuracy"] = 1 if value_adv_accuracy > 1 else value_adv_accuracy
-
-                value_empirical_robustness = get_empirical_robustness_score(model, test_sample, model.get_num_classes(), lr)
-                factsheet["performance"]["test_empirical_robustness"] = 1 if value_empirical_robustness > 1 else value_empirical_robustness
-
-                value_confidence_score = get_confidence_score(model, test_sample)
-                factsheet["performance"]["test_confidence_score"] = 1 if value_confidence_score > 1 else value_confidence_score
-
-                value_attack_success_rate = attack_success_rate(model, test_sample)
-                factsheet["performance"]["test_attack_success_rate"] = 1 - value_attack_success_rate
-
-                feature_importance = explainability_metrics["feature_importance_cv"]
-                factsheet["performance"]["test_feature_importance_cv"] = 1 if feature_importance > 1 else feature_importance
 
                 # Set emissions metrics
                 emissions = None if emissions_file is None else read_csv(emissions_file)

@@ -13,11 +13,13 @@
 		"client_num": "",
 		"sample_client_rate": "",
 		"client_selector": "",
+		"avg_neighbor_reputation": "",
 		"avg_dataset_size": ""
 	},
 	"configuration": {
 		"aggregation_algorithm": "",
 		"training_model": "",
+		"reputation_enabled": "",
 		"personalization": "",
 		"visualization": "",
 		"monitoring": "",

@@ -166,7 +166,13 @@ class Engine:
         else:
             self._situational_awareness = None
 
-        if self.config.participant["defense_args"]["reputation"]["enabled"]:
+        self._reputation = None
+
+        role = self.config.participant["device_args"]["role"]
+        federation = self.config.participant["scenario_args"].get("federation")
+        reputation_enabled = self.config.participant["defense_args"]["reputation"]["enabled"]
+
+        if reputation_enabled and (role == "server" or federation!="CFL"):
             self._reputation = Reputation(engine=self, config=self.config)
 
     @property
@@ -683,8 +689,8 @@ class Engine:
         await self.aggregator.init()
         if "situational_awareness" in self.config.participant:
             await self.sa.init()
-        if self.config.participant["defense_args"]["reputation"]["enabled"]:
-            await self._reputation.setup()
+        if self._reputation is not None:
+          await self._reputation.setup()
         await self._reporter.start()
         await self._addon_manager.deploy_additional_services()
 
