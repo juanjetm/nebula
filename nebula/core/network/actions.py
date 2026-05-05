@@ -97,6 +97,14 @@ class TrustscoresAction(Enum):
 
     SHARE = nebula_pb2.TrustscoresMessage.Action.SHARE
 
+class SdflmodelAction(Enum):
+    """
+    Enum for SDFL model messages exchanged through broadcast/forwarding.
+    """
+
+    TRAINER_UPDATE = nebula_pb2.SdflmodelMessage.Action.TRAINER_UPDATE
+    GLOBAL_MODEL = nebula_pb2.SdflmodelMessage.Action.GLOBAL_MODEL
+
 
 # Mapping between message type strings and their corresponding Enum classes
 ACTION_CLASSES = {
@@ -110,6 +118,7 @@ ACTION_CLASSES = {
     "reputation": ReputationAction,
     "trustworthiness": TrustworthinessAction,
     "trustscores": TrustscoresAction,
+    "sdflmodel": SdflmodelAction,
 }
 
 

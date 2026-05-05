@@ -86,6 +86,13 @@ class MessagesManager:
                     "weight": 1,
                 },
             },
+            "sdflmodel": {
+                "parameters": ["action", "target", "parameters", "weight", "round", "node_id"],
+                "defaults": {
+                    "weight": 1,
+                    "node_id": self.addr,
+                },
+            },
             "reputation": {
                 "parameters": ["node_id", "score", "round", "action"],
                 "defaults": {
@@ -157,7 +164,7 @@ class MessagesManager:
             addr_from (str): Address from which the message was received.
         """
         not_processing_messages = {"control_message", "connection_message"}
-        special_processing_messages = {"discovery_message", "federation_message", "model_message", "trustscores_message"}
+        special_processing_messages = {"discovery_message", "federation_message", "model_message", "trustscores_message", "sdflmodel_message"}
 
         try:
             message_wrapper = nebula_pb2.Wrapper()
@@ -237,6 +244,9 @@ class MessagesManager:
         ):
             return True
         if message_type == "trustscores_message":
+            return True
+
+        if  self.cm.config.participant["scenario_args"]["federation"] == "SDFL" and message_type == "sdflmodel_message":
             return True
 
     def create_message(self, message_type: str, action: str = "", *args, **kwargs):

@@ -32,7 +32,7 @@ class Role(Enum):
     IDLE = "idle"
     SERVER = "server"
     MALICIOUS = "malicious"
-    
+
 def factory_node_role(role: str) -> Role:
     if role == "trainer":
         return Role.TRAINER
@@ -68,27 +68,27 @@ class RoleBehavior(ABC):
         self._next_role: Role = None
         self._next_role_locker = Locker("next_role_locker", async_lock=True)
         self._source_to_notificate = None
-        
+
     @abstractmethod
     def get_role(self):
         """
         Returns the Role enum value representing the current role of the node.
         """
         raise NotImplementedError
-    
+
     @abstractmethod
     def get_role_name(self, effective=False):
         """
         Returns a string representation of the current role.
-        
+
         Args:
             effective (bool): Whether to return the name of the current effective role when going as malicious.
-        
+
         Returns:
             str: Name of the role.
         """
         raise NotImplementedError
-    
+
     @abstractmethod
     async def extended_learning_cycle(self):
         """
@@ -98,19 +98,19 @@ class RoleBehavior(ABC):
         including training, aggregating updates, and coordinating with neighbors.
         """
         raise NotImplementedError
-    
+
     @abstractmethod
     async def select_nodes_to_wait(self):
         """
         Determines which neighbors the node should wait for during the current cycle.
 
         This logic varies depending on whether the node is an aggregator, trainer, or other role.
-        
+
         Returns:
             Set[Any]: A set of neighbor node identifiers to wait for.
         """
         raise NotImplementedError
-    
+
     @abstractmethod
     async def resolve_missing_updates(self):
         """
@@ -118,16 +118,16 @@ class RoleBehavior(ABC):
 
         For example, an aggregator might default to a fresh model, while a trainer might proceed
         with its own local model.
-        
+
         Returns:
             Any: The resolution outcome depending on the role's specific logic.
         """
         raise NotImplementedError
-    
+
     async def set_next_role(self, role: Role, source_to_notificate = None):
         """
         Schedules a role change and optionally stores the source to notify upon completion.
-        
+
         Args:
             role (Role): The new role to transition to.
             source_to_notificate (Optional[Any]): Identifier of the node that triggered the change.
@@ -135,7 +135,7 @@ class RoleBehavior(ABC):
         async with self._next_role_locker:
             self._next_role = role
             self._source_to_notificate = source_to_notificate
-        
+
     async def get_next_role(self) -> Role:
         """
         Retrieves and clears the next role value.
@@ -147,7 +147,7 @@ class RoleBehavior(ABC):
             next_role = self._next_role
             self._next_role = None
         return next_role
-    
+
     async def get_source_to_notificate(self):
         """
         Retrieves and clears the stored source to notify after a role change.
@@ -159,7 +159,7 @@ class RoleBehavior(ABC):
             source_to_notificate = self._source_to_notificate
             self._source_to_notificate = None
         return source_to_notificate
-        
+
     async def update_role_needed(self):
         """
         Checks whether a role update is scheduled.
@@ -170,12 +170,12 @@ class RoleBehavior(ABC):
         async with self._next_role_locker:
             updt_needed = self._next_role != None
         return updt_needed
-    
+
 """                                                         ##############################
                                                             #     MALICIOUS BEHAVIOR     #
                                                             ##############################
 """
-    
+
 class MaliciousRoleBehavior(RoleBehavior):
     def __init__(self, engine: Engine, config: Config):
         super().__init__()
@@ -193,28 +193,28 @@ class MaliciousRoleBehavior(RoleBehavior):
         benign_role = self._config.participant["adversarial_args"]["fake_behavior"]
         self._fake_role_behavior = factory_role_behavior(benign_role, self._engine, self._config)
         self._role = factory_node_role("malicious")
-    
+
     def get_role(self):
         return self._role
-        
+
     def get_role_name(self, effective=False):
         if effective:
             return self._fake_role_behavior.get_role_name()
         return f"{self._role.value} as {self._fake_role_behavior.get_role_name()}"
-    
-    async def extended_learning_cycle(self):     
+
+    async def extended_learning_cycle(self):
         try:
             await self.attack.attack()
         except Exception:
             attack_name = self._config.participant["adversarial_args"]["attacks"]
             logging.exception(f"Attack {attack_name} failed")
-            
+
         await self._fake_role_behavior.extended_learning_cycle()
-        
+
     async def select_nodes_to_wait(self):
         nodes = await self._fake_role_behavior.select_nodes_to_wait()
         return nodes
-    
+
     async def resolve_missing_updates(self):
         return await self._fake_role_behavior.resolve_missing_updates()
 
@@ -222,20 +222,20 @@ class MaliciousRoleBehavior(RoleBehavior):
                                                             # TRAINER AGGREGATOR BEHAVIOR #
                                                             ###############################
 """
-        
+
 class TrainerAggregatorRoleBehavior(RoleBehavior):
     def __init__(self, engine: Engine, config: Config):
         super().__init__()
         self._engine = engine
         self._config = config
         self._role = factory_node_role("trainer_aggregator")
-        
+
     def get_role(self):
-        return self._role    
-        
+        return self._role
+
     def get_role_name(self, effective=False):
         return self._role.value
-    
+
     async def extended_learning_cycle(self):
         await self._engine.trainer.test()
         await self._engine.trainning_in_progress_lock.acquire_async()
@@ -249,13 +249,13 @@ class TrainerAggregatorRoleBehavior(RoleBehavior):
 
         mpe = ModelPropagationEvent(await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False), "stable")
         await EventManager.get_instance().publish_node_event(mpe)
-        
+
         await self._engine._waiting_model_updates()
-        
+
     async def select_nodes_to_wait(self):
         nodes = await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=True)
         return nodes
-    
+
     async def resolve_missing_updates(self):
         return {}
 
@@ -263,7 +263,7 @@ class TrainerAggregatorRoleBehavior(RoleBehavior):
                                                             #    AGGREGATOR BEHAVIOR     #
                                                             ##############################
 """
-        
+
 class AggregatorRoleBehavior(RoleBehavior):
     def __init__(self, engine: Engine, config: Config):
         super().__init__()
@@ -271,70 +271,89 @@ class AggregatorRoleBehavior(RoleBehavior):
         self._config = config
         self._role = factory_node_role("aggregator")
         self._transfer_send = False
-        
+
     def get_role(self):
-        return self._role    
-        
+        return self._role
+
     def get_role_name(self, effective=False):
         return self._role.value
-    
+
     async def extended_learning_cycle(self):
         await self._engine.trainer.test()
-            
+
         await self._engine._waiting_model_updates()
-        
+
+        federation = self._config.participant["scenario_args"].get("federation")
+
+        if federation == "SDFL":
+
+            await self._engine.send_sdfl_global_model()
+            await self._transfer_leadership()
+
+            return
+
+
         mpe = ModelPropagationEvent(await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False), "stable")
         await EventManager.get_instance().publish_node_event(mpe)
-        
-        # Transfer leadership
+
+        await self._transfer_leadership()
+
+    async def _transfer_leadership(self):
         neighbors = await self._engine.cm.get_addrs_current_connections(myself=False)
         if len(neighbors) and not self._transfer_send:
             random_neighbor = random.choice(list(neighbors))
             lt_message = self._engine.cm.create_message("control", "leadership_transfer")
             logging.info(f"Sending transfer leadership to: {random_neighbor}")
+            if self._config.participant["scenario_args"].get("federation") == "SDFL":
+                await self._engine.mark_leadership_transfer_pending(random_neighbor)
             asyncio.create_task(self._engine.cm.send_message(random_neighbor, lt_message))
             self._transfer_send = True
-        
+
     async def select_nodes_to_wait(self):
+        if self._config.participant["scenario_args"].get("federation") == "SDFL":
+            nodes = self._engine.get_sdfl_expected_trainers()
+            if nodes:
+                return nodes
+
         nodes = await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False)
         return nodes
-    
+
     async def resolve_missing_updates(self):
         return (self._engine.trainer.get_model_parameters(), self._engine.trainer.BYPASS_MODEL_WEIGHT)
-        
+
 """                                                         ##############################
                                                             #       SERVER BEHAVIOR      #
                                                             ##############################
 """
-        
+
 class ServerRoleBehavior(RoleBehavior):
     from datetime import datetime
-    
+
     def __init__(self, engine: Engine, config: Config):
         super().__init__()
         self._engine = engine
         self._config = config
         self._start_time = ServerRoleBehavior.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         self._role = factory_node_role("server")
-        
+
     def get_role(self):
-        return self._role    
-        
+        return self._role
+
     def get_role_name(self, effective=False):
         return self._role.value
-        
+
     async def extended_learning_cycle(self):
         await self._engine.trainer.test()
 
         await self._engine._waiting_model_updates()
-        
+
         mpe = ModelPropagationEvent(await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False), "stable")
         await EventManager.get_instance().publish_node_event(mpe)
-        
+
     async def select_nodes_to_wait(self):
         nodes = await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False)
-        return nodes 
-    
+        return nodes
+
     async def resolve_missing_updates(self):
         return (self._engine.trainer.get_model_parameters(), self._engine.trainer.BYPASS_MODEL_WEIGHT)
 
@@ -342,35 +361,89 @@ class ServerRoleBehavior(RoleBehavior):
                                                             #      TRAINER BEHAVIOR      #
                                                             ##############################
 """
-        
+
 class TrainerRoleBehavior(RoleBehavior):
     def __init__(self, engine: Engine, config: Config):
         super().__init__()
         self._engine = engine
         self._config = config
         self._role = factory_node_role("trainer")
-        
+
     def get_role(self):
-        return self._role    
-        
+        return self._role
+
     def get_role_name(self, effective=False):
         return self._role.value
-        
+
     async def extended_learning_cycle(self):
         logging.info("Waiting global update | Assign _waiting_global_update = True")
 
         await self._engine.trainer.test()
         await self._engine.trainer.train()
 
+        federation = self._config.participant["scenario_args"].get("federation")
+
+        if federation == "SDFL":
+            self._engine.prepare_waiting_global_model()
+
+            model_params = self._engine.trainer.get_model_parameters()
+            serialized_model = (
+                model_params
+                if isinstance(model_params, bytes)
+                else self._engine.trainer.serialize_model(model_params)
+            )
+
+            message = self._engine.cm.create_message(
+                "sdflmodel",
+                "trainer_update",
+                target="aggregator",
+                parameters=serialized_model,
+                weight=self._engine.trainer.get_model_weight(),
+                round=self._engine.round,
+                node_id=self._engine.addr,
+            )
+
+            neighbors = await self._engine.cm.get_addrs_current_connections(
+                only_direct=True,
+                myself=False,
+            )
+
+            logging.info(
+                f"SDFL trainer | Broadcasting TRAINER_UPDATE to neighbors: {neighbors}"
+            )
+
+            tasks = []
+
+            for neighbor in neighbors:
+                tasks.append(
+                    asyncio.create_task(
+                        self._engine.cm.send_message(
+                            neighbor,
+                            message,
+                            "sdflmodel",
+                        )
+                    )
+                )
+
+            if tasks:
+                await asyncio.gather(*tasks)
+            else:
+                logging.warning(
+                    "SDFL trainer | No neighbors available to send TRAINER_UPDATE"
+                )
+
+            await self._engine._waiting_global_model()
+            return
+
         mpe = ModelPropagationEvent(await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False), "stable")
         await EventManager.get_instance().publish_node_event(mpe)
-        
+
         await self._engine._waiting_model_updates()
-        
+
     async def select_nodes_to_wait(self):
         nodes = await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False)
         return nodes
-    
+
     async def resolve_missing_updates(self):
         return (self._engine.trainer.get_model_parameters(), self._engine.trainer.get_model_weight())
 
@@ -378,31 +451,31 @@ class TrainerRoleBehavior(RoleBehavior):
                                                             #       IDLE BEHAVIOR        #
                                                             ##############################
 """
-        
+
 class IdleRoleBehavior(RoleBehavior):
     def __init__(self, engine: Engine, config: Config):
         super().__init__()
         self._engine = engine
         self._config = config
         self._role = factory_node_role("idle")
-        
+
     def get_role(self):
-        return self._role    
-        
+        return self._role
+
     def get_role_name(self, effective=False):
         return self._role.value
-        
+
     async def extended_learning_cycle(self):
         logging.info("Waiting global update | Assign _waiting_global_update = True")
         await self._engine._waiting_model_updates()
-        
+
     async def select_nodes_to_wait(self):
         nodes = await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False)
         return nodes
-    
+
     async def resolve_missing_updates(self):
         raise NotImplementedError
-        
+
 """                                                         ##############################
                                                             #       PROXY BEHAVIOR       #
                                                             ##############################
@@ -414,21 +487,21 @@ class ProxyRoleBehavior(RoleBehavior):
         self._engine = engine
         self._config = config
         self._role = factory_node_role("proxy")
-        
+
     def get_role(self):
-        return self._role    
-        
+        return self._role
+
     def get_role_name(self, effective=False):
         return self._role.value
-        
+
     async def extended_learning_cycle(self):
         logging.info("Waiting global update | Assign _waiting_global_update = True")
         await self._engine._waiting_model_updates()
-        
+
     async def select_nodes_to_wait(self):
         nodes = await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False)
-        return nodes 
-    
+        return nodes
+
     async def resolve_missing_updates(self):
         raise NotImplementedError
 
@@ -436,12 +509,12 @@ class ProxyRoleBehavior(RoleBehavior):
                                                             #    UTILS ROLE BEHAVIORS    #
                                                             ##############################
 """
-          
+
 class roleBehaviorException(Exception):
     pass
 
-def factory_role_behavior(role: str, engine: Engine, config: Config) -> RoleBehavior | None: 
-     
+def factory_role_behavior(role: str, engine: Engine, config: Config) -> RoleBehavior | None:
+
     role_behaviors = {
         "malicious": MaliciousRoleBehavior,
         "trainer": TrainerRoleBehavior,
@@ -451,14 +524,14 @@ def factory_role_behavior(role: str, engine: Engine, config: Config) -> RoleBeha
         "proxy": ProxyRoleBehavior,
         "idle": IdleRoleBehavior,
     }
-    
+
     node_role = role_behaviors.get(role, None)
 
     if node_role:
         return node_role(engine, config)
     else:
         raise roleBehaviorException(f"Node Role Behavior {role} not found")
-    
+
 def change_role_behavior(old_role: RoleBehavior, new_role: Role, *parameters) -> RoleBehavior:
     engine, config = parameters
     if not isinstance(old_role, MaliciousRoleBehavior):
@@ -466,8 +539,4 @@ def change_role_behavior(old_role: RoleBehavior, new_role: Role, *parameters) ->
     else:
         fake_behavior = factory_role_behavior(new_role.value, engine, config)
         old_role._fake_role_behavior = fake_behavior
-        return old_role            
-            
-
-
-        
+        return old_role

@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 BLACKLIST_EXPIRATION_TIME = 60
 
-_COMPRESSED_MESSAGES = ["model", "offer_model"]
+_COMPRESSED_MESSAGES = ["model", "offer_model", "sdflmodel"]
 
 
 class CommunicationsManager:
