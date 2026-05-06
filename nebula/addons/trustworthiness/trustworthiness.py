@@ -12,9 +12,9 @@ from nebula.addons.trustworthiness.utils import save_results_csv, save_trustwort
 from codecarbon import EmissionsTracker
 from nebula.addons.trustworthiness.per_round_metrics import PerRoundTrustMetrics
 from datetime import datetime
-from nebula.addons.trustworthiness.factsheet import Factsheet
+from nebula.addons.trustworthiness.factsheet import CflFactsheet
 from nebula.addons.trustworthiness.metric import TrustMetricManager
-from nebula.addons.trustworthiness.dfl_factsheet import populate_factsheet
+from nebula.addons.trustworthiness.dfl_factsheet import DflFactsheet
 from nebula.addons.trustworthiness.graphics import Graphics
 from nebula.addons.trustworthiness.weights import load_trust_weights
 import json
@@ -337,11 +337,12 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
             self._finalize_sdfl_global_trustscores_aggregation()
 
     def _compute_local_trustscores_report(self, experiment_name, trust_config, weights, federation) -> str:
+        factsheet = DflFactsheet()
         self._engine.trainer.datamodule.setup(stage="fit")
         train_loader = self._engine.trainer.datamodule.train_dataloader()
         self._engine.trainer.datamodule.setup(stage="test")
         test_loader = self._engine.trainer.datamodule.test_dataloader()[0]
-        populate_factsheet(
+        factsheet.populate_factsheet_dfl(
             experiment_name,
             self._idx,
             trust_config,
@@ -807,14 +808,14 @@ class TrustWorkloadServer(BaseTrustWorkload):
             logging.info(f"[TW SERVER] all reports received, waiting for finish post, csv_completed {self._csv_completed}")
 
     async def _generate_factsheet(self, trust_config, experiment_name):
-        factsheet = Factsheet()
+        factsheet = CflFactsheet()
         self._engine.trainer.datamodule.setup(stage="fit")
         train_loader = self._engine.trainer.datamodule.train_dataloader()
         self._engine.trainer.datamodule.setup(stage="test")
         test_loader = self._engine.trainer.datamodule.test_dataloader()[0]
-        factsheet.populate_factsheet_pre_train(trust_config, experiment_name, self._engine.trainer.model)
-        factsheet.populate_factsheet_post_train(
+        factsheet.populate_factsheet_cfl(
             experiment_name,
+            trust_config,
             self._start_time,
             self._end_time,
             self._idx,

@@ -230,16 +230,89 @@ def check_properties(*args):
 # Local/global data distribution and participation metrics
 # ---------------------------------------------------------------------------
 
+def get_class_count_file(scenario_name, participant_id):
+    """
+    Returns the class-count file path for a participant.
+    """
+    return os.path.join(
+        os.environ.get("NEBULA_LOGS_DIR"),
+        scenario_name,
+        "trustworthiness",
+        f"{str(participant_id)}_class_count.json",
+    )
+
+
+def load_class_counts(scenario_name, participant_id):
+    """
+    Loads the saved class-count distribution for a participant.
+    """
+    with open(get_class_count_file(scenario_name, participant_id), "r") as file:
+        return json.load(file)
+
+
+def get_class_imbalance_from_counts(class_counts):
+    """
+    Calculates class imbalance as coefficient of variation over class counts.
+
+    Higher values mean a more imbalanced local dataset.
+    """
+    return get_cv(list=list(class_counts.values()))
+
+
+def get_class_imbalance_score(class_imbalance):
+    """
+    Converts class imbalance into a trust score.
+
+    A score of 1 means balanced classes; higher imbalance lowers the score.
+    """
+    return 1 / (1 + class_imbalance)
+
+
 def get_class_imbalance_local(participant_id, experiment_name):
-    data_class_count_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), experiment_name, "trustworthiness", f"{str(participant_id)}_class_count.json")
+    class_distribution = load_class_counts(experiment_name, participant_id)
+    return get_class_imbalance_from_counts(class_distribution)
 
-    with open(data_class_count_file, "r") as file:
-        class_distribution = json.load(file)
 
-    class_samples_sizes = [x for x in class_distribution.values()]
-    class_imbalance = get_cv(list=class_samples_sizes)
+def get_local_class_imbalance_score(scenario_name, participant_id):
+    """
+    Calculates the class-imbalance trust score for a participant.
+    """
+    return get_class_imbalance_score(get_class_imbalance_local(participant_id, scenario_name))
 
-    return class_imbalance
+
+def get_entropy_from_class_counts(class_counts, normalize=False):
+    """
+    Calculates entropy from class counts.
+
+    When normalized, returns a value in [0, 1] independent of class count.
+    """
+    counts = np.array(list(class_counts.values()), dtype=float)
+    total = counts.sum()
+    if total <= 0:
+        return 0.0
+
+    probabilities = counts / total
+    entropy_value = entropy(probabilities, base=2)
+
+    if not normalize:
+        return round(float(entropy_value), 6)
+
+    class_count = len(probabilities)
+    if class_count <= 1:
+        return 0.0
+
+    normalized_entropy = float(entropy_value / np.log2(class_count))
+    return max(0.0, min(1.0, normalized_entropy))
+
+
+def get_local_normalized_entropy(scenario_name, participant_id):
+    """
+    Calculates normalized entropy from a participant's saved class counts.
+    """
+    return get_entropy_from_class_counts(
+        load_class_counts(scenario_name, participant_id),
+        normalize=True,
+    )
 
 
 def get_cv(list=None, std=None, mean=None):

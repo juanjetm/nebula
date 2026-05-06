@@ -1,84 +1,79 @@
 import logging
-import json
 import os
-import shutil
-import numpy as np
 import pandas as pd
 
 from nebula.addons.trustworthiness.calculation import (
     get_bytes_model,
-    get_cv,
     get_dp_local,
     get_elapsed_time,
+    get_local_class_imbalance_score,
+    get_local_normalized_entropy,
     get_underfitting_score_local,
 )
 from nebula.addons.trustworthiness.factsheet_common import (
-    cap_score,
+    get_factsheet_path,
+    get_trustworthiness_dir,
+    load_or_create_factsheet,
     populate_common_pre_train_sections,
     populate_model_quality_metrics,
     populate_participation,
     populate_reliability,
     populate_reputation,
     set_dp_configuration,
+    write_factsheet,
 )
 from nebula.addons.trustworthiness.utils import read_csv, get_all_data_entropy
 
-dirname = os.path.dirname(__file__)
 logger = logging.getLogger(__name__)
 
+class DflFactsheet:
+    def __init__(self):
+        """
+        Manager class to populate the FactSheet
+        """
+        self.factsheet_template_file_nm = "factsheet_template_dfl.json"
 
-def populate_factsheet(
-    experiment_name,
-    participant_idx,
-    data,
-    start_time,
-    end_time,
-    model,
-    train_loader,
-    test_loader,
-    reputation_summary=None,
-    participation_summary=None,
-    reliability_summary=None,
-):
-    trust_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), experiment_name, "trustworthiness")
-    os.makedirs(trust_dir, exist_ok=True)
+    def populate_factsheet_dfl(
+        self,
+        scenario_name,
+        participant_idx,
+        data,
+        start_time,
+        end_time,
+        model,
+        train_loader,
+        test_loader,
+        reputation_summary=None,
+        participation_summary=None,
+        reliability_summary=None,
+    ):
 
-    factsheet_name = f"factsheet_participant_{participant_idx}.json"
-    factsheet_path = os.path.join(trust_dir, factsheet_name)
+        self.factsheet_file_nm = f"factsheet_participant_{participant_idx}.json"
 
-    template_path = os.path.join(dirname, "configs", "factsheet_template_dfl.json")
-    if not os.path.exists(factsheet_path):
-        shutil.copyfile(template_path, factsheet_path)
+        factsheet_file = get_factsheet_path(scenario_name, self.factsheet_file_nm)
 
-    with open(factsheet_path, "r+", encoding="utf-8") as f:
-        factsheet = {}
-        factsheet = json.load(f)
+        factsheet_file, factsheet = load_or_create_factsheet(
+            scenario_name,
+            self.factsheet_file_nm,
+            self.factsheet_template_file_nm,
+        )
 
         logging.info("DFL FactSheet: Populating factsheet")
 
         populate_common_pre_train_sections(factsheet, data, model)
 
-        dp_enabled, dp_epsilon = get_dp_local(experiment_name, participant_idx)
+        dp_enabled, dp_epsilon = get_dp_local(scenario_name, participant_idx)
         set_dp_configuration(factsheet, dp_enabled, dp_epsilon)
 
-        files_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), experiment_name, "trustworthiness")
+        files_dir = get_trustworthiness_dir(scenario_name)
 
         emissions_file = os.path.join(files_dir, f"emissions_{participant_idx}.csv")
 
-        get_all_data_entropy(experiment_name)
+        get_all_data_entropy(scenario_name)
 
-        data_class_count_file = os.path.join(
-            os.environ.get('NEBULA_LOGS_DIR'),
-            experiment_name,
-            "trustworthiness",
-            f"{str(participant_idx)}_class_count.json",
-        )
+        factsheet["data"]["entropy_local"] = get_local_normalized_entropy(scenario_name, participant_idx)
 
-        entropy_local = normalized_entropy_from_class_counts(data_class_count_file)
-
-        factsheet["data"]["entropy_local"] = entropy_local
-
-        df = load_round_metrics(experiment_name, participant_idx)
+        df = load_round_metrics(scenario_name, participant_idx)
         acc = df["accuracy"].astype(float).to_numpy()
         loss = df["loss"].astype(float).to_numpy()
 
@@ -88,7 +83,7 @@ def populate_factsheet(
         factsheet["performance"]["test_loss"] = float(final_loss)
         factsheet["performance"]["test_acc"] = float(final_acc)
 
-        bytes_sent, bytes_recv = get_bytes(experiment_name, participant_idx)
+        bytes_sent, bytes_recv = get_bytes(scenario_name, participant_idx)
 
         factsheet["system"]["model_size"] = get_bytes_model(model)
 
@@ -100,14 +95,11 @@ def populate_factsheet(
         factsheet["system"]["time_minutes"] = get_elapsed_time(start_time, end_time)
 
         count_class_file = os.path.join(files_dir, f"{participant_idx}_class_count.json")
-        if os.path.exists(count_class_file):
-            with open(count_class_file, "r") as fs:
-                class_distribution = json.load(fs)
-            class_samples_sizes = list(class_distribution.values())
-            class_imbalance = get_cv(list=class_samples_sizes)
-            factsheet["fairness"]["class_imbalance"] = cap_score(class_imbalance)
-        else:
-            factsheet["fairness"]["class_imbalance"] = factsheet["fairness"].get("class_imbalance", 0.0)
+        factsheet["fairness"]["class_imbalance"] = (
+            get_local_class_imbalance_score(scenario_name, participant_idx)
+            if os.path.exists(count_class_file)
+            else factsheet["fairness"].get("class_imbalance", 0.0)
+        )
 
         populate_participation(factsheet, participation_summary)
 
@@ -128,7 +120,7 @@ def populate_factsheet(
             + (bytes_recv * 2.24e-10 * carbon_intensity_local)
         )
 
-        factsheet["fairness"]["underfitting"] = get_underfitting_score_local(experiment_name, participant_idx)
+        factsheet["fairness"]["underfitting"] = get_underfitting_score_local(scenario_name, participant_idx)
         populate_model_quality_metrics(
             factsheet,
             model,
@@ -137,12 +129,11 @@ def populate_factsheet(
             factsheet["performance"]["test_acc"],
         )
 
-        f.seek(0)
-        f.truncate()
-        json.dump(factsheet, f, indent=4)
+        write_factsheet(factsheet_file, factsheet)
 
-def load_round_metrics(experiment_name, participant_idx):
-    files_dir = os.path.join(os.environ.get("NEBULA_LOGS_DIR"), experiment_name, "trustworthiness")
+
+def load_round_metrics(scenario_name, participant_idx):
+    files_dir = get_trustworthiness_dir(scenario_name)
     path = os.path.join(files_dir, f"round_metrics_participant_{participant_idx}.csv")
     df = pd.read_csv(path)
 
@@ -152,11 +143,10 @@ def load_round_metrics(experiment_name, participant_idx):
     df = df.dropna(subset=["loss", "accuracy"])
     return df
 
-def get_bytes(experiment_name, participant_idx):
+
+def get_bytes(scenario_name, participant_idx):
     data_file = os.path.join(
-        os.environ.get('NEBULA_LOGS_DIR'),
-        experiment_name,
-        "trustworthiness",
+        get_trustworthiness_dir(scenario_name),
         f"data_results_{participant_idx}.csv",
     )
 
@@ -169,6 +159,7 @@ def get_bytes(experiment_name, participant_idx):
 
     return bytes_sent, bytes_recv
 
+
 def get_emissions(emissions_file, participant_idx):
     data = read_csv(emissions_file)
 
@@ -180,25 +171,3 @@ def get_emissions(emissions_file, participant_idx):
     sample_size = row["sample_size"].iloc[0]
 
     return avg_carbon_intensity_clients, emissions_training, energy_consumed, sample_size
-
-def normalized_entropy_from_class_counts(count_class_file):
-    with open(count_class_file, "r") as f:
-        dist = json.load(f)
-
-    counts = np.array(list(dist.values()), dtype=float)
-    total = counts.sum()
-    if total <= 0:
-        return 0.0
-
-    p = counts / total
-
-    eps = 1e-12
-    H = -float(np.sum(p * np.log(p + eps)))
-
-    K = len(p)
-    if K <= 1:
-        return 0.0
-
-    H_norm = H / float(np.log(K))
-
-    return max(0.0, min(1.0, H_norm))

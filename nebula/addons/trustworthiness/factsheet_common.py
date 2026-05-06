@@ -1,5 +1,9 @@
 """Shared helpers for trustworthiness factsheet generation."""
 
+import json
+import os
+import shutil
+
 from nebula.addons.trustworthiness.calculation import (
     attack_success_rate,
     compute_adversarial_accuracy_art,
@@ -17,6 +21,45 @@ from nebula.addons.trustworthiness.calculation import (
     get_theil_index,
     get_well_calibration_error,
 )
+
+
+dirname = os.path.dirname(__file__)
+
+
+def get_trustworthiness_dir(scenario_name):
+    """Returns the trustworthiness output directory for a scenario."""
+    return os.path.join(os.environ.get("NEBULA_LOGS_DIR"), scenario_name, "trustworthiness")
+
+
+def get_factsheet_path(scenario_name, factsheet_name):
+    """Returns the path to a factsheet inside the scenario trustworthiness directory."""
+    return os.path.join(get_trustworthiness_dir(scenario_name), factsheet_name)
+
+
+def get_factsheet_template_path(template_name):
+    """Returns the path to a factsheet template bundled with the addon."""
+    return os.path.join(dirname, "configs", template_name)
+
+
+def load_or_create_factsheet(scenario_name, factsheet_name, template_name):
+    """Loads a factsheet, creating it from its template if it does not exist."""
+    trustworthiness_dir = get_trustworthiness_dir(scenario_name)
+    os.makedirs(trustworthiness_dir, exist_ok=True)
+
+    factsheet_path = os.path.join(trustworthiness_dir, factsheet_name)
+    template_path = get_factsheet_template_path(template_name)
+
+    if not os.path.exists(factsheet_path):
+        shutil.copyfile(template_path, factsheet_path)
+
+    with open(factsheet_path, encoding="utf-8") as factsheet_file:
+        return factsheet_path, json.load(factsheet_file)
+
+
+def write_factsheet(factsheet_path, factsheet):
+    """Writes a factsheet using the standard JSON formatting."""
+    with open(factsheet_path, "w", encoding="utf-8") as factsheet_file:
+        json.dump(factsheet, factsheet_file, indent=4)
 
 
 def cap_score(value, maximum=1):

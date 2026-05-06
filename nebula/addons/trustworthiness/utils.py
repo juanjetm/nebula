@@ -102,12 +102,7 @@ def get_all_data_entropy(experiment_name):
         with open(data_class_count_file, "r") as f:
             class_count = json.load(f)
 
-        total = sum(class_count.values())
-        if total == 0:
-            entropy_value = 0.0
-        else:
-            probabilities = [count / total for count in class_count.values()]
-            entropy_value = entropy(probabilities, base=2)
+        entropy_value = calculation.get_entropy_from_class_counts(class_count)
 
         entropy_per_participant[str(participant_id)] = round(entropy_value, 6)
         participant_id += 1
@@ -123,16 +118,7 @@ def get_local_entropy(id, experiment_name):
     with open(data_class_count_file, "r") as f:
         class_count = json.load(f)
 
-    total = sum(class_count.values())
-    if total == 0:
-        entropy_value = 0.0
-    else:
-        probabilities = [count / total for count in class_count.values()]
-        entropy_value = entropy(probabilities, base=2)
-
-    entropy_local = round(entropy_value, 6)
-
-    return entropy_local
+    return calculation.get_entropy_from_class_counts(class_count)
 
 def get_entropy(client_id, scenario_name, dataloader):
     """
