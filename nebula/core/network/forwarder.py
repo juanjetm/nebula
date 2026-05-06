@@ -139,7 +139,12 @@ class Forwarder:
         try:
             message_wrapper = nebula_pb2.Wrapper()
             message_wrapper.ParseFromString(msg)
-            return message_wrapper.WhichOneof("message") == "trustscores_message"
+            message_type = message_wrapper.WhichOneof("message")
+            if message_type == "trustscores_message":
+                return True
+            if message_type == "sdflmodel_message":
+                return message_wrapper.sdflmodel_message.action == nebula_pb2.SdflmodelMessage.Action.GLOBAL_MODEL
+            return False
         except Exception as e:
             logging.warning(f"🔁  Could not inspect forwarded message type: {e!s}")
             return False

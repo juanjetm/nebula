@@ -266,18 +266,23 @@ class Engine:
         except TimeoutError:
             logging.warning(
                 f"SDFL leadership | ACK from {successor} not received before next round; "
-                "keeping aggregator role"
+                "keeping aggregator role until ACK arrives"
             )
 
         async with self._leadership_transfer_lock:
             if self._leadership_transfer_pending != successor:
                 return
 
+            if self._leadership_transfer_ack.is_set():
+                ack_received = True
+
+            if not ack_received:
+                return
+
             self._leadership_transfer_pending = None
             self._leadership_transfer_ack.clear()
 
-        if ack_received:
-            await self.rb.set_next_role(Role.TRAINER)
+        await self.rb.set_next_role(Role.TRAINER)
 
     def get_sdfl_expected_trainers(self) -> set[str]:
         nodes = self.config.participant.get("trust_args", {}).get("scenario", {}).get("nodes", {})
@@ -1023,6 +1028,7 @@ class Engine:
                         neighbor,
                         message,
                         "sdflmodel",
+                        allow_after_learning_finished=True,
                     )
                 )
             )

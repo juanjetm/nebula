@@ -299,6 +299,13 @@ class AggregatorRoleBehavior(RoleBehavior):
         await self._transfer_leadership()
 
     async def _transfer_leadership(self):
+        if self._engine.round >= self._engine.total_rounds - 1:
+            logging.info(
+                f"Skipping leadership transfer in final round {self._engine.round} "
+                f"of {self._engine.total_rounds - 1}"
+            )
+            return
+
         neighbors = await self._engine.cm.get_addrs_current_connections(myself=False)
         if len(neighbors) and not self._transfer_send:
             random_neighbor = random.choice(list(neighbors))
