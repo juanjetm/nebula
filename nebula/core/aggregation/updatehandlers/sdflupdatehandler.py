@@ -143,6 +143,10 @@ class SDFLUpdateHandler(UpdateHandler):
         Args:
             updt_received_event (UpdateReceivedEvent): Event with model update data.
         """
+        if updt_received_event.is_reputation_update():
+            logging.debug("Discard reputation-only update in SDFL aggregation storage")
+            return
+
         time_received = time.time()
         (model, weight, source, round, _) = await updt_received_event.get_event_data()
         if source in self._sources_expected:

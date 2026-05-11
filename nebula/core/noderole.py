@@ -281,6 +281,9 @@ class AggregatorRoleBehavior(RoleBehavior):
     async def extended_learning_cycle(self):
         await self._engine.trainer.test()
 
+        if self._config.participant["scenario_args"].get("federation") == "SDFL":
+            await self._engine.send_sdfl_reputation_model_update()
+
         await self._engine._waiting_model_updates()
 
         federation = self._config.participant["scenario_args"].get("federation")
@@ -386,12 +389,43 @@ class TrainerRoleBehavior(RoleBehavior):
         logging.info("Waiting global update | Assign _waiting_global_update = True")
 
         await self._engine.trainer.test()
-        await self._engine.trainer.train()
+        await self._engine.trainning_in_progress_lock.acquire_async()
+        try:
+            await self._engine.trainer.train()
+        finally:
+            await self._engine.trainning_in_progress_lock.release_async()
 
         federation = self._config.participant["scenario_args"].get("federation")
 
         if federation == "SDFL":
             self._engine.prepare_waiting_global_model()
+
+            if self._engine._reputation is not None:
+                await self._engine._reputation.process_pending_sdfl_reputation_updates(self._engine.round)
+
+            await self._engine.send_sdfl_reputation_model_update()
+
+            if self._engine._reputation is not None:
+                expected_reputation_neighbors = await self._engine.cm.get_addrs_current_connections(
+                    only_direct=True,
+                    myself=False,
+                )
+                reputation_timeout = float(
+                    self._config.participant["defense_args"]
+                    .get("reputation", {})
+                    .get(
+                        "model_update_timeout",
+                        self._config.participant["defense_args"]
+                        .get("reputation", {})
+                        .get("table_aggregation_timeout", 30),
+                    )
+                )
+                await self._engine._reputation.wait_sdfl_reputation_updates(
+                    expected_reputation_neighbors,
+                    self._engine.round,
+                    reputation_timeout,
+                )
+                await self._engine._reputation.calculate_and_send_sdfl_reputation_table()
 
             model_params = self._engine.trainer.get_model_parameters()
             serialized_model = (

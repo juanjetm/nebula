@@ -29,6 +29,7 @@ message Wrapper {
     TrustworthinessMessage trustworthiness_message = 12;
     TrustscoresMessage trustscores_message = 13;
     SdflmodelMessage sdflmodel_message = 14;
+    ReputationtableMessage reputationtable_message = 15;
   }
 }
 
@@ -140,6 +141,16 @@ message ReputationMessage {
   float score = 2; //Score reputation
   int32 round = 3; //Round to send the reputation
   Action action = 4; // Action type (default: SHARE)
+}
+
+message ReputationtableMessage {
+  enum Action {
+    TABLE = 0;
+  }
+  string node_id = 1; // Logical source node of the reputation table.
+  int32 round = 2; // Round to which the reputation table belongs.
+  string reputation_table_json = 3; // JSON encoded reputation table.
+  Action action = 4; // Action type (default: TABLE)
 }
 
 // Response transmits the outcome of a requested operation, including any errors.

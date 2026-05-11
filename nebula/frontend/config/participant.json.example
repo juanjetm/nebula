@@ -158,6 +158,7 @@
   },
   "misc_args": {
     "grace_time_connection": 10,
-    "grace_time_start_federation": 10
+    "grace_time_start_federation": 10,
+    "leadership_ack_timeout": 20
   }
 }

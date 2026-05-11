@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import random
@@ -256,7 +257,7 @@ class Engine:
         if successor is None:
             return
 
-        timeout = float(self.config.participant.get("misc_args", {}).get("leadership_ack_timeout", 5))
+        timeout = float(self.config.participant.get("misc_args", {}).get("leadership_ack_timeout", 20))
         logging.info(f"SDFL leadership | Waiting up to {timeout}s for ACK from {successor}")
 
         ack_received = False
@@ -360,11 +361,56 @@ class Engine:
             logging.info("🤖  handle_model_message | There are no defined federation nodes")
             return
         if self.config.participant["scenario_args"].get("federation") == "SDFL":
-            logging.info("SDFL | Ignoring legacy model/update; use sdflmodel messages")
+            direct_neighbors = await self.cm.get_addrs_current_connections(only_direct=True, myself=False)
+            if source not in direct_neighbors:
+                logging.info(f"SDFL reputation | Ignoring model/update from non-neighbor source={source}")
+                return
+
+            decoded_model = self.trainer.deserialize_model(message.parameters)
+            updt_received_event = UpdateReceivedEvent(
+                decoded_model,
+                message.weight,
+                source,
+                message.round,
+                update_type=UpdateReceivedEvent.REPUTATION_UPDATE,
+            )
+            await EventManager.get_instance().publish_node_event(updt_received_event)
+            logging.info(f"SDFL reputation | Published reputation UpdateReceivedEvent from {source}")
             return
         decoded_model = self.trainer.deserialize_model(message.parameters)
         updt_received_event = UpdateReceivedEvent(decoded_model, message.weight, source, message.round)
         await EventManager.get_instance().publish_node_event(updt_received_event)
+
+    async def send_sdfl_reputation_model_update(self):
+        if self.config.participant["scenario_args"].get("federation") != "SDFL":
+            return
+
+        model_params = self.trainer.get_model_parameters()
+        serialized_model = (
+            model_params
+            if isinstance(model_params, bytes)
+            else self.trainer.serialize_model(model_params)
+        )
+
+        message = self.cm.create_message(
+            "model",
+            round=self.round,
+            parameters=serialized_model,
+            weight=self.trainer.get_model_weight(),
+        )
+
+        neighbors = await self.cm.get_addrs_current_connections(only_direct=True, myself=False)
+        if not neighbors:
+            logging.info("SDFL reputation | No direct neighbors to send model/update")
+            return
+
+        logging.info(f"SDFL reputation | Broadcasting model/update to direct neighbors: {neighbors}")
+        await asyncio.gather(
+            *[
+                asyncio.create_task(self.cm.send_message(neighbor, message, "model"))
+                for neighbor in neighbors
+            ]
+        )
 
     """                                                     ##############################
                                                             #      General callbacks     #
@@ -507,6 +553,41 @@ class Engine:
                     self._reputation.reputation_with_all_feedback[key].append(message.score)
         except Exception as e:
             logging.exception(f"Error handling reputation message: {e}")
+
+    async def _reputationtable_table_callback(self, source, message):
+        try:
+            if self.config.participant["scenario_args"].get("federation") != "SDFL":
+                return
+            if self.rb.get_role_name(True) != "aggregator":
+                return
+            if not hasattr(self, "_reputation") or self._reputation is None:
+                return
+
+            reputation_table = json.loads(message.reputation_table_json or "{}")
+            if not isinstance(reputation_table, dict):
+                logging.warning(
+                    f"SDFL reputation | Ignoring reputation table from {message.node_id}; "
+                    f"invalid payload type: {type(reputation_table)}"
+                )
+                return
+
+            await self._reputation.register_reputation_table(
+                message.node_id,
+                message.round,
+                reputation_table,
+                received_from=source,
+            )
+            expected_nodes = self.get_sdfl_expected_trainers()
+            timeout = float(
+                self.config.participant["defense_args"]
+                .get("reputation", {})
+                .get("table_aggregation_timeout", 10)
+            )
+            self._reputation.start_reputation_tables_collection(expected_nodes, message.round, timeout)
+        except json.JSONDecodeError as e:
+            logging.warning(f"SDFL reputation | Could not decode reputation table from {source}: {e}")
+        except Exception as e:
+            logging.exception(f"Error handling reputation table message: {e}")
 
     async def _trustworthiness_report_callback(self, source, message):
         try:

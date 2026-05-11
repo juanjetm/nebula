@@ -144,6 +144,8 @@ class Forwarder:
                 return True
             if message_type == "sdflmodel_message":
                 return message_wrapper.sdflmodel_message.action == nebula_pb2.SdflmodelMessage.Action.GLOBAL_MODEL
+            if message_type == "reputationtable_message":
+                return True
             return False
         except Exception as e:
             logging.warning(f"🔁  Could not inspect forwarded message type: {e!s}")

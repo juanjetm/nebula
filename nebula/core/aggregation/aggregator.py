@@ -169,10 +169,34 @@ class Aggregator(ABC):
         else:
             logging.info("🔄  get_aggregation | All models accounted for, proceeding with aggregation.")
 
+        await self._calculate_sdfl_indirect_reputation_before_aggregation(updates)
+
         agg_event = AggregationEvent(updates, self._federation_nodes, missing_nodes)
         await EventManager.get_instance().publish_node_event(agg_event)
         aggregated_result = self.run_aggregation(updates)
         return aggregated_result
+
+    async def _calculate_sdfl_indirect_reputation_before_aggregation(self, updates):
+        if self.config.participant["scenario_args"].get("federation") != "SDFL":
+            return
+        if not hasattr(self.engine, "_reputation") or self.engine._reputation is None:
+            return
+
+        round_num = await self.engine.get_round()
+        expected_table_nodes = self.engine.get_sdfl_expected_trainers()
+        target_nodes = set(self._federation_nodes) | set(updates.keys())
+        timeout = float(
+            self.config.participant["defense_args"]
+            .get("reputation", {})
+            .get("table_aggregation_timeout", 10)
+        )
+
+        await self.engine._reputation.calculate_indirect_reputation_for_non_neighbors(
+            target_nodes=target_nodes,
+            expected_table_nodes=expected_table_nodes,
+            round_num=round_num,
+            timeout=timeout,
+        )
 
     def print_model_size(self, model):
         total_memory = 0
