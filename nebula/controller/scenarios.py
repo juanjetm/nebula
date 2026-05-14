@@ -116,6 +116,7 @@ class Scenario:
         sar_training,
         sar_training_policy,
         dp=None,
+        feature_squeezing=None,
         physical_ips=None,
     ):
         """
@@ -194,6 +195,7 @@ class Scenario:
         self.network_gateway = network_gateway
         self.epochs = epochs
         self.dp = dp
+        self.feature_squeezing = feature_squeezing
         self.attack_params = attack_params
         self.reputation = reputation
         self.random_geo = random_geo
@@ -715,6 +717,17 @@ class ScenarioManagement:
                     participant_config["training_args"]["dp"]["max_grad_norm"] = float(
                         self.scenario.dp["max_grad_norm"]
                     )
+            feature_squeezing = (
+                self.scenario.feature_squeezing if isinstance(self.scenario.feature_squeezing, dict) else {}
+            )
+            participant_config.setdefault("defense_args", {})
+            participant_config["defense_args"].setdefault("feature_squeezing", {})
+            participant_config["defense_args"]["feature_squeezing"]["enabled"] = bool(
+                feature_squeezing.get("enabled", False)
+            )
+            bit_depth = feature_squeezing.get("bit_depth", feature_squeezing.get("n"))
+            if bit_depth is not None:
+                participant_config["defense_args"]["feature_squeezing"]["bit_depth"] = int(bit_depth)
             participant_config["device_args"]["accelerator"] = self.scenario.accelerator
             participant_config["device_args"]["gpu_id"] = self.scenario.gpu_id
             participant_config["device_args"]["logging"] = self.scenario.logginglevel

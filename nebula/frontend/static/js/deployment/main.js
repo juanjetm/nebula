@@ -9,6 +9,7 @@ import GraphSettings from './graph-settings.js';
 import Utils from './utils.js';
 import TrustworthinessManager from './trustworthiness.js';
 import DpManager from './dp.js';
+import FeatureSqueezingManager from './feature-squeezing.js';
 
 const DeploymentManager = (function() {
     function initialize() {
@@ -33,6 +34,7 @@ const DeploymentManager = (function() {
         SaManager.initializeSa();
         TrustworthinessManager.initializeTrustworthinessSystem();
         DpManager.initializeDifferentialPrivacy();
+        FeatureSqueezingManager.initializeFeatureSqueezing();
         GraphSettings.initializeDistanceControls();
 
         // Make modules globally available
@@ -44,6 +46,7 @@ const DeploymentManager = (function() {
         window.SaManager = SaManager;
         window.TrustworthinessManager = TrustworthinessManager;
         window.DpManager = DpManager;
+        window.FeatureSqueezingManager = FeatureSqueezingManager;
         window.GraphSettings = GraphSettings;
         window.DeploymentManager = DeploymentManager;
         window.Utils = Utils;

@@ -75,6 +75,7 @@ const ScenarioManager = (function () {
             report_status_data_queue: document.getElementById("reportingSwitch").checked,
             epochs: parseInt(document.getElementById("epochs").value),
             dp: window.DpManager.getDpConfig(),
+            feature_squeezing: window.FeatureSqueezingManager.getFeatureSqueezingConfig(),
             attack_params: attackConfig,
             reputation: {
                 enabled: window.ReputationManager.getReputationConfig().enabled || false,
@@ -267,6 +268,9 @@ const ScenarioManager = (function () {
         if (window.DpManager) {
             window.DpManager.setDpConfig(scenario.dp);
         }
+        if (window.FeatureSqueezingManager) {
+            window.FeatureSqueezingManager.setFeatureSqueezingConfig(scenario.feature_squeezing);
+        }
 
         // Load module configurations
         if (scenario.attacks && scenario.attacks.length > 0) {
@@ -442,6 +446,9 @@ const ScenarioManager = (function () {
         }
         if (window.DpManager) {
             window.DpManager.resetDpConfig();
+        }
+        if (window.FeatureSqueezingManager) {
+            window.FeatureSqueezingManager.resetFeatureSqueezingConfig();
         }
 
         // Trigger necessary events

@@ -547,6 +547,27 @@
                         </small>
                     </div>
                 </div>
+                <!-- Feature Squeezing -->
+                <div class="form-group row container-shadow tiny grey">
+                    <h5 class="step-number">Feature Squeezing <i class="fa fa-compress"></i>
+                    </h5>
+                    <h5 class="step-title">Enable/Disable Feature Squeezing</h5>
+                    <div class="form-check form-switch" style="margin-left: 23px;">
+                        <input class="form-check-input" type="checkbox" id="featureSqueezingSwitch"
+                            style="display: inline; width: 80px; height: 30px;">
+                    </div>
+                    <div id="feature-squeezing-settings" style="margin-top: 10px; display: none;">
+                        <h5 class="step-title">n (bit depth)</h5>
+                        <div class="form-check form-check-inline">
+                            <input type="number" class="form-control" id="featureSqueezingN"
+                                placeholder="n" min="1" max="64" step="1" value="4"
+                                style="display: inline; width: 80%">
+                        </div>
+                        <small class="form-text text-muted">
+                            Applies only to image datasets.
+                        </small>
+                    </div>
+                </div>
                 <!-- Advanced Robustness -->
                 <div class="form-group row container-shadow tiny grey">
                     <h5 class="step-number">Robustness <i class="fa fa-shield"></i>

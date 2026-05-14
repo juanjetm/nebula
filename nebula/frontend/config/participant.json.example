@@ -102,6 +102,13 @@
     "aggregation_push": "slow"
   },
   "defense_args": {
+    "feature_squeezing": {
+      "enabled": false,
+      "bit_depth": 4,
+      "apply_to_train": true,
+      "apply_to_test": true,
+      "apply_to_local_test": true
+    },
     "reputation": {
       "enabled": false,
       "metrics": {},
