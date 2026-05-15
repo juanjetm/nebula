@@ -35,7 +35,7 @@ class FeatureSqueezingDefense:
 
     def __init__(self, config: FeatureSqueezingConfig):
         if not isinstance(config.bit_depth, int) or not 1 <= config.bit_depth <= 64:
-            raise ValueError("feature_squeezing.bit_depth must be an integer in [1, 64]")  # noqa: TRY003
+            raise ValueError("feature_squeezing.bit_depth must be an integer in [1, 64]")
 
         self.config = config
         self.levels = float((2**config.bit_depth) - 1)

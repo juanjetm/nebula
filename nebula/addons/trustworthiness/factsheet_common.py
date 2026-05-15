@@ -190,24 +190,24 @@ def populate_model_quality_metrics(factsheet, model, train_loader, test_loader, 
     factsheet["performance"]["test_macro_f1"] = get_macro_f1_score(model, test_loader)
 
     factsheet["privacy"]["epsilon_star"] = get_epsilon_star(model, train_loader, test_loader)
-    factsheet["privacy"]["epsilon_star_score"] = inverse_score(factsheet["privacy"]["epsilon_star"])
+    factsheet["privacy"]["inverse_epsilon_star"] = inverse_score(factsheet["privacy"]["epsilon_star"])
     factsheet["privacy"]["mia_auc"] = get_mia_auc(model, train_loader, test_loader)
     factsheet["privacy"]["mia_auc_score"] = 1 - 2 * abs(factsheet["privacy"]["mia_auc"] - 0.5)
 
     overfitting_value = get_overfitting_score(model, train_loader, test_accuracy)
-    factsheet["fairness"]["overfitting"] = inverse_score(overfitting_value)
+    factsheet["fairness"]["inverse_overfitting"] = inverse_score(overfitting_value)
 
     well_calibration_error_value = get_well_calibration_error(model, test_loader)
-    factsheet["fairness"]["well_calibration_error"] = inverse_score(well_calibration_error_value)
+    factsheet["fairness"]["inverse_well_calibration_error"] = inverse_score(well_calibration_error_value)
 
     generalized_entropy_index_value = get_generalized_entropy_index(model, test_loader)
-    factsheet["fairness"]["generalized_entropy_index"] = inverse_score(generalized_entropy_index_value)
+    factsheet["fairness"]["inverse_generalized_entropy_index"] = inverse_score(generalized_entropy_index_value)
 
     theil_index_value = get_theil_index(model, test_loader)
-    factsheet["fairness"]["theil_index"] = inverse_score(theil_index_value)
+    factsheet["fairness"]["inverse_theil_index"] = inverse_score(theil_index_value)
 
     coefficient_of_variation_value = get_coefficient_of_variation(model, test_loader)
-    factsheet["fairness"]["coefficient_of_variation"] = inverse_score(coefficient_of_variation_value)
+    factsheet["fairness"]["inverse_coefficient_of_variation"] = inverse_score(coefficient_of_variation_value)
 
     factsheet["explainability"]["alpha_score"] = explainability_metrics["alpha_score"]
     factsheet["explainability"]["spread_ratio"] = explainability_metrics["spread_ratio"]
@@ -217,22 +217,22 @@ def populate_model_quality_metrics(factsheet, model, train_loader, test_loader, 
     num_classes = model.get_num_classes()
 
     value_clever = get_clever_score(model, test_sample, num_classes, lr)
-    factsheet["performance"]["test_clever"] = cap_score(value_clever)
+    factsheet["performance"]["clipped_test_clever"] = cap_score(value_clever)
 
     value_loss_sensitivity = get_loss_sensitivity_score(model, test_sample, num_classes, lr)
-    factsheet["performance"]["test_loss_sensitivity"] = inverse_score(value_loss_sensitivity)
+    factsheet["performance"]["inverse_test_loss_sensitivity"] = inverse_score(value_loss_sensitivity)
 
     value_adv_accuracy = compute_adversarial_accuracy_art(model, test_loader, num_classes, lr)
-    factsheet["performance"]["test_adv_accuracy"] = cap_score(value_adv_accuracy)
+    factsheet["performance"]["clipped_test_adv_accuracy"] = cap_score(value_adv_accuracy)
 
     value_empirical_robustness = get_empirical_robustness_score(model, test_sample, num_classes, lr)
-    factsheet["performance"]["test_empirical_robustness"] = cap_score(value_empirical_robustness)
+    factsheet["performance"]["clipped_test_empirical_robustness"] = cap_score(value_empirical_robustness)
 
     value_confidence_score = get_confidence_score(model, test_sample)
-    factsheet["performance"]["test_confidence_score"] = cap_score(value_confidence_score)
+    factsheet["performance"]["clipped_test_confidence_score"] = cap_score(value_confidence_score)
 
     value_attack_success_rate = attack_success_rate(model, test_sample)
-    factsheet["performance"]["test_attack_success_rate"] = 1 - value_attack_success_rate
+    factsheet["performance"]["inverse_test_attack_success_rate"] = 1 - value_attack_success_rate
 
     feature_importance = explainability_metrics["feature_importance_cv"]
-    factsheet["performance"]["test_feature_importance_cv"] = cap_score(feature_importance)
+    factsheet["performance"]["clipped_test_feature_importance_cv"] = cap_score(feature_importance)

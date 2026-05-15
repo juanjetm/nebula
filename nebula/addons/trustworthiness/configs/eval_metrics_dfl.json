@@ -7,7 +7,7 @@
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "performance/test_clever"
+                "field_path": "performance/clipped_test_clever"
               }
             ],
             "operation": "get_value",
@@ -16,11 +16,11 @@
             "description": "Cross Lipschitz Extreme Value for network Robustness: attack-agnostic estimator of the lower bound βL",
             "weight": 0.4
           },
-          "loss_sensitivity": {
+          "inverse_loss_sensitivity": {
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "performance/test_loss_sensitivity"
+                "field_path": "performance/inverse_test_loss_sensitivity"
               }
             ],
             "operation": "get_value",
@@ -29,11 +29,11 @@
             "description": "",
             "weight": 0.2
           },
-          "adversarial_accuracy": {
+          "clipped_adversarial_accuracy": {
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "performance/test_adv_accuracy"
+                "field_path": "performance/clipped_test_adv_accuracy"
               }
             ],
             "operation": "get_value",
@@ -42,11 +42,11 @@
             "description": "",
             "weight": 0.1
           },
-          "empirical_robustness": {
+          "clipped_empirical_robustness": {
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "performance/test_empirical_robustness"
+                "field_path": "performance/clipped_test_empirical_robustness"
               }
             ],
             "operation": "get_value",
@@ -55,11 +55,11 @@
             "description": "",
             "weight": 0.1
           },
-          "confidence_score": {
+          "clipped_confidence_score": {
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "performance/test_confidence_score"
+                "field_path": "performance/clipped_test_confidence_score"
               }
             ],
             "operation": "get_value",
@@ -68,11 +68,11 @@
             "description": "",
             "weight": 0.1
           },
-          "attack_success_rate": {
+          "inverse_attack_success_rate": {
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "performance/test_attack_success_rate"
+                "field_path": "performance/inverse_test_attack_success_rate"
               }
             ],
             "operation": "get_value",
@@ -254,11 +254,11 @@
             "description": "A worst-case approximation of the maximal risk for distinguishing two clients.",
             "weight": 0.2
           },
-          "epsilon_star": {
+          "inverse_epsilon_star": {
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "privacy/epsilon_star_score"
+                "field_path": "privacy/inverse_epsilon_star"
               }
             ],
             "operation": "get_value",
@@ -327,11 +327,11 @@
             "description": "Held-out performance proxy used as an outcome-level fairness signal.",
             "weight": 0.1667
           },
-          "overfitting": {
+          "inverse_overfitting": {
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "fairness/overfitting"
+                "field_path": "fairness/inverse_overfitting"
               }
             ],
             "operation": "get_value",
@@ -339,11 +339,11 @@
             "description": "Generalization quality proxy transformed so higher is better.",
             "weight": 0.1667
           },
-          "well_calibration_error": {
+          "inverse_well_calibration_error": {
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "fairness/well_calibration_error"
+                "field_path": "fairness/inverse_well_calibration_error"
               }
             ],
             "operation": "get_value",
@@ -351,11 +351,11 @@
             "description": "Calibration quality of the predictive outputs represented as a trust-oriented score.",
             "weight": 0.1667
           },
-          "generalized_entropy_index": {
+          "inverse_generalized_entropy_index": {
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "fairness/generalized_entropy_index"
+                "field_path": "fairness/inverse_generalized_entropy_index"
               }
             ],
             "operation": "get_value",
@@ -363,11 +363,11 @@
             "description": "Outcome inequality score transformed so higher values indicate better fairness.",
             "weight": 0.1667
           },
-          "theil_index": {
+          "inverse_theil_index": {
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "fairness/theil_index"
+                "field_path": "fairness/inverse_theil_index"
               }
             ],
             "operation": "get_value",
@@ -375,11 +375,11 @@
             "description": "Theil-based outcome inequality score transformed so higher values indicate better fairness.",
             "weight": 0.1667
           },
-          "coefficient_of_variation": {
+          "inverse_coefficient_of_variation": {
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "fairness/coefficient_of_variation"
+                "field_path": "fairness/inverse_coefficient_of_variation"
               }
             ],
             "operation": "get_value",
@@ -440,11 +440,11 @@
       "post_hoc_methods": {
         "weight": 0.6,
         "metrics": {
-          "feature_importance": {
+          "clipped_feature_importance": {
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "performance/test_feature_importance_cv"
+                "field_path": "performance/clipped_test_feature_importance_cv"
               }
             ],
             "operation": "get_value",
@@ -649,31 +649,31 @@
               },
               {
                 "source": "factsheet",
-                "field_path": "performance/test_feature_importance_cv"
+                "field_path": "performance/clipped_test_feature_importance_cv"
               },
               {
                 "source": "factsheet",
-                "field_path": "performance/test_clever"
+                "field_path": "performance/clipped_test_clever"
               },
               {
                 "source": "factsheet",
-                "field_path": "performance/test_loss_sensitivity"
+                "field_path": "performance/inverse_test_loss_sensitivity"
               },
               {
                 "source": "factsheet",
-                "field_path": "performance/test_adv_accuracy"
+                "field_path": "performance/clipped_test_adv_accuracy"
               },
               {
                 "source": "factsheet",
-                "field_path": "performance/test_empirical_robustness"
+                "field_path": "performance/clipped_test_empirical_robustness"
               },
               {
                 "source": "factsheet",
-                "field_path": "performance/test_confidence_score"
+                "field_path": "performance/clipped_test_confidence_score"
               },
               {
                 "source": "factsheet",
-                "field_path": "performance/test_attack_success_rate"
+                "field_path": "performance/inverse_test_attack_success_rate"
               }
             ],
             "operation": "check_properties",
@@ -697,23 +697,23 @@
               },
               {
                 "source": "factsheet",
-                "field_path": "fairness/overfitting"
+                "field_path": "fairness/inverse_overfitting"
               },
               {
                 "source": "factsheet",
-                "field_path": "fairness/well_calibration_error"
+                "field_path": "fairness/inverse_well_calibration_error"
               },
               {
                 "source": "factsheet",
-                "field_path": "fairness/generalized_entropy_index"
+                "field_path": "fairness/inverse_generalized_entropy_index"
               },
               {
                 "source": "factsheet",
-                "field_path": "fairness/theil_index"
+                "field_path": "fairness/inverse_theil_index"
               },
               {
                 "source": "factsheet",
-                "field_path": "fairness/coefficient_of_variation"
+                "field_path": "fairness/inverse_coefficient_of_variation"
               }
             ],
             "operation": "check_properties",
@@ -765,7 +765,7 @@
               },
               {
                 "source": "factsheet",
-                "field_path": "privacy/epsilon_star_score"
+                "field_path": "privacy/inveres_epsilon_star"
               },
               {
                 "source": "factsheet",
