@@ -162,6 +162,7 @@ class Engine:
         self._leadership_transfer_lock = Locker("leadership_transfer_lock", async_lock=True)
         self._leadership_transfer_pending = None
         self._leadership_transfer_ack = asyncio.Event()
+        self._leadership_transfer_counts = {}
 
         event_manager = EventManager.get_instance(verbose=False)
         self._addon_manager = AddondManager(self, self.config)
@@ -284,6 +285,40 @@ class Engine:
             self._leadership_transfer_ack.clear()
 
         await self.rb.set_next_role(Role.TRAINER)
+
+    async def select_leadership_successor(self, candidates) -> str | None:
+        candidates = sorted(set(candidates))
+        if not candidates:
+            return None
+
+        async with self._leadership_transfer_lock:
+            candidate_counts = {
+                candidate: self._leadership_transfer_counts.get(candidate, 0)
+                for candidate in candidates
+            }
+
+        min_count = min(candidate_counts.values())
+        least_used_candidates = [
+            candidate
+            for candidate, count in candidate_counts.items()
+            if count == min_count
+        ]
+        successor = random.choice(least_used_candidates)
+        logging.info(
+            f"Leadership transfer candidate counts: {candidate_counts} | "
+            f"selected={successor}"
+        )
+        return successor
+
+    async def register_leadership_transfer(self, node: str):
+        async with self._leadership_transfer_lock:
+            self._leadership_transfer_counts[node] = (
+                self._leadership_transfer_counts.get(node, 0) + 1
+            )
+            logging.info(
+                f"Leadership transfer count updated | node={node} | "
+                f"count={self._leadership_transfer_counts[node]}"
+            )
 
     def get_sdfl_expected_trainers(self) -> set[str]:
         nodes = self.config.participant.get("trust_args", {}).get("scenario", {}).get("nodes", {})
@@ -453,6 +488,7 @@ class Engine:
 
     async def _control_leadership_transfer_callback(self, source, message):
         logging.info(f"🔧  handle_control_message | Trigger | Received leadership transfer message from {source}")
+        await self.register_leadership_transfer(source)
 
         if await self._round_in_process_lock.locked_async():
             logging.info("Learning cycle is executing, role behavior will be modified next round")

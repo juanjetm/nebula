@@ -7,7 +7,6 @@ from nebula.config.config import Config
 from nebula.core.utils.locker import Locker
 from nebula.core.eventmanager import EventManager
 from nebula.core.nebulaevents import UpdateReceivedEvent, ModelPropagationEvent
-import random
 from enum import Enum
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
@@ -311,12 +310,15 @@ class AggregatorRoleBehavior(RoleBehavior):
 
         neighbors = await self._engine.cm.get_addrs_current_connections(myself=False)
         if len(neighbors) and not self._transfer_send:
-            random_neighbor = random.choice(list(neighbors))
+            successor = await self._engine.select_leadership_successor(neighbors)
+            if successor is None:
+                return
             lt_message = self._engine.cm.create_message("control", "leadership_transfer")
-            logging.info(f"Sending transfer leadership to: {random_neighbor}")
+            logging.info(f"Sending transfer leadership to: {successor}")
             if self._config.participant["scenario_args"].get("federation") == "SDFL":
-                await self._engine.mark_leadership_transfer_pending(random_neighbor)
-            asyncio.create_task(self._engine.cm.send_message(random_neighbor, lt_message))
+                await self._engine.mark_leadership_transfer_pending(successor)
+            asyncio.create_task(self._engine.cm.send_message(successor, lt_message))
+            await self._engine.register_leadership_transfer(successor)
             self._transfer_send = True
 
     async def select_nodes_to_wait(self):
