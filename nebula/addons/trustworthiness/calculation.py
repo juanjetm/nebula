@@ -1865,6 +1865,41 @@ def get_empirical_robustness_score(
 
 
 
+def _get_image_normalization_for_samples(samples):
+    if not isinstance(samples, torch.Tensor) or samples.ndim < 4:
+        return None
+
+    channels = int(samples.shape[1])
+    if channels == 1:
+        return (0.5,), (0.5,)
+    if channels == 3:
+        return (0.4914, 0.4822, 0.4465), (0.2471, 0.2435, 0.2616)
+    return None
+
+
+def _channel_tensor(values, samples):
+    shape = [1, len(values)] + [1] * max(samples.dim() - 2, 0)
+    return torch.tensor(values, dtype=samples.dtype, device=samples.device).view(*shape)
+
+
+def _fgsm_step_and_clamp(samples, grad, epsilon):
+    normalization = _get_image_normalization_for_samples(samples)
+    if normalization is None:
+        return samples + epsilon * grad.sign()
+
+    mean, std = normalization
+    mean = _channel_tensor(mean, samples)
+    std = _channel_tensor(std, samples)
+
+    normalized_epsilon = float(epsilon) / std
+    lower = (0.0 - mean) / std
+    upper = (1.0 - mean) / std
+
+    x_adv = samples + normalized_epsilon * grad.sign()
+    x_adv = torch.max(torch.min(x_adv, samples + normalized_epsilon), samples - normalized_epsilon)
+    return torch.max(torch.min(x_adv, upper), lower)
+
+
 def fgsm_attack(model, samples, labels, epsilon=0.03):
     """
         Performs an FGSM (Fast Gradient Sign Method) adversarial attack on a batch of samples.
@@ -1890,11 +1925,8 @@ def fgsm_attack(model, samples, labels, epsilon=0.03):
     outputs = model(samples)
     logits = outputs[0] if isinstance(outputs, (tuple, list)) else outputs
     loss = nn.CrossEntropyLoss()(logits, labels)
-    model.zero_grad()
-    loss.backward()
-
-    perturbation = epsilon * samples.grad.sign()
-    x_adv = samples + perturbation
+    grad = torch.autograd.grad(loss, samples, only_inputs=True)[0]
+    x_adv = _fgsm_step_and_clamp(samples, grad, epsilon)
 
     return x_adv.detach()
 

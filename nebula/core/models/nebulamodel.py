@@ -88,6 +88,13 @@ class NebulaModel(pl.LightningModule, ABC):
                 key: float(value.detach().cpu().item()) for key, value in output.items()
             }
 
+        if phase == "Train" and self._train_extra_metrics:
+            output.update({
+                f"{phase}/{key}": torch.tensor(value["sum"] / value["count"], device=self.device)
+                for key, value in self._train_extra_metrics.items()
+                if value["count"] > 0
+            })
+
         self.logger.log_data(output, step=self.global_number[phase])
 
         metrics_str = ""
@@ -206,10 +213,12 @@ class NebulaModel(pl.LightningModule, ABC):
         self._optimizer = None
         self._optimizer_override = None
         self._latest_validation_metrics = {}
+        self._train_extra_metrics = {}
 
         self.dp_enabled = False
         self.dp_epsilon = None
         self.dp_delta = None
+        self.adversarial_training = None
 
     def set_optimizer_override(self, optimizer):
         self._optimizer_override = optimizer
@@ -220,6 +229,12 @@ class NebulaModel(pl.LightningModule, ABC):
 
     def get_optimizer_override(self):
         return self._optimizer_override
+
+    def set_adversarial_training(self, adversarial_training):
+        self.adversarial_training = adversarial_training
+
+    def clear_adversarial_training(self):
+        self.adversarial_training = None
 
     def set_communication_manager(self, communication_manager):
         self.communication_manager = communication_manager
@@ -242,12 +257,34 @@ class NebulaModel(pl.LightningModule, ABC):
     def step(self, batch, batch_idx, phase):
         """Training/validation/test step."""
         x, y = batch
-        y_pred = self.forward(x)
-        loss = self.criterion(y_pred, y)
+        extra_metrics = {}
+        if phase == "Train" and self.adversarial_training is not None:
+            loss, y_pred, extra_metrics = self.adversarial_training.compute_training_step(
+                self,
+                x,
+                y,
+                self.criterion,
+            )
+        else:
+            y_pred = self.forward(x)
+            loss = self.criterion(y_pred, y)
+
         self.process_metrics(phase, y_pred, y, loss)
+        if phase == "Train" and extra_metrics:
+            self._log_training_extra_metrics(extra_metrics)
 
         self._current_loss = loss
         return loss
+
+    def _log_training_extra_metrics(self, metrics):
+        if self.logger is None:
+            return
+        detached_metrics = {key: value.detach() for key, value in metrics.items()}
+        for key, value in detached_metrics.items():
+            metric = self._train_extra_metrics.setdefault(key, {"sum": 0.0, "count": 0})
+            metric["sum"] += float(value.cpu().item())
+            metric["count"] += 1
+        self.logger.log_data({f"Train/{key}": value for key, value in detached_metrics.items()})
 
     def get_loss(self):
         return self._current_loss
@@ -294,6 +331,7 @@ class NebulaModel(pl.LightningModule, ABC):
     def on_train_epoch_end(self):
         self.log_metrics_end("Train")
         self.train_metrics.reset()
+        self._train_extra_metrics = {}
         self.global_number["Train"] += 1
 
     def validation_step(self, batch, batch_idx):
@@ -370,6 +408,7 @@ class NebulaModelStandalone(NebulaModel):
     def on_train_epoch_end(self):
         self.log_metrics_end("Train")
         self.train_metrics.reset()
+        self._train_extra_metrics = {}
         # NebulaModel registers training rounds
         # NebulaModelStandalone register the global number of epochs instead of rounds
         self.global_number["Train"] += 1

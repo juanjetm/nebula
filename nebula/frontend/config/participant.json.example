@@ -109,6 +109,20 @@
       "apply_to_test": true,
       "apply_to_local_test": true
     },
+    "adversarial_training": {
+      "enabled": false,
+      "domain": "image",
+      "attack": "fgsm",
+      "epsilon": 0.03,
+      "steps": 1,
+      "clean_weight": 0.5,
+      "adversarial_weight": 0.5,
+      "mode": "mixed",
+      "apply_probability": 1.0,
+      "clip_min": 0.0,
+      "clip_max": 1.0,
+      "log_adversarial_metrics": true
+    },
     "reputation": {
       "enabled": false,
       "metrics": {},

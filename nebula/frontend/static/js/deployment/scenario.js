@@ -76,6 +76,7 @@ const ScenarioManager = (function () {
             epochs: parseInt(document.getElementById("epochs").value),
             dp: window.DpManager.getDpConfig(),
             feature_squeezing: window.FeatureSqueezingManager.getFeatureSqueezingConfig(),
+            adversarial_training: window.AdversarialTrainingManager.getAdversarialTrainingConfig(),
             attack_params: attackConfig,
             reputation: {
                 enabled: window.ReputationManager.getReputationConfig().enabled || false,
@@ -271,6 +272,9 @@ const ScenarioManager = (function () {
         if (window.FeatureSqueezingManager) {
             window.FeatureSqueezingManager.setFeatureSqueezingConfig(scenario.feature_squeezing);
         }
+        if (window.AdversarialTrainingManager) {
+            window.AdversarialTrainingManager.setAdversarialTrainingConfig(scenario.adversarial_training);
+        }
 
         // Load module configurations
         if (scenario.attacks && scenario.attacks.length > 0) {
@@ -449,6 +453,9 @@ const ScenarioManager = (function () {
         }
         if (window.FeatureSqueezingManager) {
             window.FeatureSqueezingManager.resetFeatureSqueezingConfig();
+        }
+        if (window.AdversarialTrainingManager) {
+            window.AdversarialTrainingManager.resetAdversarialTrainingConfig();
         }
 
         // Trigger necessary events

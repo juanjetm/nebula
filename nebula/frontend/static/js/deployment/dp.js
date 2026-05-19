@@ -16,8 +16,26 @@ const DpManager = (function() {
         if (!dpSwitch) return;
 
         dpSwitch.addEventListener("change", function() {
+            if (this.checked) {
+                disableAdversarialTraining();
+            }
             toggleDpSettings(this.checked);
         });
+    }
+
+    function disableAdversarialTraining() {
+        if (window.AdversarialTrainingManager) {
+            window.AdversarialTrainingManager.setAdversarialTrainingConfig({enabled: false});
+        }
+
+        const adversarialTrainingSwitch = document.getElementById("adversarialTrainingSwitch");
+        const adversarialTrainingSettings = document.getElementById("adversarial-training-settings");
+        if (adversarialTrainingSwitch) {
+            adversarialTrainingSwitch.checked = false;
+        }
+        if (adversarialTrainingSettings) {
+            adversarialTrainingSettings.style.display = "none";
+        }
     }
 
     function toggleDpSettings(enabled) {

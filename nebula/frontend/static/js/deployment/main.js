@@ -10,6 +10,7 @@ import Utils from './utils.js';
 import TrustworthinessManager from './trustworthiness.js';
 import DpManager from './dp.js';
 import FeatureSqueezingManager from './feature-squeezing.js';
+import AdversarialTrainingManager from './adversarial-training.js';
 
 const DeploymentManager = (function() {
     function initialize() {
@@ -35,6 +36,7 @@ const DeploymentManager = (function() {
         TrustworthinessManager.initializeTrustworthinessSystem();
         DpManager.initializeDifferentialPrivacy();
         FeatureSqueezingManager.initializeFeatureSqueezing();
+        AdversarialTrainingManager.initializeAdversarialTraining();
         GraphSettings.initializeDistanceControls();
 
         // Make modules globally available
@@ -47,6 +49,7 @@ const DeploymentManager = (function() {
         window.TrustworthinessManager = TrustworthinessManager;
         window.DpManager = DpManager;
         window.FeatureSqueezingManager = FeatureSqueezingManager;
+        window.AdversarialTrainingManager = AdversarialTrainingManager;
         window.GraphSettings = GraphSettings;
         window.DeploymentManager = DeploymentManager;
         window.Utils = Utils;
@@ -123,7 +126,21 @@ const DeploymentManager = (function() {
             return false;
         }
 
+        const adversarialTrainingValidationMessage = validateAdversarialTraining();
+        if (adversarialTrainingValidationMessage) {
+            Utils.showAlert('error', adversarialTrainingValidationMessage);
+            return false;
+        }
+
         return true;
+    }
+
+    function validateAdversarialTraining() {
+        const manager = window.AdversarialTrainingManager || AdversarialTrainingManager;
+        if (manager && typeof manager.validateConfig === "function") {
+            return manager.validateConfig();
+        }
+        return null;
     }
 
     function validateTrustworthinessWeights() {

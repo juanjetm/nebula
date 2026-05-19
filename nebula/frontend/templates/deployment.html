@@ -556,15 +556,108 @@
                         <input class="form-check-input" type="checkbox" id="featureSqueezingSwitch"
                             style="display: inline; width: 80px; height: 30px;">
                     </div>
+                    <small id="feature-squeezing-dataset-note" class="form-text text-muted" style="display: none;">
+                        Feature Squeezing is currently available only for image datasets.
+                    </small>
                     <div id="feature-squeezing-settings" style="margin-top: 10px; display: none;">
                         <h5 class="step-title">n (bit depth)</h5>
                         <div class="form-check form-check-inline">
-                            <input type="number" class="form-control" id="featureSqueezingN"
-                                placeholder="n" min="1" max="64" step="1" value="4"
+                            <select class="form-control" id="featureSqueezingN"
                                 style="display: inline; width: 80%">
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="4" selected>4</option>
+                                <option value="8">8</option>
+                                <option value="16">16</option>
+                                <option value="32">32</option>
+                                <option value="64">64</option>
+                            </select>
                         </div>
                         <small class="form-text text-muted">
                             Applies only to image datasets.
+                        </small>
+                    </div>
+                </div>
+                <!-- Adversarial Training -->
+                <div class="form-group row container-shadow tiny grey">
+                    <h5 class="step-number">Adversarial Training <i class="fa fa-shield"></i>
+                    </h5>
+                    <h5 class="step-title">Enable/Disable Adversarial Training</h5>
+                    <div class="form-check form-switch" style="margin-left: 23px;">
+                        <input class="form-check-input" type="checkbox" id="adversarialTrainingSwitch"
+                            style="display: inline; width: 80px; height: 30px;">
+                    </div>
+                    <small id="adversarial-training-dataset-note" class="form-text text-muted" style="display: none;">
+                        Adversarial Training is currently available only for image datasets.
+                    </small>
+                    <div id="adversarial-training-settings" style="margin-top: 10px; display: none;">
+                        <input type="hidden" id="adversarialTrainingDomain" value="image">
+                        <h5 class="step-title">Attack</h5>
+                        <div class="form-check form-check-inline">
+                            <select class="form-control" id="adversarialTrainingAttack"
+                                style="display: inline; width: 80%">
+                                <option value="fgsm" selected>FGSM</option>
+                                <option value="pgd">PGD</option>
+                            </select>
+                        </div>
+                        <h5 class="step-title">Epsilon</h5>
+                        <div class="form-check form-check-inline">
+                            <input type="number" class="form-control" id="adversarialTrainingEpsilon"
+                                placeholder="Epsilon" min="0" step="0.001" value="0.031372549"
+                                style="display: inline; width: 80%">
+                        </div>
+                        <div id="adversarial-training-pgd-settings" style="display: none;">
+                            <h5 class="step-title">PGD steps</h5>
+                            <div class="form-check form-check-inline">
+                                <input type="number" class="form-control" id="adversarialTrainingSteps"
+                                    placeholder="Steps" min="1" step="1" value="1"
+                                    style="display: inline; width: 80%">
+                            </div>
+                            <input type="hidden" id="adversarialTrainingAlpha" value="">
+                        </div>
+                        <h5 class="step-title">Training mode</h5>
+                        <div class="form-check form-check-inline">
+                            <select class="form-control" id="adversarialTrainingMode"
+                                style="display: inline; width: 80%">
+                                <option value="mixed" selected>Clean + adversarial</option>
+                                <option value="adversarial">Adversarial only</option>
+                                <option value="clean">Clean only</option>
+                            </select>
+                        </div>
+                        <details style="margin-top: 10px;">
+                            <summary class="step-title" style="cursor: pointer;">Advanced parameters</summary>
+                            <h5 class="step-title">Loss weights</h5>
+                            <div class="form-check form-check-inline">
+                                <input type="number" class="form-control" id="adversarialTrainingCleanWeight"
+                                    placeholder="Clean weight" min="0" step="0.1" value="0.5"
+                                    style="display: inline; width: 39%">
+                                <input type="number" class="form-control" id="adversarialTrainingAdversarialWeight"
+                                    placeholder="Adversarial weight" min="0" step="0.1" value="0.5"
+                                    style="display: inline; width: 39%">
+                            </div>
+                            <h5 class="step-title">Apply probability</h5>
+                            <div class="form-check form-check-inline">
+                                <input type="number" class="form-control" id="adversarialTrainingApplyProbability"
+                                    placeholder="Probability" min="0" max="1" step="0.05" value="1.0"
+                                    style="display: inline; width: 80%">
+                            </div>
+                            <h5 class="step-title">Pixel bounds</h5>
+                            <div class="form-check form-check-inline">
+                                <input type="number" class="form-control" id="adversarialTrainingClipMin"
+                                    placeholder="Min" step="0.1" value="0.0"
+                                    style="display: inline; width: 39%">
+                                <input type="number" class="form-control" id="adversarialTrainingClipMax"
+                                    placeholder="Max" step="0.1" value="1.0"
+                                    style="display: inline; width: 39%">
+                            </div>
+                            <h5 class="step-title">Log adversarial metrics</h5>
+                            <div class="form-check form-switch" style="margin-left: 23px;">
+                                <input class="form-check-input" type="checkbox" id="adversarialTrainingLogMetrics"
+                                    checked style="display: inline; width: 80px; height: 30px;">
+                            </div>
+                        </details>
+                        <small class="form-text text-muted">
+                            Epsilon and bounds use pixel scale; Nebula converts them to the normalized tensor space.
                         </small>
                     </div>
                 </div>

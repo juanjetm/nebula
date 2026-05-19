@@ -19,6 +19,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 import logging
 from collections import Counter
 
+from nebula.addons.defenses.adversarial_training import apply_adversarial_training_if_enabled
 from nebula.addons.defenses.feature_squeezing import apply_feature_squeezing_if_enabled
 from nebula.config.config import Config
 from nebula.core.datasets.cifar10.cifar10 import CIFAR10PartitionHandler
@@ -189,6 +190,7 @@ async def main(config: Config):
     dataset = NebulaPartition(handler=handler, config=config)
     dataset.load_partition()
     apply_feature_squeezing_if_enabled(dataset, config.participant)
+    apply_adversarial_training_if_enabled(model, config.participant)
     dataset.log_partition()
     samples_per_label = Counter(dataset.get_train_labels())
 

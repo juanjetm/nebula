@@ -117,6 +117,7 @@ class Scenario:
         sar_training_policy,
         dp=None,
         feature_squeezing=None,
+        adversarial_training=None,
         physical_ips=None,
     ):
         """
@@ -196,6 +197,7 @@ class Scenario:
         self.epochs = epochs
         self.dp = dp
         self.feature_squeezing = feature_squeezing
+        self.adversarial_training = adversarial_training
         self.attack_params = attack_params
         self.reputation = reputation
         self.random_geo = random_geo
@@ -728,6 +730,46 @@ class ScenarioManagement:
             bit_depth = feature_squeezing.get("bit_depth", feature_squeezing.get("n"))
             if bit_depth is not None:
                 participant_config["defense_args"]["feature_squeezing"]["bit_depth"] = int(bit_depth)
+            adversarial_training = (
+                self.scenario.adversarial_training if isinstance(self.scenario.adversarial_training, dict) else {}
+            )
+            participant_config["defense_args"].setdefault("adversarial_training", {})
+            participant_config["defense_args"]["adversarial_training"]["enabled"] = bool(
+                adversarial_training.get("enabled", False)
+            )
+            if "domain" in adversarial_training:
+                participant_config["defense_args"]["adversarial_training"]["domain"] = str(
+                    adversarial_training["domain"]
+                )
+            if "attack" in adversarial_training:
+                participant_config["defense_args"]["adversarial_training"]["attack"] = str(
+                    adversarial_training["attack"]
+                )
+            for key in (
+                "epsilon",
+                "alpha",
+                "clean_weight",
+                "adversarial_weight",
+                "apply_probability",
+                "clip_min",
+                "clip_max",
+            ):
+                if key in adversarial_training and adversarial_training[key] is not None:
+                    participant_config["defense_args"]["adversarial_training"][key] = float(
+                        adversarial_training[key]
+                    )
+            if "steps" in adversarial_training:
+                participant_config["defense_args"]["adversarial_training"]["steps"] = int(
+                    adversarial_training["steps"]
+                )
+            if "mode" in adversarial_training:
+                participant_config["defense_args"]["adversarial_training"]["mode"] = str(
+                    adversarial_training["mode"]
+                )
+            if "log_adversarial_metrics" in adversarial_training:
+                participant_config["defense_args"]["adversarial_training"]["log_adversarial_metrics"] = bool(
+                    adversarial_training["log_adversarial_metrics"]
+                )
             participant_config["device_args"]["accelerator"] = self.scenario.accelerator
             participant_config["device_args"]["gpu_id"] = self.scenario.gpu_id
             participant_config["device_args"]["logging"] = self.scenario.logginglevel
