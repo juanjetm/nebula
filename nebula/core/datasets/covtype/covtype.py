@@ -18,7 +18,14 @@ class CovtypeTorchDataset(Dataset):
         x: torch.float32 tensor of shape (n_features,)
         y: torch.long scalar in [0, num_classes-1]
     """
-    def __init__(self, x: np.ndarray, y: np.ndarray):
+    def __init__(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        feature_names: list[str] | None = None,
+        continuous_features: list[int] | None = None,
+        binary_features: list[int] | None = None,
+    ):
         if not isinstance(x, np.ndarray) or not isinstance(y, np.ndarray):
             raise ValueError("x and y must be numpy arrays")
 
@@ -38,6 +45,10 @@ class CovtypeTorchDataset(Dataset):
 
         n_classes = int(np.max(self.targets)) + 1
         self.classes = [str(i) for i in range(n_classes)]
+        self.feature_names = feature_names or [f"feature_{i}" for i in range(self.x.shape[1])]
+        self.continuous_features = continuous_features or []
+        self.binary_features = binary_features or []
+        self.input_dim = int(self.x.shape[1])
 
     def __len__(self) -> int:
         return int(self.y.shape[0])
@@ -150,6 +161,7 @@ class CovtypeDataset(NebulaDataset):
         try:
             from sklearn.datasets import fetch_covtype
             from sklearn.model_selection import train_test_split
+            from sklearn.preprocessing import StandardScaler
         except Exception as e:
             raise ImportError(
                 "CovtypeDataset requires scikit-learn. Install it (e.g., pip install scikit-learn)."
@@ -159,6 +171,12 @@ class CovtypeDataset(NebulaDataset):
 
         x = cov.data
         y = cov.target  # commonly 1..7 in sklearn
+        feature_names = getattr(cov, "feature_names", None)
+        if feature_names is None:
+            feature_names = [f"feature_{i}" for i in range(x.shape[1])]
+        feature_names = [str(name) for name in feature_names]
+        continuous_features = list(range(min(10, x.shape[1])))
+        binary_features = [i for i in range(x.shape[1]) if i not in continuous_features]
 
         # Map labels to 0..6 (CrossEntropyLoss convention)
         # If already 0..6, this is harmless for 1..7 only if we detect min.
@@ -194,8 +212,28 @@ class CovtypeDataset(NebulaDataset):
                 stratify=y_test,
             )
 
-        train_ds = CovtypeTorchDataset(x_train, y_train)
-        test_ds = CovtypeTorchDataset(x_test, y_test)
+        # Covtype has continuous features followed by binary wilderness/soil indicators.
+        # Scale only the continuous block; keep binary indicators as 0/1.
+        scaler = StandardScaler()
+        x_train = np.asarray(x_train, dtype=np.float32).copy()
+        x_test = np.asarray(x_test, dtype=np.float32).copy()
+        x_train[:, continuous_features] = scaler.fit_transform(x_train[:, continuous_features])
+        x_test[:, continuous_features] = scaler.transform(x_test[:, continuous_features])
+
+        train_ds = CovtypeTorchDataset(
+            x_train,
+            y_train,
+            feature_names=feature_names,
+            continuous_features=continuous_features,
+            binary_features=binary_features,
+        )
+        test_ds = CovtypeTorchDataset(
+            x_test,
+            y_test,
+            feature_names=feature_names,
+            continuous_features=continuous_features,
+            binary_features=binary_features,
+        )
 
         return train_ds, test_ds
 

@@ -59,3 +59,6 @@ class CIFAR10ModelCNN(NebulaModel):
 
     def get_num_classes(self):
         return self.num_classes
+
+    def get_data_type(self):
+        return self.data_type

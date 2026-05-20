@@ -1109,7 +1109,7 @@ class ScenarioManagement:
             )
         elif dataset_name == "KDDCUP99":
             dataset = KDDCUP99Dataset(
-                num_classes=2,
+                num_classes=23,
                 partitions_number=self.n_nodes,
                 iid=self.scenario.iid,
                 partition=self.scenario.partition_selection,

@@ -16,7 +16,14 @@ class KDDCUP99TorchDataset(Dataset):
         x: torch.float32 tensor of shape (n_features,)
         y: torch.long scalar in [0, num_classes-1]
     """
-    def __init__(self, x: np.ndarray, y: np.ndarray):
+    def __init__(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        feature_names: list[str] | None = None,
+        continuous_features: list[int] | None = None,
+        binary_features: list[int] | None = None,
+    ):
         if not isinstance(x, np.ndarray) or not isinstance(y, np.ndarray):
             raise ValueError("x and y must be numpy arrays")
 
@@ -36,6 +43,10 @@ class KDDCUP99TorchDataset(Dataset):
 
         n_classes = int(np.max(self.targets)) + 1
         self.classes = [str(i) for i in range(n_classes)]
+        self.feature_names = feature_names or [f"feature_{i}" for i in range(self.x.shape[1])]
+        self.continuous_features = continuous_features or []
+        self.binary_features = binary_features or []
+        self.input_dim = int(self.x.shape[1])
 
     def __len__(self) -> int:
         return int(self.y.shape[0])
@@ -152,6 +163,7 @@ class KDDCUP99Dataset(NebulaDataset):
             import pandas as pd
             from sklearn.datasets import fetch_kddcup99
             from sklearn.model_selection import train_test_split
+            from sklearn.preprocessing import StandardScaler
         except Exception as e:
             raise ImportError(
                 "KDDCUP99Dataset requires scikit-learn and pandas. "
@@ -190,12 +202,14 @@ class KDDCUP99Dataset(NebulaDataset):
                 x[col] = x[col].map(_decode_if_bytes)
 
         y = y.map(_decode_if_bytes)
+        numeric_columns = x.select_dtypes(exclude=["object", "category"]).columns.tolist()
 
         # One-hot encode categorical columns, keep numeric ones as-is.
         x = pd.get_dummies(x, drop_first=False)
-
-        # Ensure fully numeric dense matrix
-        x = x.astype(np.float32).to_numpy(copy=False)
+        feature_names = [str(col) for col in x.columns]
+        numeric_columns = [col for col in numeric_columns if col in x.columns]
+        continuous_features = [x.columns.get_loc(col) for col in numeric_columns]
+        binary_features = [i for i in range(len(feature_names)) if i not in continuous_features]
 
         # Map labels to 0..num_classes-1 deterministically
         y = pd.Series(y).astype(str)
@@ -234,8 +248,29 @@ class KDDCUP99Dataset(NebulaDataset):
                 stratify=y_test,
             )
 
-        train_ds = KDDCUP99TorchDataset(x_train, y_train)
-        test_ds = KDDCUP99TorchDataset(x_test, y_test)
+        x_train_np = x_train.astype(np.float32).to_numpy(copy=True)
+        x_test_np = x_test.astype(np.float32).to_numpy(copy=True)
+
+        # Scale the original numeric columns after splitting. One-hot columns stay binary.
+        if continuous_features:
+            scaler = StandardScaler()
+            x_train_np[:, continuous_features] = scaler.fit_transform(x_train_np[:, continuous_features])
+            x_test_np[:, continuous_features] = scaler.transform(x_test_np[:, continuous_features])
+
+        train_ds = KDDCUP99TorchDataset(
+            x_train_np,
+            y_train,
+            feature_names=feature_names,
+            continuous_features=continuous_features,
+            binary_features=binary_features,
+        )
+        test_ds = KDDCUP99TorchDataset(
+            x_test_np,
+            y_test,
+            feature_names=feature_names,
+            continuous_features=continuous_features,
+            binary_features=binary_features,
+        )
 
         # Optional: preserve original class names for inspection/debugging
         train_ds.classes = classes

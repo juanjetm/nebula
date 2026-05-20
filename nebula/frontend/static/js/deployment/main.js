@@ -132,7 +132,21 @@ const DeploymentManager = (function() {
             return false;
         }
 
+        const attackValidationMessage = validateAttack();
+        if (attackValidationMessage) {
+            Utils.showAlert('error', attackValidationMessage);
+            return false;
+        }
+
         return true;
+    }
+
+    function validateAttack() {
+        const manager = window.AttackManager || AttackManager;
+        if (manager && typeof manager.validateConfig === "function") {
+            return manager.validateConfig();
+        }
+        return null;
     }
 
     function validateAdversarialTraining() {

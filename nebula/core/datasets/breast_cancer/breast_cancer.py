@@ -14,7 +14,7 @@ class BreastCancerTorchDataset(Dataset):
     x: float32 tensor (n_features,)
     y: long scalar {0,1}
     """
-    def __init__(self, x: np.ndarray, y: np.ndarray):
+    def __init__(self, x: np.ndarray, y: np.ndarray, feature_names: list[str] | None = None):
         if not isinstance(x, np.ndarray) or not isinstance(y, np.ndarray):
             raise ValueError("x and y must be numpy arrays")
 
@@ -32,6 +32,10 @@ class BreastCancerTorchDataset(Dataset):
         self.data = self.x
         self.targets = self.y
         self.classes = ["0", "1"]
+        self.feature_names = feature_names or [f"feature_{i}" for i in range(self.x.shape[1])]
+        self.continuous_features = list(range(self.x.shape[1]))
+        self.binary_features = []
+        self.input_dim = int(self.x.shape[1])
 
     def __len__(self) -> int:
         return int(self.y.shape[0])
@@ -120,6 +124,7 @@ class BreastCancerDataset(NebulaDataset):
         try:
             from sklearn.datasets import load_breast_cancer
             from sklearn.model_selection import train_test_split
+            from sklearn.preprocessing import StandardScaler
         except Exception as e:
             raise ImportError(
                 "BreastCancerDataset requires scikit-learn. Install it (e.g., pip install scikit-learn)."
@@ -128,6 +133,7 @@ class BreastCancerDataset(NebulaDataset):
         ds = load_breast_cancer()
         x = np.asarray(ds.data)
         y = np.asarray(ds.target).reshape(-1)  # already 0/1
+        feature_names = [str(name) for name in ds.feature_names]
 
         x_train, x_test, y_train, y_test = train_test_split(
             x,
@@ -138,8 +144,12 @@ class BreastCancerDataset(NebulaDataset):
             stratify=y,
         )
 
-        train_ds = BreastCancerTorchDataset(x_train, y_train)
-        test_ds = BreastCancerTorchDataset(x_test, y_test)
+        scaler = StandardScaler()
+        x_train = scaler.fit_transform(x_train)
+        x_test = scaler.transform(x_test)
+
+        train_ds = BreastCancerTorchDataset(x_train, y_train, feature_names=feature_names)
+        test_ds = BreastCancerTorchDataset(x_test, y_test, feature_names=feature_names)
 
         return train_ds, test_ds
 

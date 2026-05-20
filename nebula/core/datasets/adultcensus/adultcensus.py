@@ -16,7 +16,14 @@ class AdultCensusTorchDataset(Dataset):
     x: float32 tensor (n_features,)
     y: long scalar {0,1} where 1 means >50K
     """
-    def __init__(self, x: np.ndarray, y: np.ndarray):
+    def __init__(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        feature_names: list[str] | None = None,
+        continuous_features: list[int] | None = None,
+        binary_features: list[int] | None = None,
+    ):
         if not isinstance(x, np.ndarray) or not isinstance(y, np.ndarray):
             raise ValueError("x and y must be numpy arrays")
 
@@ -34,6 +41,10 @@ class AdultCensusTorchDataset(Dataset):
         self.data: np.ndarray = self.x
         self.targets: np.ndarray = self.y
         self.classes: list[str] = ["<=50K", ">50K"]
+        self.feature_names = feature_names or [f"feature_{i}" for i in range(self.x.shape[1])]
+        self.continuous_features = continuous_features or []
+        self.binary_features = binary_features or []
+        self.input_dim = int(self.x.shape[1])
 
     def __len__(self) -> int:
         return int(self.y.shape[0])
@@ -209,6 +220,10 @@ class AdultCensusDataset(NebulaDataset):
 
         X_train = preprocessor.fit_transform(X_train_df)
         X_test = preprocessor.transform(X_test_df)
+        try:
+            feature_names = [str(name) for name in preprocessor.get_feature_names_out()]
+        except Exception:
+            feature_names = [f"feature_{i}" for i in range(X_train.shape[1])]
 
         # In case some sklearn path returns sparse matrices, densify safely
         if hasattr(X_train, "toarray"):
@@ -221,9 +236,29 @@ class AdultCensusDataset(NebulaDataset):
         logging.getLogger().info(f"[AdultCensus] X_train shape = {X_train_np.shape}")
         logging.getLogger().info(f"[AdultCensus] INPUT_DIM (post-OHE) = {int(X_train_np.shape[1])}")
         X_test_np: np.ndarray = np.asarray(X_test, dtype=np.float32)
+        continuous_features = [
+            idx for idx, name in enumerate(feature_names)
+            if name.startswith("num__")
+        ]
+        binary_features = [
+            idx for idx, name in enumerate(feature_names)
+            if name.startswith("cat__")
+        ]
 
-        train_ds = AdultCensusTorchDataset(X_train_np, np.asarray(y_train, dtype=np.int64))
-        test_ds = AdultCensusTorchDataset(X_test_np, np.asarray(y_test, dtype=np.int64))
+        train_ds = AdultCensusTorchDataset(
+            X_train_np,
+            np.asarray(y_train, dtype=np.int64),
+            feature_names=feature_names,
+            continuous_features=continuous_features,
+            binary_features=binary_features,
+        )
+        test_ds = AdultCensusTorchDataset(
+            X_test_np,
+            np.asarray(y_test, dtype=np.int64),
+            feature_names=feature_names,
+            continuous_features=continuous_features,
+            binary_features=binary_features,
+        )
 
         return train_ds, test_ds
 
