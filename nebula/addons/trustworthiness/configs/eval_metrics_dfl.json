@@ -11,10 +11,9 @@
               }
             ],
             "operation": "get_value",
-            "score_function": "get_range_score",
             "type": "true_score",
             "description": "Cross Lipschitz Extreme Value for network Robustness: attack-agnostic estimator of the lower bound βL",
-            "weight": 0.4
+            "weight": 0.2
           },
           "inverse_loss_sensitivity": {
             "inputs": [
@@ -24,9 +23,8 @@
               }
             ],
             "operation": "get_value",
-            "score_function": "get_range_score",
             "type": "true_score",
-            "description": "",
+            "description": "Inverse loss sensitivity score; higher values indicate lower sensitivity of the loss to input perturbations.",
             "weight": 0.2
           },
           "clipped_adversarial_accuracy": {
@@ -37,10 +35,9 @@
               }
             ],
             "operation": "get_value",
-            "score_function": "get_range_score",
             "type": "true_score",
-            "description": "",
-            "weight": 0.1
+            "description": "Adversarial accuracy clipped to the expected score range; higher values indicate better predictive performance under adversarial perturbations.",
+            "weight": 0.2
           },
           "clipped_empirical_robustness": {
             "inputs": [
@@ -50,10 +47,9 @@
               }
             ],
             "operation": "get_value",
-            "score_function": "get_range_score",
             "type": "true_score",
-            "description": "",
-            "weight": 0.1
+            "description": "Empirical robustness clipped to the expected score range; higher values indicate stronger resistance to adversarial perturbations.",
+            "weight": 0.15
           },
           "clipped_confidence_score": {
             "inputs": [
@@ -63,9 +59,8 @@
               }
             ],
             "operation": "get_value",
-            "score_function": "get_range_score",
             "type": "true_score",
-            "description": "",
+            "description": "Confidence score clipped to the expected score range; higher values indicate more stable predictive confidence.",
             "weight": 0.1
           },
           "inverse_attack_success_rate": {
@@ -76,10 +71,9 @@
               }
             ],
             "operation": "get_value",
-            "score_function": "get_range_score",
             "type": "true_score",
-            "description": "",
-            "weight": 0.1
+            "description": "Inverse attack success rate; higher values indicate a lower fraction of successful adversarial attacks.",
+            "weight": 0.15
           }
         }
       },
@@ -94,10 +88,9 @@
               }
             ],
             "operation": "get_value",
-            "score_function": "get_true_score",
             "type": "true_score",
             "description": "Local clean test accuracy of the final model.",
-            "weight": 0.3
+            "weight": 0.4
           },
           "macro_f1": {
             "inputs": [
@@ -109,7 +102,7 @@
             "operation": "get_value",
             "type": "true_score",
             "description": "Macro F1 score of the final local model on test data.",
-            "weight": 0.3
+            "weight": 0.4
           },
           "personalization": {
             "inputs": [
@@ -121,7 +114,7 @@
             "operation": "get_value",
             "type": "true_score",
             "description": "The use of personalized FL algorithm.",
-            "weight": 0.2
+            "weight": 0.1
           },
           "reputation_enabled": {
             "inputs": [
@@ -133,7 +126,7 @@
             "operation": "get_value",
             "type": "true_score",
             "description": "The use of an active reputation-based defense mechanism.",
-            "weight": 0.2
+            "weight": 0.1
           }
         }
       },
@@ -152,7 +145,7 @@
             "direction": "desc",
             "ranges": [5, 10, 15, 20, 25, 30, 35, 40, 45, 50],
             "description": "The number of clients in the model.",
-            "weight": 0.3
+            "weight": 0.1
           },
           "average_neighbor_reputation": {
             "inputs": [
@@ -164,7 +157,7 @@
             "operation": "get_value",
             "type": "true_score",
             "description": "Average reputation score of the neighbors associated with the node.",
-            "weight": 0.3
+            "weight": 0.4
           },
           "dropout_rate": {
             "inputs": [
@@ -177,7 +170,7 @@
             "type": "true_score",
             "direction": "desc",
             "description": "Fraction of expected neighbor updates that were not received across rounds.",
-            "weight": 0.2
+            "weight": 0.25
           },
           "timeout_rate": {
             "inputs": [
@@ -190,7 +183,7 @@
             "type": "true_score",
             "direction": "desc",
             "description": "Fraction of aggregation rounds that finished with missing expected neighbor updates.",
-            "weight": 0.2
+            "weight": 0.25
           }
         }
       }
@@ -306,7 +299,6 @@
             ],
             "operation": "get_value",
             "type": "true_score",
-            "direction": "desc",
             "description": "Variation of the sample size per class.",
             "weight": 0.5
           }
@@ -325,7 +317,7 @@
             "operation": "get_value",
             "type": "true_score",
             "description": "Held-out performance proxy used as an outcome-level fairness signal.",
-            "weight": 0.1667
+            "weight": 0.1
           },
           "inverse_overfitting": {
             "inputs": [
@@ -337,7 +329,7 @@
             "operation": "get_value",
             "type": "true_score",
             "description": "Generalization quality proxy transformed so higher is better.",
-            "weight": 0.1667
+            "weight": 0.15
           },
           "inverse_well_calibration_error": {
             "inputs": [
@@ -349,7 +341,7 @@
             "operation": "get_value",
             "type": "true_score",
             "description": "Calibration quality of the predictive outputs represented as a trust-oriented score.",
-            "weight": 0.1667
+            "weight": 0.2
           },
           "inverse_generalized_entropy_index": {
             "inputs": [
@@ -361,7 +353,7 @@
             "operation": "get_value",
             "type": "true_score",
             "description": "Outcome inequality score transformed so higher values indicate better fairness.",
-            "weight": 0.1667
+            "weight": 0.2
           },
           "inverse_theil_index": {
             "inputs": [
@@ -373,7 +365,7 @@
             "operation": "get_value",
             "type": "true_score",
             "description": "Theil-based outcome inequality score transformed so higher values indicate better fairness.",
-            "weight": 0.1667
+            "weight": 0.2
           },
           "inverse_coefficient_of_variation": {
             "inputs": [
@@ -385,7 +377,7 @@
             "operation": "get_value",
             "type": "true_score",
             "description": "Coefficient-of-variation-based outcome fairness score.",
-            "weight": 0.1665
+            "weight": 0.15
           }
         }
       }
@@ -765,7 +757,7 @@
               },
               {
                 "source": "factsheet",
-                "field_path": "privacy/inveres_epsilon_star"
+                "field_path": "privacy/inverse_epsilon_star"
               },
               {
                 "source": "factsheet",
@@ -778,7 +770,7 @@
             ],
             "operation": "check_properties",
             "type": "property_check",
-            "description": "System usage information.",
+            "description": "Privacy metrics and risk estimates documented in the factsheet.",
             "weight": 0.1
           },
           "explainability": {
@@ -798,7 +790,7 @@
             ],
             "operation": "check_properties",
             "type": "property_check",
-            "description": "System usage information.",
+            "description": "Explainability metrics documented in the factsheet.",
             "weight": 0.1
           },
           "sustainability": {
@@ -822,7 +814,7 @@
             ],
             "operation": "check_properties",
             "type": "property_check",
-            "description": "System usage information.",
+            "description": "Sustainability and emissions metrics documented in the factsheet.",
             "weight": 0.1
           }
         }
@@ -847,7 +839,7 @@
     },
     "architectural_soundness": {
       "client_management": {
-        "weight": 0.5,
+        "weight": 0.25,
         "metrics": {
           "client_selector": {
             "inputs": [
@@ -891,7 +883,7 @@
         }
       },
       "federation_management": {
-        "weight": 0.5,
+        "weight": 0.25,
         "metrics": {
           "topology_type": {
             "inputs": [
@@ -945,10 +937,10 @@
             ],
             "operation": "comm_efficiency",
             "type": "ranges",
-            "direction": "low",
+            "direction": "desc",
             "ranges":[0.1, 10e2, 10e3,10e4, 10e5, 10e6,10e7,10e8,10e9,10e10,10e11],
-            "description": "Descripcion de la metrica",
-            "weight": 0.1
+            "description": "Communication cost per unit of local test accuracy; lower values indicate more efficient neighbor communication.",
+            "weight": 0.3
           },
           "number_of_training_rounds": {
             "inputs": [
@@ -962,7 +954,7 @@
             "direction": "desc",
             "ranges": [5, 10, 15, 20, 25, 30, 35, 40, 45, 50],
             "description": "The total number of training rounds",
-            "weight": 0.06666666
+            "weight": 0.15
           },
           "avg_model_size": {
             "inputs": [
@@ -976,7 +968,7 @@
             "direction": "desc",
             "ranges":[10e4, 10e5, 10e6,10e7,10e8,10e9,10e10,10e11],
             "description": "The size of the model",
-            "weight": 0.16666666
+            "weight": 0.15
           },
           "client_selection_rate": {
             "inputs": [
@@ -992,7 +984,7 @@
               0.1,1
             ],
             "description": "The selection rate of clients for each training round",
-            "weight": 0.16666666
+            "weight": 0.1
           },
           "number_of_clients": {
             "inputs": [
@@ -1006,7 +998,7 @@
             "direction": "desc",
             "ranges": [5, 10, 15, 20, 25, 30, 35, 40, 45, 50],
             "description": "The number of clients in the federation.",
-            "weight": 0.16666666
+            "weight": 0.1
           },
           "local_training_rounds": {
             "inputs": [
@@ -1020,7 +1012,7 @@
             "direction": "desc",
             "scale": [1, 100],
             "description": "The number of local training rounds.",
-            "weight": 0.16666666
+            "weight": 0.1
           },
           "avg_dataset_size": {
             "inputs": [
@@ -1034,7 +1026,7 @@
             "direction": "desc",
             "ranges": [10e1, 10e2, 10e3, 10e4, 10e5],
             "description": "The average number of training samples",
-            "weight": 0.16666666
+            "weight": 0.1
           }
         }
       }
