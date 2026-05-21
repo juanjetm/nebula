@@ -5,6 +5,10 @@ from typing import Any
 
 import torch
 
+from nebula.config.config import TRAINING_LOGGER
+
+logging_training = logging.getLogger(TRAINING_LOGGER)
+
 IMAGE_DATASET_NORMALIZATION = {
     "MNIST": ((0.5,), (0.5,)),
     "FashionMNIST": ((0.5,), (0.5,)),
@@ -68,6 +72,11 @@ class ImageAdversarialExampleGenerator(AdversarialExampleGenerator):
         upper = (float(self.config.clip_max) - mean) / std
         return lower, upper
 
+    def denormalize(self, x: torch.Tensor) -> torch.Tensor:
+        mean = self._channel_tensor(self.mean, x)
+        std = self._channel_tensor(self.std, x)
+        return (x * std + mean).clamp(float(self.config.clip_min), float(self.config.clip_max))
+
     def _project(self, x_adv: torch.Tensor, x_clean: torch.Tensor) -> torch.Tensor:
         epsilon = self._epsilon(x_clean)
         lower, upper = self._bounds(x_clean)
@@ -105,9 +114,12 @@ class ImagePGDGenerator(ImageAdversarialExampleGenerator):
 class AdversarialTrainingDefense:
     """Batch-level adversarial training defense for Nebula models."""
 
+    LOGGED_SAMPLES_PER_ROUND = 3
+
     def __init__(self, config: AdversarialTrainingConfig, generator: AdversarialExampleGenerator):
         self.config = config
         self.generator = generator
+        self._logged_adversarial_samples_by_round: dict[int, int] = {}
 
     @classmethod
     def from_participant_config(cls, participant_config: dict[str, Any]) -> "AdversarialTrainingDefense | None":
@@ -201,6 +213,7 @@ class AdversarialTrainingDefense:
             return loss, logits, {}
 
         x_adv = self.generator.generate(model, x, y, criterion)
+        self._log_adversarial_samples(model, x, x_adv, y)
         adv_logits = model(x_adv)
         adv_loss = criterion(adv_logits, y)
 
@@ -231,6 +244,81 @@ class AdversarialTrainingDefense:
         if not self.config.log_adversarial_metrics:
             return {}
         return metrics
+
+    def _log_adversarial_samples(self, model, x_clean: torch.Tensor, x_adv: torch.Tensor, y: torch.Tensor) -> None:
+        if not self.config.log_adversarial_metrics:
+            return
+
+        current_round = int(getattr(model, "round", 0))
+        already_logged = self._logged_adversarial_samples_by_round.get(current_round, 0)
+        remaining = self.LOGGED_SAMPLES_PER_ROUND - already_logged
+        if remaining <= 0:
+            return
+
+        with torch.no_grad():
+            clean_view = x_clean.detach()
+            adv_view = x_adv.detach()
+            if hasattr(self.generator, "denormalize"):
+                clean_view = self.generator.denormalize(clean_view)
+                adv_view = self.generator.denormalize(adv_view)
+
+            delta = adv_view - clean_view
+            samples_to_log = min(remaining, int(clean_view.size(0)))
+
+            for sample_idx in range(samples_to_log):
+                sample_clean = clean_view[sample_idx].detach().float().cpu()
+                sample_adv = adv_view[sample_idx].detach().float().cpu()
+                sample_delta = delta[sample_idx].detach().float().cpu()
+
+                logging_training.info(
+                    "[AdversarialTrainingDefense] Round %s | Sample %s/%s before/after distortion | "
+                    "dataset=%s | attack=%s | label=%s | clean[min=%.6f max=%.6f mean=%.6f] | "
+                    "adv[min=%.6f max=%.6f mean=%.6f] | delta_linf=%.6f | delta_l2=%.6f",
+                    current_round,
+                    already_logged + sample_idx + 1,
+                    self.LOGGED_SAMPLES_PER_ROUND,
+                    self.config.dataset_name,
+                    self.config.attack,
+                    int(y[sample_idx].detach().cpu().item()) if y.numel() > sample_idx else None,
+                    sample_clean.min().item(),
+                    sample_clean.max().item(),
+                    sample_clean.mean().item(),
+                    sample_adv.min().item(),
+                    sample_adv.max().item(),
+                    sample_adv.mean().item(),
+                    sample_delta.abs().max().item(),
+                    sample_delta.reshape(-1).norm(p=2).item(),
+                )
+                logging_training.info(
+                    "[AdversarialTrainingDefense] Round %s | Clean sample %s channel0 4x4:\n%s",
+                    current_round,
+                    already_logged + sample_idx + 1,
+                    self._format_patch(sample_clean),
+                )
+                logging_training.info(
+                    "[AdversarialTrainingDefense] Round %s | Adversarial sample %s channel0 4x4:\n%s",
+                    current_round,
+                    already_logged + sample_idx + 1,
+                    self._format_patch(sample_adv),
+                )
+                logging_training.info(
+                    "[AdversarialTrainingDefense] Round %s | Delta sample %s channel0 4x4:\n%s",
+                    current_round,
+                    already_logged + sample_idx + 1,
+                    self._format_patch(sample_delta),
+                )
+
+            self._logged_adversarial_samples_by_round[current_round] = already_logged + samples_to_log
+
+    @staticmethod
+    def _format_patch(sample: torch.Tensor, patch_size: int = 4) -> str:
+        if sample.dim() >= 3:
+            patch = sample[0, :patch_size, :patch_size]
+        elif sample.dim() == 2:
+            patch = sample[:patch_size, :patch_size]
+        else:
+            patch = sample[:patch_size]
+        return str([[round(float(value), 6) for value in row] for row in patch.tolist()])
 
 
 def apply_adversarial_training_if_enabled(model, participant_config: dict[str, Any]) -> None:

@@ -11,6 +11,18 @@ dirname = os.path.dirname(__file__)
 logger = logging.getLogger(__name__)
 
 
+def get_eval_metrics_file(federation_prefix, factsheet, default_file_name):
+    data_type = str(factsheet.get("data", {}).get("type", "")).strip().lower()
+
+    if data_type not in {"images", "tabular"}:
+        return os.path.join(dirname, "configs", default_file_name)
+
+    metrics_file_name = f"eval_metrics_{federation_prefix}_{data_type}.json"
+    metrics_file = os.path.join(dirname, "configs", metrics_file_name)
+
+    return metrics_file if os.path.exists(metrics_file) else os.path.join(dirname, "configs", default_file_name)
+
+
 class TrustMetricManager:
     """
     Manager class to help store the output directory and handle calls from the FL framework.
@@ -18,13 +30,15 @@ class TrustMetricManager:
 
     def __init__(self, scenario_start_time, federation, participant=None):
         if federation == "DFL" or federation == "SDFL":
+            self.federation_prefix = "dfl"
             self.factsheet_file_nm = f"factsheet_participant_{participant}.json"
             self.eval_metrics_file_nm = "eval_metrics_dfl.json"
             self.nebula_trust_results_nm = f"nebula_trust_results_{participant}.json"
             self.scenario_start_time = scenario_start_time
         else:
+            self.federation_prefix = "cfl"
             self.factsheet_file_nm = "factsheet.json"
-            self.eval_metrics_file_nm = "eval_metrics.json"
+            self.eval_metrics_file_nm = "eval_metrics_cfl.json"
             self.nebula_trust_results_nm = "nebula_trust_results.json"
             self.scenario_start_time = scenario_start_time
 
@@ -40,19 +54,22 @@ class TrustMetricManager:
         # Get scenario name
         scenario_name = experiment_name
         factsheet_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", self.factsheet_file_nm)
-        metrics_cfg_file = os.path.join(dirname, "configs", self.eval_metrics_file_nm)
         results_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", self.nebula_trust_results_nm)
 
         if not os.path.exists(factsheet_file):
             logger.error(f"{factsheet_file} is missing! Please check documentation.")
             return
 
+        with open(factsheet_file, "r") as f:
+            factsheet = json.load(f)
+
+        metrics_cfg_file = get_eval_metrics_file(self.federation_prefix, factsheet, self.eval_metrics_file_nm)
+
         if not os.path.exists(metrics_cfg_file):
             logger.error(f"{metrics_cfg_file} is missing! Please check documentation.")
             return
 
-        with open(factsheet_file, "r") as f, open(metrics_cfg_file, "r") as m:
-            factsheet = json.load(f)
+        with open(metrics_cfg_file, "r") as m:
             metrics_cfg = json.load(m)
             metrics = metrics_cfg.items()
             input_docs = {"factsheet": factsheet}
@@ -86,20 +103,22 @@ class TrustMetricManager:
         # Get scenario name
         scenario_name = experiment_name
         factsheet_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", self.factsheet_file_nm)
-        metrics_cfg_file = os.path.join(dirname, "configs", self.eval_metrics_file_nm)
         results_file = os.path.join(os.environ.get('NEBULA_LOGS_DIR'), scenario_name, "trustworthiness", self.nebula_trust_results_nm)
 
         if not os.path.exists(factsheet_file):
             logger.error(f"{factsheet_file} is missing! Please check documentation.")
             return
 
+        with open(factsheet_file, "r") as f:
+            factsheet = json.load(f)
+
+        metrics_cfg_file = get_eval_metrics_file(self.federation_prefix, factsheet, self.eval_metrics_file_nm)
+
         if not os.path.exists(metrics_cfg_file):
             logger.error(f"{metrics_cfg_file} is missing! Please check documentation.")
             return
 
-        with open(factsheet_file, "r") as f, open(metrics_cfg_file, "r") as m:
-            factsheet = json.load(f)
-
+        with open(metrics_cfg_file, "r") as m:
             raw_metrics_cfg: str = m.read()
             raw_metrics_cfg = raw_metrics_cfg.replace("factsheet", f"factsheet_participant_{participant_id}")
             metrics_cfg = json.loads(raw_metrics_cfg)

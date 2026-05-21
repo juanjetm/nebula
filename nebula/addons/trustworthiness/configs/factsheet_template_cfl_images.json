@@ -7,21 +7,20 @@
 	"data": {
 		"provenance": "",
 		"preprocessing": "",
-		"entropy_local": ""
+		"avg_entropy": ""
 	},
 	"participants": {
 		"client_num": "",
 		"sample_client_rate": "",
 		"client_selector": "",
-		"local_dataset_size": "",
-		"neighbor_num": "",
-		"avg_neighbor_reputation": ""
+		"avg_neighbor_reputation": "",
+		"avg_dataset_size": ""
 	},
 	"configuration": {
 		"aggregation_algorithm": "",
 		"training_model": "",
-		"personalization": "",
 		"reputation_enabled": "",
+		"personalization": "",
 		"visualization": "",
 		"monitoring": "",
 		"differential_privacy": "",
@@ -44,8 +43,8 @@
 		"spread_divergence": ""
 	},
 	"performance": {
-		"test_loss": "",
-		"test_acc": "",
+		"test_loss_avg": "",
+		"test_acc_avg": "",
 		"test_macro_f1": "",
 		"clipped_test_feature_importance_cv": "",
 		"clipped_test_clever": "",
@@ -56,6 +55,7 @@
 		"inverse_test_attack_success_rate": ""
 	},
 	"fairness": {
+		"test_acc_cv": "",
 		"selection_cv": "",
 		"class_imbalance": "",
 		"underfitting": "",
@@ -66,17 +66,23 @@
 		"inverse_coefficient_of_variation": ""
 	},
 	"system": {
-		"time_minutes": "",
-		"model_size": "",
-		"upload_bytes": "",
-		"download_bytes":"",
+		"avg_time_minutes": "",
+		"avg_model_size": "",
+		"total_upload_bytes": "",
+		"total_download_bytes":"",
+		"avg_upload_bytes": "",
+		"avg_download_bytes": "",
 		"dropout_rate": "",
 		"timeout_rate": ""
 	},
 	"sustainability": {
-		"carbon_intensity_local": "",
-		"emissions_training_local": "",
-		"energy_consumed_local": "",
-		"emissions_communication_local": ""
+		"avg_carbon_intensity_server": "",
+		"avg_carbon_intensity_clients": "",
+		"avg_power_performance_clients": "",
+		"avg_power_performance_server": "",
+		"emissions_training": "",
+		"emissions_aggregation": "",
+		"emissions_communication_uplink": "",
+		"emissions_communication_downlink": ""
 	}
 }

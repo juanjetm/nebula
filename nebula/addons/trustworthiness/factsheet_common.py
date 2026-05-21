@@ -4,26 +4,43 @@ import json
 import os
 import shutil
 
-from nebula.addons.trustworthiness.calculation import (
-    attack_success_rate,
-    compute_adversarial_accuracy_art,
-    get_clever_score,
-    get_coefficient_of_variation,
-    get_confidence_score,
-    get_empirical_robustness_score,
-    get_epsilon_star,
-    get_explainability_metrics_summary,
-    get_generalized_entropy_index,
-    get_loss_sensitivity_score,
-    get_macro_f1_score,
-    get_mia_auc,
-    get_overfitting_score,
-    get_theil_index,
-    get_well_calibration_error,
-)
-
 
 dirname = os.path.dirname(__file__)
+
+DATA_TYPE_IMAGES = "images"
+DATA_TYPE_TABULAR = "tabular"
+
+
+def get_model_data_type(model):
+    """Returns the data type declared by the model, when available."""
+    if not hasattr(model, "get_data_type"):
+        return ""
+
+    try:
+        data_type = model.get_data_type()
+    except AttributeError:
+        return ""
+
+    if data_type is None:
+        return ""
+    return str(data_type).strip()
+
+
+def get_normalized_model_data_type(model):
+    return get_model_data_type(model).lower()
+
+
+def get_factsheet_template_name(federation, model, default_template_name):
+    federation_prefix = "dfl" if str(federation).upper() in {"DFL", "SDFL"} else "cfl"
+    data_type = get_normalized_model_data_type(model)
+
+    if data_type not in {DATA_TYPE_IMAGES, DATA_TYPE_TABULAR}:
+        return default_template_name
+
+    template_name = f"factsheet_template_{federation_prefix}_{data_type}.json"
+    template_path = get_factsheet_template_path(template_name)
+
+    return template_name if os.path.exists(template_path) else default_template_name
 
 
 def get_trustworthiness_dir(scenario_name):
@@ -112,6 +129,7 @@ def populate_common_pre_train_sections(factsheet, data, model):
     factsheet["project"]["background"] = build_project_background(data)
 
     factsheet["data"]["provenance"] = data["dataset"]
+    factsheet["data"]["type"] = get_model_data_type(model)
     factsheet["data"]["preprocessing"] = data["topology"]
 
     factsheet["participants"]["client_num"] = data["n_nodes"] or ""
@@ -180,59 +198,3 @@ def populate_reputation(factsheet, reputation_summary, include_neighbor_num=Fals
     factsheet["participants"]["avg_neighbor_reputation"] = 0
     if include_neighbor_num:
         factsheet["participants"]["neighbor_num"] = 0
-
-
-def populate_model_quality_metrics(factsheet, model, train_loader, test_loader, test_accuracy):
-    """Calculates common privacy, fairness, explainability and robustness metrics."""
-    test_sample = next(iter(test_loader))
-    explainability_metrics = get_explainability_metrics_summary(model, test_loader)
-
-    factsheet["performance"]["test_macro_f1"] = get_macro_f1_score(model, test_loader)
-
-    factsheet["privacy"]["epsilon_star"] = get_epsilon_star(model, train_loader, test_loader)
-    factsheet["privacy"]["inverse_epsilon_star"] = inverse_score(factsheet["privacy"]["epsilon_star"])
-    factsheet["privacy"]["mia_auc"] = get_mia_auc(model, train_loader, test_loader)
-    factsheet["privacy"]["mia_auc_score"] = 1 - 2 * abs(factsheet["privacy"]["mia_auc"] - 0.5)
-
-    overfitting_value = get_overfitting_score(model, train_loader, test_accuracy)
-    factsheet["fairness"]["inverse_overfitting"] = inverse_score(overfitting_value)
-
-    well_calibration_error_value = get_well_calibration_error(model, test_loader)
-    factsheet["fairness"]["inverse_well_calibration_error"] = inverse_score(well_calibration_error_value)
-
-    generalized_entropy_index_value = get_generalized_entropy_index(model, test_loader)
-    factsheet["fairness"]["inverse_generalized_entropy_index"] = inverse_score(generalized_entropy_index_value)
-
-    theil_index_value = get_theil_index(model, test_loader)
-    factsheet["fairness"]["inverse_theil_index"] = inverse_score(theil_index_value)
-
-    coefficient_of_variation_value = get_coefficient_of_variation(model, test_loader)
-    factsheet["fairness"]["inverse_coefficient_of_variation"] = inverse_score(coefficient_of_variation_value)
-
-    factsheet["explainability"]["alpha_score"] = explainability_metrics["alpha_score"]
-    factsheet["explainability"]["spread_ratio"] = explainability_metrics["spread_ratio"]
-    factsheet["explainability"]["spread_divergence"] = explainability_metrics["spread_divergence"]
-
-    lr = factsheet["configuration"]["learning_rate"]
-    num_classes = model.get_num_classes()
-
-    value_clever = get_clever_score(model, test_sample, num_classes, lr)
-    factsheet["performance"]["clipped_test_clever"] = cap_score(value_clever)
-
-    value_loss_sensitivity = get_loss_sensitivity_score(model, test_sample, num_classes, lr)
-    factsheet["performance"]["inverse_test_loss_sensitivity"] = inverse_score(value_loss_sensitivity)
-
-    value_adv_accuracy = compute_adversarial_accuracy_art(model, test_loader, num_classes, lr)
-    factsheet["performance"]["clipped_test_adv_accuracy"] = cap_score(value_adv_accuracy)
-
-    value_empirical_robustness = get_empirical_robustness_score(model, test_sample, num_classes, lr)
-    factsheet["performance"]["clipped_test_empirical_robustness"] = cap_score(value_empirical_robustness)
-
-    value_confidence_score = get_confidence_score(model, test_sample)
-    factsheet["performance"]["clipped_test_confidence_score"] = cap_score(value_confidence_score)
-
-    value_attack_success_rate = attack_success_rate(model, test_sample)
-    factsheet["performance"]["inverse_test_attack_success_rate"] = 1 - value_attack_success_rate
-
-    feature_importance = explainability_metrics["feature_importance_cv"]
-    factsheet["performance"]["clipped_test_feature_importance_cv"] = cap_score(feature_importance)

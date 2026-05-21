@@ -1306,6 +1306,35 @@ def _get_feature_importances(model, test_sample):
 
         raise RuntimeError("; ".join(explainer_errors))
 
+    def _compute_gradient_importances(model_ref, test_data):
+        was_training = bool(getattr(model_ref, "training", False))
+        model_ref.eval()
+
+        try:
+            inputs = test_data.detach().clone().requires_grad_(True)
+            model_ref.zero_grad(set_to_none=True)
+
+            outputs = model_ref(inputs)
+            if isinstance(outputs, (tuple, list)):
+                outputs = outputs[0]
+
+            if outputs.ndim == 1:
+                score = outputs.sum()
+            else:
+                score = outputs.reshape(outputs.shape[0], -1).max(dim=1).values.sum()
+
+            score.backward()
+            if inputs.grad is None:
+                return np.array([])
+
+            importances = torch.abs(inputs.grad * inputs).mean(dim=0)
+            importances = importances.detach().cpu().numpy().reshape(-1)
+            importances = np.nan_to_num(importances, nan=0.0, posinf=0.0, neginf=0.0)
+            return np.maximum(importances, 0.0)
+        finally:
+            if was_training:
+                model_ref.train()
+
     def _feature_axes_from_shape(arr_shape, input_shape, n_samples):
         input_shape = tuple(input_shape)
         input_rank = len(input_shape)
@@ -1354,9 +1383,26 @@ def _get_feature_importances(model, test_sample):
         test_data = test_data.to(device)
 
         shap_model = _clone_model(model, device)
-        shap_values = _compute_shap_values(shap_model, background, test_data)
-        del shap_model
-        gc.collect()
+        try:
+            shap_values = _compute_shap_values(shap_model, background, test_data)
+        except Exception as exc:
+            logger.debug("Could not compute feature importances with SHAP, using gradient fallback: %s", exc)
+            del shap_model
+            gc.collect()
+
+            gradient_model = _clone_model(model, device)
+            try:
+                return _compute_gradient_importances(gradient_model, test_data)
+            except Exception as fallback_exc:
+                logger.debug("Could not compute feature importances with gradient fallback: %s", fallback_exc)
+                return np.array([])
+            finally:
+                del gradient_model
+                gc.collect()
+        finally:
+            if "shap_model" in locals():
+                del shap_model
+            gc.collect()
 
         if shap_values is None:
             return np.array([])
@@ -1394,8 +1440,8 @@ def _get_feature_importances(model, test_sample):
         importances = np.nan_to_num(importances, nan=0.0, posinf=0.0, neginf=0.0)
         return np.maximum(importances, 0.0)
     except Exception as exc:
-        logger.warning("Could not compute feature importances with shap")
-        logger.warning(exc)
+        logger.debug("Could not compute feature importances")
+        logger.debug(exc)
         return np.array([])
 
 

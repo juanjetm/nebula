@@ -12,16 +12,17 @@ from nebula.addons.trustworthiness.calculation import (
 )
 from nebula.addons.trustworthiness.factsheet_common import (
     get_factsheet_path,
+    get_factsheet_template_name,
     get_trustworthiness_dir,
     load_or_create_factsheet,
     populate_common_pre_train_sections,
-    populate_model_quality_metrics,
     populate_participation,
     populate_reliability,
     populate_reputation,
     set_dp_configuration,
     write_factsheet,
 )
+from nebula.addons.trustworthiness.factsheet_populators import populate_profile_metrics
 from nebula.addons.trustworthiness.utils import read_csv, get_all_data_entropy
 
 logger = logging.getLogger(__name__)
@@ -49,13 +50,18 @@ class DflFactsheet:
     ):
 
         self.factsheet_file_nm = f"factsheet_participant_{participant_idx}.json"
+        factsheet_template_file_nm = get_factsheet_template_name(
+            data["federation"],
+            model,
+            self.factsheet_template_file_nm,
+        )
 
         factsheet_file = get_factsheet_path(scenario_name, self.factsheet_file_nm)
 
         factsheet_file, factsheet = load_or_create_factsheet(
             scenario_name,
             self.factsheet_file_nm,
-            self.factsheet_template_file_nm,
+            factsheet_template_file_nm,
         )
 
         logging.info("DFL FactSheet: Populating factsheet")
@@ -121,8 +127,9 @@ class DflFactsheet:
         )
 
         factsheet["fairness"]["underfitting"] = get_underfitting_score_local(scenario_name, participant_idx)
-        populate_model_quality_metrics(
+        populate_profile_metrics(
             factsheet,
+            data["federation"],
             model,
             train_loader,
             test_loader,
