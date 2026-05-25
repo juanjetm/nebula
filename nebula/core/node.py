@@ -190,7 +190,7 @@ async def main(config: Config):
     dataset = NebulaPartition(handler=handler, config=config)
     dataset.load_partition()
     apply_feature_squeezing_if_enabled(dataset, config.participant)
-    apply_adversarial_training_if_enabled(model, config.participant)
+    apply_adversarial_training_if_enabled(model, config.participant, dataset)
     dataset.log_partition()
     samples_per_label = Counter(dataset.get_train_labels())
 

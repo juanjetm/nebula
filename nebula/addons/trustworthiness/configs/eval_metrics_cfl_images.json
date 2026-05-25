@@ -159,7 +159,7 @@
             "description": "Average reputation score of the neighbors associated with the node or federation.",
             "weight": 0.3
           },
-          "dropout_rate": {
+          "inverse_dropout_rate": {
             "inputs": [
               {
                 "source": "factsheet",
@@ -172,7 +172,7 @@
             "description": "Fraction of expected client updates that were not received across rounds.",
             "weight": 0.3
           },
-          "timeout_rate": {
+          "inverse_timeout_rate": {
             "inputs": [
               {
                 "source": "factsheet",

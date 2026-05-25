@@ -17,6 +17,7 @@ const AdversarialTrainingManager = (function() {
     };
 
     const IMAGE_DATASETS = new Set(["MNIST", "FashionMNIST", "EMNIST", "CIFAR10", "CIFAR100"]);
+    const TABULAR_DATASETS = new Set(["AdultCensus"]);
 
     function initializeAdversarialTraining() {
         setupAdversarialTrainingSwitch();
@@ -71,12 +72,17 @@ const AdversarialTrainingManager = (function() {
 
     function updateDatasetAvailability() {
         const dataset = document.getElementById("datasetSelect")?.value;
-        const enabledForDataset = IMAGE_DATASETS.has(dataset);
+        const enabledForDataset = IMAGE_DATASETS.has(dataset) || TABULAR_DATASETS.has(dataset);
+        const domain = TABULAR_DATASETS.has(dataset) ? "tabular" : "image";
         const adversarialTrainingSwitch = document.getElementById("adversarialTrainingSwitch");
         const datasetNote = document.getElementById("adversarial-training-dataset-note");
+        const domainInput = document.getElementById("adversarialTrainingDomain");
 
         if (datasetNote) {
             datasetNote.style.display = enabledForDataset ? "none" : "block";
+        }
+        if (domainInput) {
+            domainInput.value = domain;
         }
 
         if (!adversarialTrainingSwitch) return;
@@ -192,7 +198,7 @@ const AdversarialTrainingManager = (function() {
             return "[Adversarial Training] Apply probability must be between 0 and 1.";
         }
         if (config.clip_min >= config.clip_max) {
-            return "[Adversarial Training] Pixel min bound must be smaller than max bound.";
+            return "[Adversarial Training] Min bound must be smaller than max bound.";
         }
         return null;
     }

@@ -13,7 +13,7 @@ class AdultCensusModelMLP(NebulaModel):
     """
     def __init__(
         self,
-        input_dim: int = 105,
+        input_dim: int = 104,
         num_classes: int = 2,
         learning_rate: float = 1e-3,
         metrics=None,

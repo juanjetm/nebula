@@ -1,5 +1,7 @@
 """Profile-specific factsheet metric population."""
 
+import logging
+
 from nebula.addons.trustworthiness.calculation import (
     attack_success_rate,
     compute_adversarial_accuracy_art,
@@ -17,6 +19,8 @@ from nebula.addons.trustworthiness.calculation import (
     get_theil_index,
     get_well_calibration_error,
 )
+
+logger = logging.getLogger(__name__)
 from nebula.addons.trustworthiness.factsheet_common import (
     DATA_TYPE_IMAGES,
     DATA_TYPE_TABULAR,
@@ -143,10 +147,18 @@ def populate_image_robustness_metrics(factsheet, model, test_loader, test_sample
     value_adv_accuracy = compute_adversarial_accuracy_art(model, test_loader, num_classes, lr)
     factsheet["performance"]["clipped_test_adv_accuracy"] = cap_score(value_adv_accuracy)
 
-    value_empirical_robustness = get_empirical_robustness_score(model, test_sample, num_classes, lr)
+    value_empirical_robustness = get_empirical_robustness_score(
+        model,
+        test_sample,
+        num_classes,
+        lr,
+    )
     factsheet["performance"]["clipped_test_empirical_robustness"] = cap_score(value_empirical_robustness)
 
-    value_attack_success_rate = attack_success_rate(model, test_sample)
+    value_attack_success_rate = attack_success_rate(
+        model,
+        test_sample,
+    )
     factsheet["performance"]["inverse_test_attack_success_rate"] = 1 - value_attack_success_rate
 
 

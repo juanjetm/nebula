@@ -1,4 +1,5 @@
 import copy
+import json
 import os
 import pickle
 from abc import ABC, abstractmethod
@@ -74,6 +75,11 @@ class NebulaPartitionHandler(Dataset, ABC):
             self.data = self.load_partition(f, f"{prefix}_data")
             self.targets = np.array(f[f"{prefix}_targets"])
             self.num_classes = f[f"{prefix}_data"].attrs.get("num_classes", 0)
+            raw_tabular_metadata = f[f"{prefix}_data"].attrs.get("tabular_metadata", None)
+            if raw_tabular_metadata is not None:
+                if isinstance(raw_tabular_metadata, bytes):
+                    raw_tabular_metadata = raw_tabular_metadata.decode("utf-8")
+                self.tabular_metadata = json.loads(raw_tabular_metadata)
             self.length = len(self.data)
         logging_training.info(
             f"[NebulaPartitionHandler] [{self.prefix}] Loaded {self.length} samples from {self.file_path} and {self.num_classes} classes."
@@ -289,6 +295,8 @@ class NebulaPartition:
 
             self.local_test_set = self.handler(test_partition_file, "local_test", config=self.config, empty=True)
             self.local_test_set.set_data(self.test_set.data, self.test_set.targets)
+            if hasattr(self.test_set, "tabular_metadata"):
+                self.local_test_set.tabular_metadata = self.test_set.tabular_metadata
             self.local_test_indices = self.set_local_test_indices()
 
             logging_training.info(f"Successfully loaded partition data for participant {p}.")
@@ -484,6 +492,7 @@ class NebulaDataset:
                 test_data = [self.test_set[i] for i in indices]
                 self.save_partition(test_data, f, "test_data")
                 f["test_data"].attrs["num_classes"] = self.num_classes
+                self._save_tabular_metadata_attr(self.test_set, f["test_data"])
                 test_targets = np.array(self.test_set.targets)
                 f.create_dataset("test_targets", data=test_targets, compression="gzip")
 
@@ -495,6 +504,7 @@ class NebulaDataset:
                     train_data = [self.train_set[i] for i in indices]
                     self.save_partition(train_data, f, "train_data")
                     f["train_data"].attrs["num_classes"] = self.num_classes
+                    self._save_tabular_metadata_attr(self.train_set, f["train_data"])
                     train_targets = np.array([self.train_set.targets[i] for i in indices])
                     f.create_dataset("train_targets", data=train_targets, compression="gzip")
                     logging.info(f"Partition saved for participant {participant}.")
@@ -507,6 +517,14 @@ class NebulaDataset:
         finally:
             self.clear()
             logging.info("Cleared dataset after saving partitions.")
+
+    def _save_tabular_metadata_attr(self, dataset, h5_dataset):
+        metadata = getattr(dataset, "tabular_metadata", None)
+        if metadata is None:
+            return
+        if hasattr(metadata, "to_dict"):
+            metadata = metadata.to_dict()
+        h5_dataset.attrs["tabular_metadata"] = json.dumps(metadata)
 
     @abstractmethod
     def generate_non_iid_map(self, dataset, partition="dirichlet", plot=False):

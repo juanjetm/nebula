@@ -8,6 +8,7 @@ import torch
 from torch.utils.data import Dataset
 
 from nebula.core.datasets.nebuladataset import NebulaDataset, NebulaPartitionHandler
+from nebula.core.datasets.tabular_metadata import CONTINUOUS, INTEGER, NON_PERTURBABLE, TabularAdversarialMetadata
 
 
 class AdultCensusTorchDataset(Dataset):
@@ -22,7 +23,9 @@ class AdultCensusTorchDataset(Dataset):
         y: np.ndarray,
         feature_names: list[str] | None = None,
         continuous_features: list[int] | None = None,
-        binary_features: list[int] | None = None,
+        integer_features: list[int] | None = None,
+        non_perturbable_features: list[int] | None = None,
+        tabular_metadata: dict | None = None,
     ):
         if not isinstance(x, np.ndarray) or not isinstance(y, np.ndarray):
             raise ValueError("x and y must be numpy arrays")
@@ -43,7 +46,9 @@ class AdultCensusTorchDataset(Dataset):
         self.classes: list[str] = ["<=50K", ">50K"]
         self.feature_names = feature_names or [f"feature_{i}" for i in range(self.x.shape[1])]
         self.continuous_features = continuous_features or []
-        self.binary_features = binary_features or []
+        self.integer_features = integer_features or []
+        self.non_perturbable_features = non_perturbable_features or []
+        self.tabular_metadata = tabular_metadata
         self.input_dim = int(self.x.shape[1])
 
     def __len__(self) -> int:
@@ -91,9 +96,29 @@ class AdultCensusDataset(NebulaDataset):
     Adult Census Income dataset integration for Nebula.
 
     - 2 classes: <=50K vs >50K
-    - mixed categorical + numerical -> numeric via preprocessing (impute + OHE + scale)
+    - mixed tabular data -> numeric model input via preprocessing
     - deterministic stratified train/test split
     """
+    PERTURBABLE_CONTINUOUS_COLUMNS = []
+    PERTURBABLE_INTEGER_COLUMNS = [
+        "age",
+        "fnlwgt",
+        "education-num",
+        "capital-gain",
+        "capital-loss",
+        "hours-per-week",
+    ]
+    NON_PERTURBABLE_COLUMNS = [
+        "workclass",
+        "education",
+        "marital-status",
+        "occupation",
+        "relationship",
+        "race",
+        "sex",
+        "native-country",
+    ]
+
     def __init__(
         self,
         num_classes: int = 2,
@@ -140,6 +165,28 @@ class AdultCensusDataset(NebulaDataset):
         except TypeError:
             return OneHotEncoder(handle_unknown="ignore", sparse=False)
 
+    @classmethod
+    def _validate_manual_schema(cls, columns) -> None:
+        continuous_columns = set(cls.PERTURBABLE_CONTINUOUS_COLUMNS)
+        integer_columns = set(cls.PERTURBABLE_INTEGER_COLUMNS)
+        non_perturbable_columns = set(cls.NON_PERTURBABLE_COLUMNS)
+        overlapping_columns = sorted(
+            (continuous_columns & integer_columns)
+            | (continuous_columns & non_perturbable_columns)
+            | (integer_columns & non_perturbable_columns)
+        )
+        if overlapping_columns:
+            raise ValueError(f"AdultCensusDataset columns configured twice: {overlapping_columns}")
+
+        configured_columns = continuous_columns | integer_columns | non_perturbable_columns
+        dataset_columns = set(columns)
+        missing_columns = sorted(configured_columns - dataset_columns)
+        if missing_columns:
+            raise ValueError(f"AdultCensusDataset is missing configured columns: {missing_columns}")
+        unconfigured_columns = sorted(dataset_columns - configured_columns)
+        if unconfigured_columns:
+            raise ValueError(f"AdultCensusDataset has unconfigured columns: {unconfigured_columns}")
+
     def load_adult_census_dataset(self) -> Tuple[AdultCensusTorchDataset, AdultCensusTorchDataset]:
         """
         Loads Adult dataset from OpenML and preprocesses to all-numeric features.
@@ -149,8 +196,9 @@ class AdultCensusDataset(NebulaDataset):
           2) y = (target == '>50K').astype(int)
           3) replace '?' with NA for missing values
           4) ColumnTransformer:
-              - numeric: median impute + StandardScaler
-              - categorical: most_frequent impute + OneHotEncoder(dense)
+              - continuous: median impute + StandardScaler
+              - integer: median impute + StandardScaler
+              - non_perturbable: most_frequent impute + OneHotEncoder(dense)
           5) train/test split (stratified), fit preprocessing only on train (avoid leakage)
         """
         data_dir: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -160,7 +208,7 @@ class AdultCensusDataset(NebulaDataset):
             import pandas as pd
             from sklearn.datasets import fetch_openml
             from sklearn.model_selection import train_test_split
-            from sklearn.compose import ColumnTransformer, make_column_selector as selector
+            from sklearn.compose import ColumnTransformer
             from sklearn.pipeline import Pipeline
             from sklearn.impute import SimpleImputer
             from sklearn.preprocessing import StandardScaler
@@ -179,13 +227,26 @@ class AdultCensusDataset(NebulaDataset):
         y_str = y_raw.astype(str).str.strip()
         y: np.ndarray = (y_str == ">50K").astype(np.int64).to_numpy()
 
-        # 3) Replace '?' markers with NA (UCI Adult uses '?' for missing categorical values)
-        X_df = X_df.replace(r"^\s*\?\s*$", pd.NA, regex=True)
+        # 3) Replace '?' markers with np.nan and drop rows with missing configured features.
+        X_df = X_df.replace(r"^\s*\?\s*$", np.nan, regex=True)
+        self._validate_manual_schema(X_df.columns)
+
+        numeric_columns = self.PERTURBABLE_CONTINUOUS_COLUMNS + self.PERTURBABLE_INTEGER_COLUMNS
+        for column in numeric_columns:
+            X_df[column] = pd.to_numeric(X_df[column], errors="coerce")
+        for column in self.NON_PERTURBABLE_COLUMNS:
+            X_df[column] = X_df[column].astype(object)
+
+        configured_columns = numeric_columns + self.NON_PERTURBABLE_COLUMNS
+        valid_rows = ~X_df[configured_columns].isna().any(axis=1)
+        removed_rows = int((~valid_rows).sum())
+        if removed_rows:
+            import logging
+            logging.getLogger().info("[AdultCensus] Dropping %s rows with NA values", removed_rows)
+        X_df = X_df.loc[valid_rows].copy()
+        y = y[valid_rows.to_numpy()]
 
         # 4) Preprocess
-        numeric_selector = selector(dtype_exclude=["object", "category", "string"])
-        categorical_selector = selector(dtype_include=["object", "category", "string"])
-
         numeric_transformer = Pipeline(
             steps=[
                 ("impute", SimpleImputer(strategy="median")),
@@ -193,20 +254,21 @@ class AdultCensusDataset(NebulaDataset):
             ]
         )
 
-        categorical_transformer = Pipeline(
+        non_perturbable_transformer = Pipeline(
             steps=[
                 ("impute", SimpleImputer(strategy="most_frequent")),
                 ("ohe", self._make_ohe_dense()),
             ]
         )
 
-        preprocessor = ColumnTransformer(
-            transformers=[
-                ("num", numeric_transformer, numeric_selector),
-                ("cat", categorical_transformer, categorical_selector),
-            ],
-            remainder="drop",
-        )
+        transformers = []
+        if self.PERTURBABLE_CONTINUOUS_COLUMNS:
+            transformers.append(("continuous", numeric_transformer, self.PERTURBABLE_CONTINUOUS_COLUMNS))
+        if self.PERTURBABLE_INTEGER_COLUMNS:
+            transformers.append(("integer", numeric_transformer, self.PERTURBABLE_INTEGER_COLUMNS))
+        transformers.append(("non_perturbable", non_perturbable_transformer, self.NON_PERTURBABLE_COLUMNS))
+
+        preprocessor = ColumnTransformer(transformers=transformers, remainder="drop")
 
         # 5) Split then fit on train
         X_train_df, X_test_df, y_train, y_test = train_test_split(
@@ -238,26 +300,65 @@ class AdultCensusDataset(NebulaDataset):
         X_test_np: np.ndarray = np.asarray(X_test, dtype=np.float32)
         continuous_features = [
             idx for idx, name in enumerate(feature_names)
-            if name.startswith("num__")
+            if name.startswith("continuous__")
         ]
-        binary_features = [
+        integer_features = [
             idx for idx, name in enumerate(feature_names)
-            if name.startswith("cat__")
+            if name.startswith("integer__")
         ]
+        non_perturbable_features = [
+            idx for idx, name in enumerate(feature_names)
+            if name.startswith("non_perturbable__")
+        ]
+        continuous_feature_set = set(continuous_features)
+        integer_feature_set = set(integer_features)
+        integer_step_norm = {}
+        if integer_features:
+            integer_scaler = preprocessor.named_transformers_["integer"].named_steps["scaler"]
+            integer_step_norm = {
+                idx: float(1.0 / scale)
+                for idx, scale in zip(integer_features, integer_scaler.scale_, strict=False)
+            }
+        tabular_metadata = TabularAdversarialMetadata(
+            feature_names=feature_names,
+            feature_types=[
+                CONTINUOUS if idx in continuous_feature_set
+                else INTEGER if idx in integer_feature_set
+                else NON_PERTURBABLE
+                for idx in range(len(feature_names))
+            ],
+            feature_min_norm=np.min(X_train_np, axis=0).astype(float).tolist(),
+            feature_max_norm=np.max(X_train_np, axis=0).astype(float).tolist(),
+            integer_step_norm=integer_step_norm,
+        ).to_dict()
+        logging.getLogger().info(
+            "[AdultCensus] Tabular adversarial feature mask | continuous=%s | integer=%s | "
+            "non_perturbable=%s | continuous_features=%s | integer_features=%s | integer_step_norm=%s",
+            len(continuous_features),
+            len(integer_features),
+            len(non_perturbable_features),
+            [feature_names[idx] for idx in continuous_features],
+            [feature_names[idx] for idx in integer_features],
+            integer_step_norm,
+        )
 
         train_ds = AdultCensusTorchDataset(
             X_train_np,
             np.asarray(y_train, dtype=np.int64),
             feature_names=feature_names,
             continuous_features=continuous_features,
-            binary_features=binary_features,
+            integer_features=integer_features,
+            non_perturbable_features=non_perturbable_features,
+            tabular_metadata=tabular_metadata,
         )
         test_ds = AdultCensusTorchDataset(
             X_test_np,
             np.asarray(y_test, dtype=np.int64),
             feature_names=feature_names,
             continuous_features=continuous_features,
-            binary_features=binary_features,
+            integer_features=integer_features,
+            non_perturbable_features=non_perturbable_features,
+            tabular_metadata=tabular_metadata,
         )
 
         return train_ds, test_ds
