@@ -6,6 +6,7 @@ import torch
 from torch.utils.data import Dataset
 
 from nebula.core.datasets.nebuladataset import NebulaDataset, NebulaPartitionHandler
+from nebula.core.datasets.tabular_metadata import CONTINUOUS, INTEGER, NON_PERTURBABLE, TabularAdversarialMetadata
 
 
 class BreastCancerTorchDataset(Dataset):
@@ -14,7 +15,16 @@ class BreastCancerTorchDataset(Dataset):
     x: float32 tensor (n_features,)
     y: long scalar {0,1}
     """
-    def __init__(self, x: np.ndarray, y: np.ndarray, feature_names: list[str] | None = None):
+    def __init__(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        feature_names: list[str] | None = None,
+        continuous_features: list[int] | None = None,
+        integer_features: list[int] | None = None,
+        non_perturbable_features: list[int] | None = None,
+        tabular_metadata: dict | None = None,
+    ):
         if not isinstance(x, np.ndarray) or not isinstance(y, np.ndarray):
             raise ValueError("x and y must be numpy arrays")
 
@@ -33,8 +43,11 @@ class BreastCancerTorchDataset(Dataset):
         self.targets = self.y
         self.classes = ["0", "1"]
         self.feature_names = feature_names or [f"feature_{i}" for i in range(self.x.shape[1])]
-        self.continuous_features = list(range(self.x.shape[1]))
+        self.continuous_features = continuous_features or list(range(self.x.shape[1]))
+        self.integer_features = integer_features or []
+        self.non_perturbable_features = non_perturbable_features or []
         self.binary_features = []
+        self.tabular_metadata = tabular_metadata
         self.input_dim = int(self.x.shape[1])
 
     def __len__(self) -> int:
@@ -84,6 +97,41 @@ class BreastCancerDataset(NebulaDataset):
     - tabular features (30)
     - deterministic stratified train/test split
     """
+    PERTURBABLE_CONTINUOUS_COLUMNS = [
+        "mean radius",
+        "mean texture",
+        "mean perimeter",
+        "mean area",
+        "mean smoothness",
+        "mean compactness",
+        "mean concavity",
+        "mean concave points",
+        "mean symmetry",
+        "mean fractal dimension",
+        "radius error",
+        "texture error",
+        "perimeter error",
+        "area error",
+        "smoothness error",
+        "compactness error",
+        "concavity error",
+        "concave points error",
+        "symmetry error",
+        "fractal dimension error",
+        "worst radius",
+        "worst texture",
+        "worst perimeter",
+        "worst area",
+        "worst smoothness",
+        "worst compactness",
+        "worst concavity",
+        "worst concave points",
+        "worst symmetry",
+        "worst fractal dimension",
+    ]
+    PERTURBABLE_INTEGER_COLUMNS = []
+    NON_PERTURBABLE_COLUMNS = []
+
     def __init__(
         self,
         num_classes: int = 2,
@@ -116,6 +164,28 @@ class BreastCancerDataset(NebulaDataset):
 
         self.data_partitioning(plot=True)
 
+    @classmethod
+    def _validate_manual_schema(cls, columns) -> None:
+        continuous_columns = set(cls.PERTURBABLE_CONTINUOUS_COLUMNS)
+        integer_columns = set(cls.PERTURBABLE_INTEGER_COLUMNS)
+        non_perturbable_columns = set(cls.NON_PERTURBABLE_COLUMNS)
+        overlapping_columns = sorted(
+            (continuous_columns & integer_columns)
+            | (continuous_columns & non_perturbable_columns)
+            | (integer_columns & non_perturbable_columns)
+        )
+        if overlapping_columns:
+            raise ValueError(f"BreastCancerDataset columns configured twice: {overlapping_columns}")
+
+        configured_columns = continuous_columns | integer_columns | non_perturbable_columns
+        dataset_columns = set(columns)
+        missing_columns = sorted(configured_columns - dataset_columns)
+        if missing_columns:
+            raise ValueError(f"BreastCancerDataset is missing configured columns: {missing_columns}")
+        unconfigured_columns = sorted(dataset_columns - configured_columns)
+        if unconfigured_columns:
+            raise ValueError(f"BreastCancerDataset has unconfigured columns: {unconfigured_columns}")
+
     def load_breast_cancer_dataset(self):
         # Local cache directory (aunque load_breast_cancer no descarga, seguimos el patrón)
         data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -134,6 +204,7 @@ class BreastCancerDataset(NebulaDataset):
         x = np.asarray(ds.data)
         y = np.asarray(ds.target).reshape(-1)  # already 0/1
         feature_names = [str(name) for name in ds.feature_names]
+        self._validate_manual_schema(feature_names)
 
         x_train, x_test, y_train, y_test = train_test_split(
             x,
@@ -148,8 +219,53 @@ class BreastCancerDataset(NebulaDataset):
         x_train = scaler.fit_transform(x_train)
         x_test = scaler.transform(x_test)
 
-        train_ds = BreastCancerTorchDataset(x_train, y_train, feature_names=feature_names)
-        test_ds = BreastCancerTorchDataset(x_test, y_test, feature_names=feature_names)
+        x_train_np = np.asarray(x_train, dtype=np.float32)
+        x_test_np = np.asarray(x_test, dtype=np.float32)
+        continuous_features = [
+            idx for idx, name in enumerate(feature_names)
+            if name in self.PERTURBABLE_CONTINUOUS_COLUMNS
+        ]
+        integer_features = [
+            idx for idx, name in enumerate(feature_names)
+            if name in self.PERTURBABLE_INTEGER_COLUMNS
+        ]
+        non_perturbable_features = [
+            idx for idx, name in enumerate(feature_names)
+            if name in self.NON_PERTURBABLE_COLUMNS
+        ]
+        continuous_feature_set = set(continuous_features)
+        integer_feature_set = set(integer_features)
+        tabular_metadata = TabularAdversarialMetadata(
+            feature_names=feature_names,
+            feature_types=[
+                CONTINUOUS if idx in continuous_feature_set
+                else INTEGER if idx in integer_feature_set
+                else NON_PERTURBABLE
+                for idx in range(len(feature_names))
+            ],
+            feature_min_norm=np.min(x_train_np, axis=0).astype(float).tolist(),
+            feature_max_norm=np.max(x_train_np, axis=0).astype(float).tolist(),
+            integer_step_norm={},
+        ).to_dict()
+
+        train_ds = BreastCancerTorchDataset(
+            x_train_np,
+            y_train,
+            feature_names=feature_names,
+            continuous_features=continuous_features,
+            integer_features=integer_features,
+            non_perturbable_features=non_perturbable_features,
+            tabular_metadata=tabular_metadata,
+        )
+        test_ds = BreastCancerTorchDataset(
+            x_test_np,
+            y_test,
+            feature_names=feature_names,
+            continuous_features=continuous_features,
+            integer_features=integer_features,
+            non_perturbable_features=non_perturbable_features,
+            tabular_metadata=tabular_metadata,
+        )
 
         return train_ds, test_ds
 

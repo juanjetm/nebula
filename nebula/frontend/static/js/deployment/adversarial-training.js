@@ -17,7 +17,6 @@ const AdversarialTrainingManager = (function() {
     };
 
     const IMAGE_DATASETS = new Set(["MNIST", "FashionMNIST", "EMNIST", "CIFAR10", "CIFAR100"]);
-    const TABULAR_DATASETS = new Set(["AdultCensus"]);
 
     function initializeAdversarialTraining() {
         setupAdversarialTrainingSwitch();
@@ -72,25 +71,20 @@ const AdversarialTrainingManager = (function() {
 
     function updateDatasetAvailability() {
         const dataset = document.getElementById("datasetSelect")?.value;
-        const enabledForDataset = IMAGE_DATASETS.has(dataset) || TABULAR_DATASETS.has(dataset);
-        const domain = TABULAR_DATASETS.has(dataset) ? "tabular" : "image";
+        const domain = IMAGE_DATASETS.has(dataset) ? "image" : "tabular";
         const adversarialTrainingSwitch = document.getElementById("adversarialTrainingSwitch");
         const datasetNote = document.getElementById("adversarial-training-dataset-note");
         const domainInput = document.getElementById("adversarialTrainingDomain");
 
         if (datasetNote) {
-            datasetNote.style.display = enabledForDataset ? "none" : "block";
+            datasetNote.style.display = "none";
         }
         if (domainInput) {
             domainInput.value = domain;
         }
 
         if (!adversarialTrainingSwitch) return;
-        adversarialTrainingSwitch.disabled = !enabledForDataset;
-        if (!enabledForDataset) {
-            adversarialTrainingSwitch.checked = false;
-            toggleAdversarialTrainingSettings(false);
-        }
+        adversarialTrainingSwitch.disabled = false;
     }
 
     function numberValue(id, fallback) {

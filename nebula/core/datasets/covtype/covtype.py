@@ -8,6 +8,7 @@ import torch
 from torch.utils.data import Dataset
 
 from nebula.core.datasets.nebuladataset import NebulaDataset, NebulaPartitionHandler
+from nebula.core.datasets.tabular_metadata import CONTINUOUS, INTEGER, NON_PERTURBABLE, TabularAdversarialMetadata
 
 
 class CovtypeTorchDataset(Dataset):
@@ -24,7 +25,10 @@ class CovtypeTorchDataset(Dataset):
         y: np.ndarray,
         feature_names: list[str] | None = None,
         continuous_features: list[int] | None = None,
+        integer_features: list[int] | None = None,
+        non_perturbable_features: list[int] | None = None,
         binary_features: list[int] | None = None,
+        tabular_metadata: dict | None = None,
     ):
         if not isinstance(x, np.ndarray) or not isinstance(y, np.ndarray):
             raise ValueError("x and y must be numpy arrays")
@@ -47,7 +51,10 @@ class CovtypeTorchDataset(Dataset):
         self.classes = [str(i) for i in range(n_classes)]
         self.feature_names = feature_names or [f"feature_{i}" for i in range(self.x.shape[1])]
         self.continuous_features = continuous_features or []
+        self.integer_features = integer_features or []
+        self.non_perturbable_features = non_perturbable_features or []
         self.binary_features = binary_features or []
+        self.tabular_metadata = tabular_metadata
         self.input_dim = int(self.x.shape[1])
 
     def __len__(self) -> int:
@@ -113,6 +120,66 @@ class CovtypeDataset(NebulaDataset):
     Requirements:
     - scikit-learn must be installed (for fetch_covtype + train_test_split).
     """
+    PERTURBABLE_CONTINUOUS_COLUMNS = [
+        "Elevation",
+        "Aspect",
+        "Slope",
+        "Horizontal_Distance_To_Hydrology",
+        "Vertical_Distance_To_Hydrology",
+        "Horizontal_Distance_To_Roadways",
+        "Hillshade_9am",
+        "Hillshade_Noon",
+        "Hillshade_3pm",
+        "Horizontal_Distance_To_Fire_Points",
+    ]
+    PERTURBABLE_INTEGER_COLUMNS = []
+    NON_PERTURBABLE_COLUMNS = [
+        "Wilderness_Area_0",
+        "Wilderness_Area_1",
+        "Wilderness_Area_2",
+        "Wilderness_Area_3",
+        "Soil_Type_0",
+        "Soil_Type_1",
+        "Soil_Type_2",
+        "Soil_Type_3",
+        "Soil_Type_4",
+        "Soil_Type_5",
+        "Soil_Type_6",
+        "Soil_Type_7",
+        "Soil_Type_8",
+        "Soil_Type_9",
+        "Soil_Type_10",
+        "Soil_Type_11",
+        "Soil_Type_12",
+        "Soil_Type_13",
+        "Soil_Type_14",
+        "Soil_Type_15",
+        "Soil_Type_16",
+        "Soil_Type_17",
+        "Soil_Type_18",
+        "Soil_Type_19",
+        "Soil_Type_20",
+        "Soil_Type_21",
+        "Soil_Type_22",
+        "Soil_Type_23",
+        "Soil_Type_24",
+        "Soil_Type_25",
+        "Soil_Type_26",
+        "Soil_Type_27",
+        "Soil_Type_28",
+        "Soil_Type_29",
+        "Soil_Type_30",
+        "Soil_Type_31",
+        "Soil_Type_32",
+        "Soil_Type_33",
+        "Soil_Type_34",
+        "Soil_Type_35",
+        "Soil_Type_36",
+        "Soil_Type_37",
+        "Soil_Type_38",
+        "Soil_Type_39",
+    ]
+
     def __init__(
         self,
         num_classes: int = 7,
@@ -149,6 +216,35 @@ class CovtypeDataset(NebulaDataset):
 
         self.data_partitioning(plot=True)
 
+    @classmethod
+    def _default_feature_names(cls, n_features: int) -> list[str]:
+        configured_columns = cls.PERTURBABLE_CONTINUOUS_COLUMNS + cls.NON_PERTURBABLE_COLUMNS
+        if n_features == len(configured_columns):
+            return configured_columns
+        return [f"feature_{i}" for i in range(n_features)]
+
+    @classmethod
+    def _validate_manual_schema(cls, columns) -> None:
+        continuous_columns = set(cls.PERTURBABLE_CONTINUOUS_COLUMNS)
+        integer_columns = set(cls.PERTURBABLE_INTEGER_COLUMNS)
+        non_perturbable_columns = set(cls.NON_PERTURBABLE_COLUMNS)
+        overlapping_columns = sorted(
+            (continuous_columns & integer_columns)
+            | (continuous_columns & non_perturbable_columns)
+            | (integer_columns & non_perturbable_columns)
+        )
+        if overlapping_columns:
+            raise ValueError(f"CovtypeDataset columns configured twice: {overlapping_columns}")
+
+        configured_columns = continuous_columns | integer_columns | non_perturbable_columns
+        dataset_columns = set(columns)
+        missing_columns = sorted(configured_columns - dataset_columns)
+        if missing_columns:
+            raise ValueError(f"CovtypeDataset is missing configured columns: {missing_columns}")
+        unconfigured_columns = sorted(dataset_columns - configured_columns)
+        if unconfigured_columns:
+            raise ValueError(f"CovtypeDataset has unconfigured columns: {unconfigured_columns}")
+
     def load_covtype_dataset(self):
         """
         Loads Covtype via sklearn, performs a deterministic train/test split,
@@ -173,10 +269,32 @@ class CovtypeDataset(NebulaDataset):
         y = cov.target  # commonly 1..7 in sklearn
         feature_names = getattr(cov, "feature_names", None)
         if feature_names is None:
-            feature_names = [f"feature_{i}" for i in range(x.shape[1])]
+            feature_names = self._default_feature_names(x.shape[1])
         feature_names = [str(name) for name in feature_names]
-        continuous_features = list(range(min(10, x.shape[1])))
-        binary_features = [i for i in range(x.shape[1]) if i not in continuous_features]
+        try:
+            self._validate_manual_schema(feature_names)
+        except ValueError:
+            if x.shape[1] != len(self.PERTURBABLE_CONTINUOUS_COLUMNS) + len(self.NON_PERTURBABLE_COLUMNS):
+                raise
+            import logging
+            logging.getLogger().info(
+                "[Covtype] Replacing sklearn feature names with canonical Covtype names for adversarial metadata"
+            )
+            feature_names = self._default_feature_names(x.shape[1])
+            self._validate_manual_schema(feature_names)
+        continuous_features = [
+            idx for idx, name in enumerate(feature_names)
+            if name in self.PERTURBABLE_CONTINUOUS_COLUMNS
+        ]
+        integer_features = [
+            idx for idx, name in enumerate(feature_names)
+            if name in self.PERTURBABLE_INTEGER_COLUMNS
+        ]
+        non_perturbable_features = [
+            idx for idx, name in enumerate(feature_names)
+            if name in self.NON_PERTURBABLE_COLUMNS
+        ]
+        binary_features = non_perturbable_features
 
         # Map labels to 0..6 (CrossEntropyLoss convention)
         # If already 0..6, this is harmless for 1..7 only if we detect min.
@@ -219,20 +337,40 @@ class CovtypeDataset(NebulaDataset):
         x_test = np.asarray(x_test, dtype=np.float32).copy()
         x_train[:, continuous_features] = scaler.fit_transform(x_train[:, continuous_features])
         x_test[:, continuous_features] = scaler.transform(x_test[:, continuous_features])
+        continuous_feature_set = set(continuous_features)
+        integer_feature_set = set(integer_features)
+        tabular_metadata = TabularAdversarialMetadata(
+            feature_names=feature_names,
+            feature_types=[
+                CONTINUOUS if idx in continuous_feature_set
+                else INTEGER if idx in integer_feature_set
+                else NON_PERTURBABLE
+                for idx in range(len(feature_names))
+            ],
+            feature_min_norm=np.min(x_train, axis=0).astype(float).tolist(),
+            feature_max_norm=np.max(x_train, axis=0).astype(float).tolist(),
+            integer_step_norm={},
+        ).to_dict()
 
         train_ds = CovtypeTorchDataset(
             x_train,
             y_train,
             feature_names=feature_names,
             continuous_features=continuous_features,
+            integer_features=integer_features,
+            non_perturbable_features=non_perturbable_features,
             binary_features=binary_features,
+            tabular_metadata=tabular_metadata,
         )
         test_ds = CovtypeTorchDataset(
             x_test,
             y_test,
             feature_names=feature_names,
             continuous_features=continuous_features,
+            integer_features=integer_features,
+            non_perturbable_features=non_perturbable_features,
             binary_features=binary_features,
+            tabular_metadata=tabular_metadata,
         )
 
         return train_ds, test_ds

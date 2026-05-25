@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Tuple, Any
 
@@ -6,6 +7,7 @@ import torch
 from torch.utils.data import Dataset
 
 from nebula.core.datasets.nebuladataset import NebulaDataset, NebulaPartitionHandler
+from nebula.core.datasets.tabular_metadata import CONTINUOUS, INTEGER, NON_PERTURBABLE, TabularAdversarialMetadata
 
 
 class KDDCUP99TorchDataset(Dataset):
@@ -22,7 +24,10 @@ class KDDCUP99TorchDataset(Dataset):
         y: np.ndarray,
         feature_names: list[str] | None = None,
         continuous_features: list[int] | None = None,
+        integer_features: list[int] | None = None,
+        non_perturbable_features: list[int] | None = None,
         binary_features: list[int] | None = None,
+        tabular_metadata: dict | None = None,
     ):
         if not isinstance(x, np.ndarray) or not isinstance(y, np.ndarray):
             raise ValueError("x and y must be numpy arrays")
@@ -45,7 +50,10 @@ class KDDCUP99TorchDataset(Dataset):
         self.classes = [str(i) for i in range(n_classes)]
         self.feature_names = feature_names or [f"feature_{i}" for i in range(self.x.shape[1])]
         self.continuous_features = continuous_features or []
+        self.integer_features = integer_features or []
+        self.non_perturbable_features = non_perturbable_features or []
         self.binary_features = binary_features or []
+        self.tabular_metadata = tabular_metadata
         self.input_dim = int(self.x.shape[1])
 
     def __len__(self) -> int:
@@ -110,6 +118,97 @@ class KDDCUP99Dataset(NebulaDataset):
     - scikit-learn must be installed
     - pandas must be installed
     """
+    RAW_FEATURE_COLUMNS = [
+        "duration",
+        "protocol_type",
+        "service",
+        "flag",
+        "src_bytes",
+        "dst_bytes",
+        "land",
+        "wrong_fragment",
+        "urgent",
+        "hot",
+        "num_failed_logins",
+        "logged_in",
+        "num_compromised",
+        "root_shell",
+        "su_attempted",
+        "num_root",
+        "num_file_creations",
+        "num_shells",
+        "num_access_files",
+        "num_outbound_cmds",
+        "is_host_login",
+        "is_guest_login",
+        "count",
+        "srv_count",
+        "serror_rate",
+        "srv_serror_rate",
+        "rerror_rate",
+        "srv_rerror_rate",
+        "same_srv_rate",
+        "diff_srv_rate",
+        "srv_diff_host_rate",
+        "dst_host_count",
+        "dst_host_srv_count",
+        "dst_host_same_srv_rate",
+        "dst_host_diff_srv_rate",
+        "dst_host_same_src_port_rate",
+        "dst_host_srv_diff_host_rate",
+        "dst_host_serror_rate",
+        "dst_host_srv_serror_rate",
+        "dst_host_rerror_rate",
+        "dst_host_srv_rerror_rate",
+    ]
+    PERTURBABLE_CONTINUOUS_COLUMNS = [
+        "serror_rate",
+        "srv_serror_rate",
+        "rerror_rate",
+        "srv_rerror_rate",
+        "same_srv_rate",
+        "diff_srv_rate",
+        "srv_diff_host_rate",
+        "dst_host_same_srv_rate",
+        "dst_host_diff_srv_rate",
+        "dst_host_same_src_port_rate",
+        "dst_host_srv_diff_host_rate",
+        "dst_host_serror_rate",
+        "dst_host_srv_serror_rate",
+        "dst_host_rerror_rate",
+        "dst_host_srv_rerror_rate",
+    ]
+    PERTURBABLE_INTEGER_COLUMNS = [
+        "duration",
+        "src_bytes",
+        "dst_bytes",
+        "wrong_fragment",
+        "urgent",
+        "hot",
+        "num_failed_logins",
+        "num_compromised",
+        "num_root",
+        "num_file_creations",
+        "num_shells",
+        "num_access_files",
+        "num_outbound_cmds",
+        "count",
+        "srv_count",
+        "dst_host_count",
+        "dst_host_srv_count",
+    ]
+    NON_PERTURBABLE_RAW_COLUMNS = [
+        "protocol_type",
+        "service",
+        "flag",
+        "land",
+        "logged_in",
+        "root_shell",
+        "su_attempted",
+        "is_host_login",
+        "is_guest_login",
+    ]
+
     def __init__(
         self,
         num_classes: int = 23,
@@ -122,8 +221,8 @@ class KDDCUP99Dataset(NebulaDataset):
         seed: int = 42,
         config_dir: str | None = None,
         test_size: float = 0.2,
-        train_limit: int | None = None,
-        test_limit: int | None = None,
+        train_limit: int | None = 60000,
+        test_limit: int | None = 10000,
         subset: str | None = None,
         percent10: bool = True,
     ):
@@ -149,6 +248,35 @@ class KDDCUP99Dataset(NebulaDataset):
             self.train_set, self.test_set = self.load_kddcup99_dataset()
 
         self.data_partitioning(plot=True)
+
+    @classmethod
+    def _ensure_raw_feature_names(cls, x):
+        if list(x.columns) == list(range(len(cls.RAW_FEATURE_COLUMNS))):
+            x = x.copy()
+            x.columns = cls.RAW_FEATURE_COLUMNS
+        return x
+
+    @classmethod
+    def _validate_manual_schema(cls, columns) -> None:
+        continuous_columns = set(cls.PERTURBABLE_CONTINUOUS_COLUMNS)
+        integer_columns = set(cls.PERTURBABLE_INTEGER_COLUMNS)
+        non_perturbable_columns = set(cls.NON_PERTURBABLE_RAW_COLUMNS)
+        overlapping_columns = sorted(
+            (continuous_columns & integer_columns)
+            | (continuous_columns & non_perturbable_columns)
+            | (integer_columns & non_perturbable_columns)
+        )
+        if overlapping_columns:
+            raise ValueError(f"KDDCUP99Dataset columns configured twice: {overlapping_columns}")
+
+        configured_columns = continuous_columns | integer_columns | non_perturbable_columns
+        dataset_columns = set(columns)
+        missing_columns = sorted(configured_columns - dataset_columns)
+        if missing_columns:
+            raise ValueError(f"KDDCUP99Dataset is missing configured columns: {missing_columns}")
+        unconfigured_columns = sorted(dataset_columns - configured_columns)
+        if unconfigured_columns:
+            raise ValueError(f"KDDCUP99Dataset has unconfigured columns: {unconfigured_columns}")
 
     def load_kddcup99_dataset(self):
         """
@@ -188,6 +316,8 @@ class KDDCUP99Dataset(NebulaDataset):
             x = pd.DataFrame(x)
         if not hasattr(y, "astype"):
             y = pd.Series(y)
+        x = self._ensure_raw_feature_names(x)
+        self._validate_manual_schema(x.columns)
 
         # Decode bytes -> str where needed
         def _decode_if_bytes(v):
@@ -202,14 +332,23 @@ class KDDCUP99Dataset(NebulaDataset):
                 x[col] = x[col].map(_decode_if_bytes)
 
         y = y.map(_decode_if_bytes)
-        numeric_columns = x.select_dtypes(exclude=["object", "category"]).columns.tolist()
 
         # One-hot encode categorical columns, keep numeric ones as-is.
         x = pd.get_dummies(x, drop_first=False)
         feature_names = [str(col) for col in x.columns]
-        numeric_columns = [col for col in numeric_columns if col in x.columns]
-        continuous_features = [x.columns.get_loc(col) for col in numeric_columns]
-        binary_features = [i for i in range(len(feature_names)) if i not in continuous_features]
+        continuous_features = [
+            x.columns.get_loc(col)
+            for col in self.PERTURBABLE_CONTINUOUS_COLUMNS
+            if col in x.columns
+        ]
+        integer_features = [
+            x.columns.get_loc(col)
+            for col in self.PERTURBABLE_INTEGER_COLUMNS
+            if col in x.columns
+        ]
+        perturbable_features = set(continuous_features) | set(integer_features)
+        non_perturbable_features = [i for i in range(len(feature_names)) if i not in perturbable_features]
+        binary_features = non_perturbable_features
 
         # Map labels to 0..num_classes-1 deterministically
         y = pd.Series(y).astype(str)
@@ -238,6 +377,7 @@ class KDDCUP99Dataset(NebulaDataset):
                 shuffle=True,
                 stratify=y_train,
             )
+            logging.getLogger().info("[KDDCUP99] Limited train split to %s samples", len(y_train))
 
         if self.test_limit is not None and len(y_test) > self.test_limit:
             x_test, _, y_test, _ = train_test_split(
@@ -247,29 +387,57 @@ class KDDCUP99Dataset(NebulaDataset):
                 shuffle=True,
                 stratify=y_test,
             )
+            logging.getLogger().info("[KDDCUP99] Limited test split to %s samples", len(y_test))
 
         x_train_np = x_train.astype(np.float32).to_numpy(copy=True)
         x_test_np = x_test.astype(np.float32).to_numpy(copy=True)
 
-        # Scale the original numeric columns after splitting. One-hot columns stay binary.
-        if continuous_features:
+        # Scale perturbable numeric columns after splitting. One-hot and binary flags stay unchanged.
+        scaled_features = continuous_features + integer_features
+        if scaled_features:
             scaler = StandardScaler()
-            x_train_np[:, continuous_features] = scaler.fit_transform(x_train_np[:, continuous_features])
-            x_test_np[:, continuous_features] = scaler.transform(x_test_np[:, continuous_features])
+            x_train_np[:, scaled_features] = scaler.fit_transform(x_train_np[:, scaled_features])
+            x_test_np[:, scaled_features] = scaler.transform(x_test_np[:, scaled_features])
+        integer_step_norm = {}
+        if integer_features:
+            integer_step_norm = {
+                idx: float(1.0 / scale)
+                for idx, scale in zip(integer_features, scaler.scale_[len(continuous_features):], strict=False)
+            }
+        continuous_feature_set = set(continuous_features)
+        integer_feature_set = set(integer_features)
+        tabular_metadata = TabularAdversarialMetadata(
+            feature_names=feature_names,
+            feature_types=[
+                CONTINUOUS if idx in continuous_feature_set
+                else INTEGER if idx in integer_feature_set
+                else NON_PERTURBABLE
+                for idx in range(len(feature_names))
+            ],
+            feature_min_norm=np.min(x_train_np, axis=0).astype(float).tolist(),
+            feature_max_norm=np.max(x_train_np, axis=0).astype(float).tolist(),
+            integer_step_norm=integer_step_norm,
+        ).to_dict()
 
         train_ds = KDDCUP99TorchDataset(
             x_train_np,
             y_train,
             feature_names=feature_names,
             continuous_features=continuous_features,
+            integer_features=integer_features,
+            non_perturbable_features=non_perturbable_features,
             binary_features=binary_features,
+            tabular_metadata=tabular_metadata,
         )
         test_ds = KDDCUP99TorchDataset(
             x_test_np,
             y_test,
             feature_names=feature_names,
             continuous_features=continuous_features,
+            integer_features=integer_features,
+            non_perturbable_features=non_perturbable_features,
             binary_features=binary_features,
+            tabular_metadata=tabular_metadata,
         )
 
         # Optional: preserve original class names for inspection/debugging

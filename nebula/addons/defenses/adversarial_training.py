@@ -263,7 +263,8 @@ class AdversarialTrainingDefense:
         cls._validate_config(config)
 
         if config.domain == "tabular":
-            if dataset_name != "AdultCensus":
+            supported_tabular_datasets = {"AdultCensus", "BreastCancer", "Covtype", "KDDCUP99"}
+            if dataset_name not in supported_tabular_datasets:
                 logging.warning(
                     "[AdversarialTrainingDefense] Skipping tabular adversarial training: dataset '%s' is not supported yet",
                     dataset_name,
@@ -334,7 +335,7 @@ class AdversarialTrainingDefense:
         train_set = getattr(partition, "train_set", None) if partition is not None else None
         metadata = getattr(train_set, "tabular_metadata", None)
         if metadata is None:
-            raise ValueError("AdultCensus tabular adversarial training requires tabular_metadata")
+            raise ValueError("Tabular adversarial training requires tabular_metadata")
         if isinstance(metadata, TabularAdversarialMetadata):
             tabular_metadata = metadata
         else:
