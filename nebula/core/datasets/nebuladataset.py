@@ -162,6 +162,9 @@ class NebulaPartitionHandler(Dataset, ABC):
             elif typ == "pickle_bytes":
                 logging_training.info(f"Loading compressed pickled bytes object from {name}")
                 return pickle.loads(item[()])
+            elif typ == "array":
+                logging_training.info(f"Loading array object from {name}")
+                return item[()]
             else:
                 logging_training.warning(f"[NebulaPartitionHandler] Unknown type encountered: {typ} for item {name}")
                 return item[()]
@@ -466,6 +469,18 @@ class NebulaDataset:
             logging.exception(f"Error saving object to HDF5: {e}")
             raise
 
+    def save_dataset_partition(self, dataset, indices, file, name):
+        if hasattr(dataset, "x") and isinstance(dataset.x, np.ndarray):
+            logging.info(f"Saving array partition {name} with {len(indices)} samples")
+            data = dataset.x[indices].astype(np.float32, copy=False)
+            ds = file.create_dataset(name, data=data, compression="lzf", shuffle=True)
+            ds.attrs["__type__"] = "array"
+            logging.info(f"Saved array partition {name} with shape {data.shape}")
+            return
+
+        partition_data = [dataset[i] for i in indices]
+        self.save_partition(partition_data, file, name)
+
     def save_partitions(self):
         """
         Save each partition data (train, test, and local test) to separate pickle files.
@@ -489,8 +504,7 @@ class NebulaDataset:
             file_name = os.path.join(path, "global_test.h5")
             with h5py.File(file_name, "w") as f:
                 indices = list(range(len(self.test_set)))
-                test_data = [self.test_set[i] for i in indices]
-                self.save_partition(test_data, f, "test_data")
+                self.save_dataset_partition(self.test_set, indices, f, "test_data")
                 f["test_data"].attrs["num_classes"] = self.num_classes
                 self._save_tabular_metadata_attr(self.test_set, f["test_data"])
                 test_targets = np.array(self.test_set.targets)
@@ -501,8 +515,7 @@ class NebulaDataset:
                 with h5py.File(file_name, "w") as f:
                     logging.info(f"Saving training data for participant {participant} in {file_name}")
                     indices = self.train_indices_map[participant]
-                    train_data = [self.train_set[i] for i in indices]
-                    self.save_partition(train_data, f, "train_data")
+                    self.save_dataset_partition(self.train_set, indices, f, "train_data")
                     f["train_data"].attrs["num_classes"] = self.num_classes
                     self._save_tabular_metadata_attr(self.train_set, f["train_data"])
                     train_targets = np.array([self.train_set.targets[i] for i in indices])

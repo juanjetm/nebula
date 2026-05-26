@@ -7,7 +7,7 @@ class KDDCUP99ModelMLP(NebulaModel):
     def __init__(
         self,
         input_channels=1,
-        num_classes=23,
+        num_classes=2,
         learning_rate=1e-3,
         metrics=None,
         confusion_matrix=None,

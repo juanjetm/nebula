@@ -110,9 +110,10 @@ class KDDCUP99Dataset(NebulaDataset):
 
     Notes:
     - KDDCUP99 is a tabular intrusion-detection dataset.
-    - sklearn fetch_kddcup99 exposes 41 features and 23 classes.
+    - sklearn fetch_kddcup99 exposes 41 features.
+    - Targets are mapped to a binary task: normal vs attack.
     - Some columns are categorical/string-like, so we one-hot encode them.
-    - Targets may come as bytes/strings, so we map them to 0..num_classes-1.
+    - Targets may come as bytes/strings, so we decode before mapping labels.
 
     Requirements:
     - scikit-learn must be installed
@@ -211,7 +212,7 @@ class KDDCUP99Dataset(NebulaDataset):
 
     def __init__(
         self,
-        num_classes: int = 23,
+        num_classes: int = 2,
         partitions_number: int = 1,
         batch_size: int = 32,
         num_workers: int = 4,
@@ -221,8 +222,8 @@ class KDDCUP99Dataset(NebulaDataset):
         seed: int = 42,
         config_dir: str | None = None,
         test_size: float = 0.2,
-        train_limit: int | None = 60000,
-        test_limit: int | None = 10000,
+        train_limit: int | None = 12000,
+        test_limit: int | None = 2000,
         subset: str | None = None,
         percent10: bool = True,
     ):
@@ -336,6 +337,7 @@ class KDDCUP99Dataset(NebulaDataset):
         # One-hot encode categorical columns, keep numeric ones as-is.
         x = pd.get_dummies(x, drop_first=False)
         feature_names = [str(col) for col in x.columns]
+        logging.getLogger().info("[KDDCUP99] Encoded feature dimension: %s", len(feature_names))
         continuous_features = [
             x.columns.get_loc(col)
             for col in self.PERTURBABLE_CONTINUOUS_COLUMNS
@@ -350,14 +352,13 @@ class KDDCUP99Dataset(NebulaDataset):
         non_perturbable_features = [i for i in range(len(feature_names)) if i not in perturbable_features]
         binary_features = non_perturbable_features
 
-        # Map labels to 0..num_classes-1 deterministically
+        # Map labels to a binary task: 0 = normal, 1 = attack.
         y = pd.Series(y).astype(str)
-        classes = sorted(y.unique().tolist())
-        class_to_idx = {cls_name: idx for idx, cls_name in enumerate(classes)}
-        y = y.map(class_to_idx).to_numpy(dtype=np.int64, copy=False)
+        y = y.str.strip()
+        y = (y != "normal.").astype(np.int64).to_numpy(copy=False)
 
-        # Keep self.num_classes aligned with actual loaded subset
-        self.num_classes = len(classes)
+        classes = ["normal", "attack"]
+        self.num_classes = 2
 
         # Split "grande"
         x_train, x_test, y_train, y_test = train_test_split(
