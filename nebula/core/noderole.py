@@ -170,6 +170,10 @@ class RoleBehavior(ABC):
             updt_needed = self._next_role != None
         return updt_needed
 
+    async def before_round_start(self):
+        """Hook for role-specific work before a round starts."""
+        return None
+
 """                                                         ##############################
                                                             #     MALICIOUS BEHAVIOR     #
                                                             ##############################
@@ -209,6 +213,9 @@ class MaliciousRoleBehavior(RoleBehavior):
             logging.exception(f"Attack {attack_name} failed")
 
         await self._fake_role_behavior.extended_learning_cycle()
+
+    async def before_round_start(self):
+        await self._fake_role_behavior.before_round_start()
 
     async def select_nodes_to_wait(self):
         nodes = await self._fake_role_behavior.select_nodes_to_wait()
@@ -280,20 +287,7 @@ class AggregatorRoleBehavior(RoleBehavior):
     async def extended_learning_cycle(self):
         await self._engine.trainer.test()
 
-        if self._config.participant["scenario_args"].get("federation") == "SDFL":
-            await self._engine.send_sdfl_reputation_model_update()
-
         await self._engine._waiting_model_updates()
-
-        federation = self._config.participant["scenario_args"].get("federation")
-
-        if federation == "SDFL":
-
-            await self._engine.send_sdfl_global_model()
-            await self._transfer_leadership()
-
-            return
-
 
         mpe = ModelPropagationEvent(await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False), "stable")
         await EventManager.get_instance().publish_node_event(mpe)
@@ -315,23 +309,113 @@ class AggregatorRoleBehavior(RoleBehavior):
                 return
             lt_message = self._engine.cm.create_message("control", "leadership_transfer")
             logging.info(f"Sending transfer leadership to: {successor}")
-            if self._config.participant["scenario_args"].get("federation") == "SDFL":
-                await self._engine.mark_leadership_transfer_pending(successor)
+            await self._before_leadership_transfer(successor)
             asyncio.create_task(self._engine.cm.send_message(successor, lt_message))
             await self._engine.register_leadership_transfer(successor)
             self._transfer_send = True
 
-    async def select_nodes_to_wait(self):
-        if self._config.participant["scenario_args"].get("federation") == "SDFL":
-            nodes = self._engine.get_sdfl_expected_trainers()
-            if nodes:
-                return nodes
+    async def _before_leadership_transfer(self, successor):
+        return None
 
+    async def select_nodes_to_wait(self):
         nodes = await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False)
         return nodes
 
     async def resolve_missing_updates(self):
         return (self._engine.trainer.get_model_parameters(), self._engine.trainer.BYPASS_MODEL_WEIGHT)
+
+
+class SDFLRoleMixin:
+    async def _send_reputation_model_update(self):
+        model_params = self._engine.trainer.get_model_parameters()
+        serialized_model = (
+            model_params
+            if isinstance(model_params, bytes)
+            else self._engine.trainer.serialize_model(model_params)
+        )
+
+        message = self._engine.cm.create_message(
+            "model",
+            round=self._engine.round,
+            parameters=serialized_model,
+            weight=self._engine.trainer.get_model_weight(),
+        )
+
+        neighbors = await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False)
+        if not neighbors:
+            logging.info("SDFL reputation | No direct neighbors to send model/update")
+            return
+
+        logging.info(f"SDFL reputation | Broadcasting model/update to direct neighbors: {neighbors}")
+        await asyncio.gather(
+            *[
+                asyncio.create_task(self._engine.cm.send_message(neighbor, message, "model"))
+                for neighbor in neighbors
+            ]
+        )
+
+
+class SDFLAggregatorRoleBehavior(SDFLRoleMixin, AggregatorRoleBehavior):
+    async def before_round_start(self):
+        await self._engine.wait_pending_leadership_ack()
+
+    async def extended_learning_cycle(self):
+        await self._engine.trainer.test()
+        await self._send_reputation_model_update()
+        await self._engine._waiting_model_updates()
+        await self._send_global_model()
+        await self._transfer_leadership()
+
+    async def _before_leadership_transfer(self, successor):
+        await self._engine.mark_leadership_transfer_pending(successor)
+
+    async def select_nodes_to_wait(self):
+        nodes = self._engine.get_sdfl_expected_trainers()
+        if nodes:
+            return nodes
+        return await super().select_nodes_to_wait()
+
+    async def _send_global_model(self) -> None:
+        model_params = self._engine.trainer.get_model_parameters()
+        serialized_model = (
+            model_params
+            if isinstance(model_params, bytes)
+            else self._engine.trainer.serialize_model(model_params)
+        )
+
+        message = self._engine.cm.create_message(
+            "sdflmodel",
+            "global_model",
+            target="trainer",
+            parameters=serialized_model,
+            weight=self._engine.trainer.get_model_weight(),
+            round=self._engine.round,
+            node_id=self._engine.addr,
+        )
+
+        neighbors = await self._engine.cm.get_addrs_current_connections(
+            only_direct=True,
+            myself=False,
+        )
+
+        logging.info(f"SDFL aggregator | Broadcasting GLOBAL_MODEL to neighbors: {neighbors}")
+
+        tasks = [
+            asyncio.create_task(
+                self._engine.cm.send_message(
+                    neighbor,
+                    message,
+                    "sdflmodel",
+                    allow_after_learning_finished=True,
+                )
+            )
+            for neighbor in neighbors
+        ]
+
+        if tasks:
+            await asyncio.gather(*tasks)
+        else:
+            logging.warning("SDFL aggregator | No neighbors available to send GLOBAL_MODEL")
 
 """                                                         ##############################
                                                             #       SERVER BEHAVIOR      #
@@ -397,87 +481,6 @@ class TrainerRoleBehavior(RoleBehavior):
         finally:
             await self._engine.trainning_in_progress_lock.release_async()
 
-        federation = self._config.participant["scenario_args"].get("federation")
-
-        if federation == "SDFL":
-            self._engine.prepare_waiting_global_model()
-
-            if self._engine._reputation is not None:
-                await self._engine._reputation.process_pending_sdfl_reputation_updates(self._engine.round)
-
-            await self._engine.send_sdfl_reputation_model_update()
-
-            if self._engine._reputation is not None:
-                expected_reputation_neighbors = await self._engine.cm.get_addrs_current_connections(
-                    only_direct=True,
-                    myself=False,
-                )
-                reputation_timeout = float(
-                    self._config.participant["defense_args"]
-                    .get("reputation", {})
-                    .get(
-                        "model_update_timeout",
-                        self._config.participant["defense_args"]
-                        .get("reputation", {})
-                        .get("table_aggregation_timeout", 30),
-                    )
-                )
-                await self._engine._reputation.wait_sdfl_reputation_updates(
-                    expected_reputation_neighbors,
-                    self._engine.round,
-                    reputation_timeout,
-                )
-                await self._engine._reputation.calculate_and_send_sdfl_reputation_table()
-
-            model_params = self._engine.trainer.get_model_parameters()
-            serialized_model = (
-                model_params
-                if isinstance(model_params, bytes)
-                else self._engine.trainer.serialize_model(model_params)
-            )
-
-            message = self._engine.cm.create_message(
-                "sdflmodel",
-                "trainer_update",
-                target="aggregator",
-                parameters=serialized_model,
-                weight=self._engine.trainer.get_model_weight(),
-                round=self._engine.round,
-                node_id=self._engine.addr,
-            )
-
-            neighbors = await self._engine.cm.get_addrs_current_connections(
-                only_direct=True,
-                myself=False,
-            )
-
-            logging.info(
-                f"SDFL trainer | Broadcasting TRAINER_UPDATE to neighbors: {neighbors}"
-            )
-
-            tasks = []
-
-            for neighbor in neighbors:
-                tasks.append(
-                    asyncio.create_task(
-                        self._engine.cm.send_message(
-                            neighbor,
-                            message,
-                            "sdflmodel",
-                        )
-                    )
-                )
-
-            if tasks:
-                await asyncio.gather(*tasks)
-            else:
-                logging.warning(
-                    "SDFL trainer | No neighbors available to send TRAINER_UPDATE"
-                )
-
-            await self._engine._waiting_global_model()
-            return
-
         mpe = ModelPropagationEvent(await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False), "stable")
         await EventManager.get_instance().publish_node_event(mpe)
 
@@ -489,6 +492,109 @@ class TrainerRoleBehavior(RoleBehavior):
 
     async def resolve_missing_updates(self):
         return (self._engine.trainer.get_model_parameters(), self._engine.trainer.get_model_weight())
+
+
+class SDFLTrainerRoleBehavior(SDFLRoleMixin, TrainerRoleBehavior):
+    async def extended_learning_cycle(self):
+        logging.info("Waiting global update | Assign _waiting_global_update = True")
+
+        await self._engine.trainer.test()
+        self._prepare_waiting_global_model()
+        await self._engine.trainning_in_progress_lock.acquire_async()
+        try:
+            await self._engine.trainer.train()
+        finally:
+            await self._engine.trainning_in_progress_lock.release_async()
+
+        if self._engine._reputation is not None:
+            await self._engine._reputation.process_pending_sdfl_reputation_updates(self._engine.round)
+
+        await self._send_reputation_model_update()
+        await self._calculate_and_send_reputation_table()
+        await self._send_trainer_update()
+        await self._waiting_global_model()
+
+    def _prepare_waiting_global_model(self):
+        self._engine._global_model_source = None
+        self._engine._global_model_received.clear()
+
+    async def _calculate_and_send_reputation_table(self):
+        if self._engine._reputation is None:
+            return
+
+        expected_reputation_neighbors = await self._engine.cm.get_addrs_current_connections(
+            only_direct=True,
+            myself=False,
+        )
+        reputation_timeout = float(
+            self._config.participant["defense_args"]
+            .get("reputation", {})
+            .get(
+                "model_update_timeout",
+                self._config.participant["defense_args"]
+                .get("reputation", {})
+                .get("table_aggregation_timeout", 30),
+            )
+        )
+        await self._engine._reputation.wait_sdfl_reputation_updates(
+            expected_reputation_neighbors,
+            self._engine.round,
+            reputation_timeout,
+        )
+        await self._engine._reputation.calculate_and_send_sdfl_reputation_table()
+
+    async def _send_trainer_update(self):
+        model_params = self._engine.trainer.get_model_parameters()
+        serialized_model = (
+            model_params
+            if isinstance(model_params, bytes)
+            else self._engine.trainer.serialize_model(model_params)
+        )
+
+        message = self._engine.cm.create_message(
+            "sdflmodel",
+            "trainer_update",
+            target="aggregator",
+            parameters=serialized_model,
+            weight=self._engine.trainer.get_model_weight(),
+            round=self._engine.round,
+            node_id=self._engine.addr,
+        )
+
+        neighbors = await self._engine.cm.get_addrs_current_connections(
+            only_direct=True,
+            myself=False,
+        )
+
+        logging.info(f"SDFL trainer | Broadcasting TRAINER_UPDATE to neighbors: {neighbors}")
+
+        tasks = [
+            asyncio.create_task(
+                self._engine.cm.send_message(
+                    neighbor,
+                    message,
+                    "sdflmodel",
+                )
+            )
+            for neighbor in neighbors
+        ]
+
+        if tasks:
+            await asyncio.gather(*tasks)
+        else:
+            logging.warning("SDFL trainer | No neighbors available to send TRAINER_UPDATE")
+
+    async def _waiting_global_model(self):
+        timeout = self._config.participant["aggregator_args"]["aggregation_timeout"]
+        logging.info(f"💤  Waiting global SDFL model in round {self._engine.round}.")
+        try:
+            await asyncio.wait_for(self._engine._global_model_received.wait(), timeout=timeout)
+            logging.info(
+                f"🤖  SDFL trainer | Global model received from "
+                f"{self._engine._global_model_source} in round {self._engine.round}"
+            )
+        except TimeoutError:
+            logging.error(f"🤖  SDFL trainer | Timeout waiting global model in round {self._engine.round}")
 
 """                                                         ##############################
                                                             #       IDLE BEHAVIOR        #
@@ -557,6 +663,15 @@ class roleBehaviorException(Exception):
     pass
 
 def factory_role_behavior(role: str, engine: Engine, config: Config) -> RoleBehavior | None:
+    federation = config.participant["scenario_args"].get("federation")
+    if federation == "SDFL":
+        sdfl_role_behaviors = {
+            "trainer": SDFLTrainerRoleBehavior,
+            "aggregator": SDFLAggregatorRoleBehavior,
+        }
+        node_role = sdfl_role_behaviors.get(role)
+        if node_role:
+            return node_role(engine, config)
 
     role_behaviors = {
         "malicious": MaliciousRoleBehavior,

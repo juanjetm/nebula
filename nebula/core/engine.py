@@ -237,6 +237,8 @@ class Engine:
 
     async def confirm_leadership_transfer_ack(self, source: str) -> bool:
         async with self._leadership_transfer_lock:
+            if self._leadership_transfer_pending is None:
+                return False
             if self._leadership_transfer_pending != source:
                 logging.info(
                     f"SDFL leadership | Ignoring ACK from {source}; "
@@ -249,9 +251,6 @@ class Engine:
             return True
 
     async def wait_pending_leadership_ack(self):
-        if self.config.participant["scenario_args"].get("federation") != "SDFL":
-            return
-
         async with self._leadership_transfer_lock:
             successor = self._leadership_transfer_pending
 
@@ -416,37 +415,6 @@ class Engine:
         updt_received_event = UpdateReceivedEvent(decoded_model, message.weight, source, message.round)
         await EventManager.get_instance().publish_node_event(updt_received_event)
 
-    async def send_sdfl_reputation_model_update(self):
-        if self.config.participant["scenario_args"].get("federation") != "SDFL":
-            return
-
-        model_params = self.trainer.get_model_parameters()
-        serialized_model = (
-            model_params
-            if isinstance(model_params, bytes)
-            else self.trainer.serialize_model(model_params)
-        )
-
-        message = self.cm.create_message(
-            "model",
-            round=self.round,
-            parameters=serialized_model,
-            weight=self.trainer.get_model_weight(),
-        )
-
-        neighbors = await self.cm.get_addrs_current_connections(only_direct=True, myself=False)
-        if not neighbors:
-            logging.info("SDFL reputation | No direct neighbors to send model/update")
-            return
-
-        logging.info(f"SDFL reputation | Broadcasting model/update to direct neighbors: {neighbors}")
-        await asyncio.gather(
-            *[
-                asyncio.create_task(self.cm.send_message(neighbor, message, "model"))
-                for neighbor in neighbors
-            ]
-        )
-
     """                                                     ##############################
                                                             #      General callbacks     #
                                                             ##############################
@@ -509,8 +477,7 @@ class Engine:
     async def _control_leadership_transfer_ack_callback(self, source, message):
         logging.info(f"🔧  handle_control_message | Trigger | Received leadership transfer ack message from {source}")
         # No concurrence of difference ack received treated, be aware of that.
-        if self.config.participant["scenario_args"].get("federation") == "SDFL":
-            await self.confirm_leadership_transfer_ack(source)
+        if await self.confirm_leadership_transfer_ack(source):
             return
 
         if await self._round_in_process_lock.locked_async():
@@ -686,7 +653,7 @@ class Engine:
         except Exception as e:
             logging.exception(f"Error handling trustscores message: {e}")
 
-    async def sdfl_trainer_update_callback(self, source, message):
+    async def _sdflmodel_trainer_update_callback(self, source, message):
         try:
             logging.info(
                 f"SDFL | TRAINER_UPDATE callback triggered | "
@@ -737,7 +704,7 @@ class Engine:
         except Exception as e:
             logging.exception(f"Error handling SDFL TRAINER_UPDATE message: {e}")
 
-    async def sdfl_global_model_callback(self, source, message):
+    async def _sdflmodel_global_model_callback(self, source, message):
         role = self.rb.get_role_name(True)
         logging.info(
             f"SDFL | GLOBAL_MODEL callback triggered | "
@@ -783,10 +750,6 @@ class Engine:
         # Additional callbacks not registered automatically
         await self.register_message_callback(("model", "initialization"), "model_initialization_callback")
         await self.register_message_callback(("model", "update"), "model_update_callback")
-
-        # SDFL model callbacks
-        await self.register_message_callback(("sdflmodel", "trainer_update"), "sdfl_trainer_update_callback")
-        await self.register_message_callback(("sdflmodel", "global_model"), "sdfl_global_model_callback")
 
     async def register_message_events_callbacks(self):
         me_dict = self.cm.get_messages_events()
@@ -1109,80 +1072,6 @@ class Engine:
         else:
             logging.error("Aggregation finished with no parameters")
 
-    async def send_sdfl_global_model(self) -> None:
-        model_params = self.trainer.get_model_parameters()
-        serialized_model = (
-            model_params
-            if isinstance(model_params, bytes)
-            else self.trainer.serialize_model(model_params)
-        )
-
-        message = self.cm.create_message(
-            "sdflmodel",
-            "global_model",
-            target="trainer",
-            parameters=serialized_model,
-            weight=self.trainer.get_model_weight(),
-            round=self.round,
-            node_id=self.addr,
-        )
-
-        neighbors = await self.cm.get_addrs_current_connections(
-            only_direct=True,
-            myself=False,
-        )
-
-        logging.info(
-            f"SDFL aggregator | Broadcasting GLOBAL_MODEL to neighbors: {neighbors}"
-        )
-
-        tasks = []
-
-        for neighbor in neighbors:
-            tasks.append(
-                asyncio.create_task(
-                    self.cm.send_message(
-                        neighbor,
-                        message,
-                        "sdflmodel",
-                        allow_after_learning_finished=True,
-                    )
-                )
-            )
-
-        if tasks:
-            await asyncio.gather(*tasks)
-        else:
-            logging.warning(
-                "SDFL aggregator | No neighbors available to send GLOBAL_MODEL"
-            )
-
-    def _is_sdfl_trainer(self):
-        federation = self.config.participant["scenario_args"].get("federation")
-        return federation == "SDFL" and self.rb.get_role_name(effective=True) == "trainer"
-
-    def prepare_waiting_global_model(self):
-        self._global_model_source = None
-        self._global_model_received.clear()
-
-    async def _waiting_global_model(self):
-        """
-        Wait for a global model sent by the current SDFL aggregator.
-
-        SDFL trainers must not aggregate locally. They train, send their update,
-        and block here until a model update is received and applied by
-        ``model_update_callback``.
-        """
-        timeout = self.config.participant["aggregator_args"]["aggregation_timeout"]
-        logging.info(f"💤  Waiting global SDFL model in round {self.round}.")
-        try:
-            await asyncio.wait_for(self._global_model_received.wait(), timeout=timeout)
-            logging.info(
-                f"🤖  SDFL trainer | Global model received from {self._global_model_source} in round {self.round}"
-            )
-        except TimeoutError:
-            logging.error(f"🤖  SDFL trainer | Timeout waiting global model in round {self.round}")
-
     def print_round_information(self):
         print_msg_box(
             msg=f"Round {self.round} of {self.total_rounds} started.",
@@ -1271,7 +1160,7 @@ class Engine:
                     title="Round information",
                 )
 
-                await self.wait_pending_leadership_ack()
+                await self.rb.before_round_start()
                 await self.update_self_role()
 
                 logging.info(f"Federation nodes: {self.federation_nodes}")

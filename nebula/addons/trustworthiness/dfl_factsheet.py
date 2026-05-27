@@ -6,6 +6,7 @@ from nebula.addons.trustworthiness.calculation import (
     get_bytes_model,
     get_dp_local,
     get_elapsed_time,
+    get_global_privacy_risk_dfl,
     get_local_class_imbalance_score,
     get_local_normalized_entropy,
     get_underfitting_score_local,
@@ -120,6 +121,11 @@ class DflFactsheet:
         factsheet["participants"]["local_dataset_size"] = sample_size
 
         populate_reputation(factsheet, reputation_summary, include_neighbor_num=True)
+        factsheet["privacy"]["privacy_risk"] = get_global_privacy_risk_dfl(
+            dp_enabled,
+            dp_epsilon,
+            factsheet["participants"]["neighbor_num"],
+        )
 
         factsheet["sustainability"]["emissions_communication_local"] = (
             (bytes_sent * 2.24e-10 * carbon_intensity_local)

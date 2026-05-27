@@ -209,6 +209,30 @@ class SDFLUpdateHandler(UpdateHandler):
         await self._updates_storage_lock.release_async()
         return updates
 
+    async def before_aggregation(self, updates: dict[str, tuple[object, float]], federation_nodes: set):
+        """
+        Calculate indirect SDFL reputation before aggregating trainer updates.
+        """
+        engine = self.agg.engine
+        if not hasattr(engine, "_reputation") or engine._reputation is None:
+            return
+
+        round_num = await engine.get_round()
+        expected_table_nodes = engine.get_sdfl_expected_trainers()
+        target_nodes = set(federation_nodes) | set(updates.keys())
+        timeout = float(
+            self.agg.config.participant["defense_args"]
+            .get("reputation", {})
+            .get("table_aggregation_timeout", 10)
+        )
+
+        await engine._reputation.calculate_indirect_reputation_for_non_neighbors(
+            target_nodes=target_nodes,
+            expected_table_nodes=expected_table_nodes,
+            round_num=round_num,
+            timeout=timeout,
+        )
+
     async def notify_federation_update(self, updt_nei_event: UpdateNeighborEvent):
         """
         Handle federation node join/leave events.

@@ -385,6 +385,12 @@ def get_global_privacy_risk(dp, epsilon, n):
         float: The global privacy risk.
     """
 
+    try:
+        epsilon = float(epsilon)
+        n = float(n)
+    except (TypeError, ValueError):
+        return 1
+
     if dp is True and isinstance(epsilon, numbers.Number):
         return 1 / (1 + (n - 1) * math.pow(e, -epsilon))
     else:
@@ -402,6 +408,12 @@ def get_global_privacy_risk_dfl(dp, epsilon, n):
     Returns:
         float: The global privacy risk.
     """
+
+    try:
+        epsilon = float(epsilon)
+        n = float(n)
+    except (TypeError, ValueError):
+        return 1
 
     if dp is True and isinstance(epsilon, numbers.Number):
         return 1 / (1 + (n + 1) * math.pow(e, -epsilon))

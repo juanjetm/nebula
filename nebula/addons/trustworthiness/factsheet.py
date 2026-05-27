@@ -13,6 +13,7 @@ from nebula.addons.trustworthiness.calculation import (
     get_dp_global,
     get_elapsed_time,
     get_entropy_list,
+    get_global_privacy_risk,
     get_participant_loss_accuracy,
     get_underfitting_score,
 )
@@ -101,6 +102,11 @@ class CflFactsheet:
 
             dp_enabled, dp_epsilon = get_dp_global(scenario_name)
             set_dp_configuration(factsheet, dp_enabled, dp_epsilon)
+            factsheet["privacy"]["privacy_risk"] = get_global_privacy_risk(
+                dp_enabled,
+                dp_epsilon,
+                factsheet["participants"]["client_num"],
+            )
 
             factsheet["system"]["avg_time_minutes"] = get_elapsed_time(start_time, end_time)
             factsheet["system"]["avg_model_size"] = avg_model_size
