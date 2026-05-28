@@ -139,7 +139,7 @@ class FeatureSqueezingDefense:
         return self._quantize01((arr_float - low) / value_range) * value_range + low
 
     # ------------------------------------------------------------------
-    # Shared helpers and diagnostics
+    # Helpers and diagnostics
     # ------------------------------------------------------------------
 
     def _quantize01(self, arr: np.ndarray) -> np.ndarray:

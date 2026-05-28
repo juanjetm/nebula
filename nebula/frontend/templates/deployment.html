@@ -588,7 +588,7 @@
                             style="display: inline; width: 80px; height: 30px;">
                     </div>
                     <small id="adversarial-training-dataset-note" class="form-text text-muted" style="display: none;">
-                        Adversarial Training is available for image and tabular datasets.
+                        Adversarial Training for tabular datasets currently supports AdultCensus with CAA.
                     </small>
                     <div id="adversarial-training-settings" style="margin-top: 10px; display: none;">
                         <input type="hidden" id="adversarialTrainingDomain" value="image">
@@ -607,7 +607,7 @@
                                 style="display: inline; width: 80%">
                         </div>
                         <div id="adversarial-training-pgd-settings" style="display: none;">
-                            <h5 class="step-title">PGD steps</h5>
+                            <h5 class="step-title" id="adversarialTrainingStepsTitle">PGD steps</h5>
                             <div class="form-check form-check-inline">
                                 <input type="number" class="form-control" id="adversarialTrainingSteps"
                                     placeholder="Steps" min="1" step="1" value="1"
@@ -657,7 +657,7 @@
                             </div>
                         </details>
                         <small class="form-text text-muted">
-                            Epsilon and bounds use the dataset input scale; image datasets convert pixel scale to normalized tensors.
+                            Image datasets use FGSM/PGD. AdultCensus uses CAA for tabular adversarial training.
                         </small>
                     </div>
                 </div>

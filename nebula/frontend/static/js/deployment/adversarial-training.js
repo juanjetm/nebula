@@ -17,6 +17,14 @@ const AdversarialTrainingManager = (function() {
     };
 
     const IMAGE_DATASETS = new Set(["MNIST", "FashionMNIST", "EMNIST", "CIFAR10", "CIFAR100"]);
+    const CAA_TABULAR_DATASETS = new Set(["AdultCensus"]);
+    const IMAGE_ATTACK_OPTIONS = [
+        {value: "fgsm", label: "FGSM"},
+        {value: "pgd", label: "PGD"}
+    ];
+    const TABULAR_ATTACK_OPTIONS = [
+        {value: "caa", label: "CAA"}
+    ];
 
     function initializeAdversarialTraining() {
         setupAdversarialTrainingSwitch();
@@ -64,27 +72,77 @@ const AdversarialTrainingManager = (function() {
 
     function toggleAttackSettings(attack) {
         const pgdSettings = document.getElementById("adversarial-training-pgd-settings");
+        const stepsTitle = document.getElementById("adversarialTrainingStepsTitle");
         if (!pgdSettings) return;
 
-        pgdSettings.style.display = attack === "pgd" ? "block" : "none";
+        pgdSettings.style.display = ["pgd", "caa"].includes(attack) ? "block" : "none";
+        if (stepsTitle) {
+            stepsTitle.textContent = attack === "caa" ? "CAA search steps" : "PGD steps";
+        }
     }
 
     function updateDatasetAvailability() {
         const dataset = document.getElementById("datasetSelect")?.value;
-        const domain = IMAGE_DATASETS.has(dataset) ? "image" : "tabular";
+        const domain = getDatasetDomain(dataset);
         const adversarialTrainingSwitch = document.getElementById("adversarialTrainingSwitch");
         const datasetNote = document.getElementById("adversarial-training-dataset-note");
         const domainInput = document.getElementById("adversarialTrainingDomain");
+        const settings = document.getElementById("adversarial-training-settings");
 
         if (datasetNote) {
-            datasetNote.style.display = "none";
+            datasetNote.style.display = domain === "unsupported" ? "block" : "none";
+            datasetNote.textContent = "Adversarial Training for tabular datasets currently supports AdultCensus with CAA.";
         }
         if (domainInput) {
-            domainInput.value = domain;
+            domainInput.value = domain === "unsupported" ? "tabular" : domain;
         }
 
         if (!adversarialTrainingSwitch) return;
+        adversarialTrainingSwitch.disabled = domain === "unsupported";
+        if (domain === "unsupported") {
+            adversarialTrainingSwitch.checked = false;
+            if (settings) {
+                settings.style.display = "none";
+            }
+            return;
+        }
+
         adversarialTrainingSwitch.disabled = false;
+        refreshAttackOptions(domain);
+        toggleAdversarialTrainingSettings(adversarialTrainingSwitch.checked);
+    }
+
+    function getDatasetDomain(dataset) {
+        if (IMAGE_DATASETS.has(dataset)) {
+            return "image";
+        }
+        if (CAA_TABULAR_DATASETS.has(dataset)) {
+            return "tabular";
+        }
+        return "unsupported";
+    }
+
+    function refreshAttackOptions(domain, preferredAttack = null) {
+        const attackSelect = document.getElementById("adversarialTrainingAttack");
+        if (!attackSelect) return;
+
+        // Tabular datasets intentionally expose only CAA; image datasets expose FGSM/PGD.
+        const options = domain === "tabular" ? TABULAR_ATTACK_OPTIONS : IMAGE_ATTACK_OPTIONS;
+        const currentAttack = preferredAttack || attackSelect.value;
+        attackSelect.innerHTML = "";
+        options.forEach(({value, label}) => {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = label;
+            attackSelect.appendChild(option);
+        });
+
+        const validAttack = options.some(option => option.value === currentAttack)
+            ? currentAttack
+            : options[0].value;
+        attackSelect.value = validAttack;
+        attackSelect.disabled = domain === "tabular";
+        toggleAttackSettings(validAttack);
     }
 
     function numberValue(id, fallback) {
@@ -107,10 +165,14 @@ const AdversarialTrainingManager = (function() {
     }
 
     function getAdversarialTrainingConfig() {
+        const domain = document.getElementById("adversarialTrainingDomain")?.value || DEFAULT_ADVERSARIAL_TRAINING_CONFIG.domain;
+        const attack = domain === "tabular"
+            ? "caa"
+            : (document.getElementById("adversarialTrainingAttack")?.value || DEFAULT_ADVERSARIAL_TRAINING_CONFIG.attack);
         const config = {
             enabled: Boolean(document.getElementById("adversarialTrainingSwitch")?.checked),
-            domain: document.getElementById("adversarialTrainingDomain")?.value || DEFAULT_ADVERSARIAL_TRAINING_CONFIG.domain,
-            attack: document.getElementById("adversarialTrainingAttack")?.value || DEFAULT_ADVERSARIAL_TRAINING_CONFIG.attack,
+            domain,
+            attack,
             epsilon: numberValue("adversarialTrainingEpsilon", DEFAULT_ADVERSARIAL_TRAINING_CONFIG.epsilon),
             alpha: optionalNumberValue("adversarialTrainingAlpha", DEFAULT_ADVERSARIAL_TRAINING_CONFIG.alpha),
             steps: integerValue("adversarialTrainingSteps", DEFAULT_ADVERSARIAL_TRAINING_CONFIG.steps),
@@ -139,8 +201,6 @@ const AdversarialTrainingManager = (function() {
         if (!adversarialTrainingSwitch) return;
 
         adversarialTrainingSwitch.checked = Boolean(adversarialTrainingConfig.enabled);
-        setValue("adversarialTrainingDomain", adversarialTrainingConfig.domain);
-        setValue("adversarialTrainingAttack", adversarialTrainingConfig.attack);
         setValue("adversarialTrainingEpsilon", adversarialTrainingConfig.epsilon);
         setValue("adversarialTrainingAlpha", adversarialTrainingConfig.alpha ?? "");
         setValue("adversarialTrainingSteps", adversarialTrainingConfig.steps);
@@ -156,8 +216,10 @@ const AdversarialTrainingManager = (function() {
             logMetricsInput.checked = Boolean(adversarialTrainingConfig.log_adversarial_metrics);
         }
 
-        toggleAdversarialTrainingSettings(adversarialTrainingSwitch.checked);
         updateDatasetAvailability();
+        const domain = document.getElementById("adversarialTrainingDomain")?.value || adversarialTrainingConfig.domain;
+        refreshAttackOptions(domain, adversarialTrainingConfig.attack);
+        toggleAdversarialTrainingSettings(adversarialTrainingSwitch.checked);
     }
 
     function setValue(id, value) {
@@ -179,8 +241,8 @@ const AdversarialTrainingManager = (function() {
         if (config.epsilon < 0) {
             return "[Adversarial Training] Epsilon must be greater than or equal to 0.";
         }
-        if (config.attack === "pgd" && config.steps < 1) {
-            return "[Adversarial Training] PGD steps must be at least 1.";
+        if (["pgd", "caa"].includes(config.attack) && config.steps < 1) {
+            return "[Adversarial Training] Search steps must be at least 1.";
         }
         if (config.clean_weight < 0 || config.adversarial_weight < 0) {
             return "[Adversarial Training] Loss weights must be greater than or equal to 0.";
