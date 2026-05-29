@@ -2,22 +2,28 @@
 
 import logging
 
-from nebula.addons.trustworthiness.calculation import (
-    attack_success_rate,
-    compute_adversarial_accuracy_art,
-    get_clever_score,
-    get_coefficient_of_variation,
-    get_confidence_score,
-    get_empirical_robustness_score,
-    get_epsilon_star,
+from nebula.addons.trustworthiness.helpers.explainability import (
     get_explainability_metrics_summary,
+)
+from nebula.addons.trustworthiness.helpers.model_quality import (
+    get_coefficient_of_variation,
     get_generalized_entropy_index,
-    get_loss_sensitivity_score,
     get_macro_f1_score,
-    get_mia_auc,
     get_overfitting_score,
     get_theil_index,
     get_well_calibration_error,
+)
+from nebula.addons.trustworthiness.helpers.privacy import (
+    get_epsilon_star,
+    get_mia_auc,
+)
+from nebula.addons.trustworthiness.helpers.robustness import (
+    attack_success_rate,
+    compute_adversarial_accuracy_art,
+    get_clever_score,
+    get_confidence_score,
+    get_empirical_robustness_score,
+    get_loss_sensitivity_score,
 )
 
 logger = logging.getLogger(__name__)

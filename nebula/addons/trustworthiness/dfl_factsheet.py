@@ -2,13 +2,22 @@ import logging
 import os
 import pandas as pd
 
-from nebula.addons.trustworthiness.calculation import (
+from nebula.addons.trustworthiness.helpers.csv_io import (
+    load_data_results_participant,
+    load_emissions_participant,
+)
+from nebula.addons.trustworthiness.helpers.data_distribution import (
+    get_all_data_entropy,
+    get_local_class_imbalance_score,
+    get_local_normalized_entropy,
+)
+from nebula.addons.trustworthiness.helpers.privacy import (
+    get_global_privacy_risk_dfl,
+)
+from nebula.addons.trustworthiness.helpers.scenario_metrics import (
     get_bytes_model,
     get_dp_local,
     get_elapsed_time,
-    get_global_privacy_risk_dfl,
-    get_local_class_imbalance_score,
-    get_local_normalized_entropy,
     get_underfitting_score_local,
 )
 from nebula.addons.trustworthiness.factsheet_common import (
@@ -24,7 +33,6 @@ from nebula.addons.trustworthiness.factsheet_common import (
     write_factsheet,
 )
 from nebula.addons.trustworthiness.factsheet_populators import populate_profile_metrics
-from nebula.addons.trustworthiness.utils import read_csv, get_all_data_entropy
 
 logger = logging.getLogger(__name__)
 

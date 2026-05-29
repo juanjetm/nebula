@@ -7,8 +7,31 @@ from nebula.core.noderole import Role, ServerRoleBehavior
 from abc import ABC, abstractmethod
 from nebula.config.config import Config
 from nebula.core.engine import Engine
-from nebula.addons.trustworthiness.calculation import stop_emissions_tracking_and_save, get_bytes_model, get_class_imbalance_local, get_participation_variation_score
-from nebula.addons.trustworthiness.utils import save_results_csv, save_trustworthiness_reports_csv, load_emissions_participant, load_data_results_participant, save_results_csv_cfl, save_emissions_csv_cfl, save_class_count_per_participant, get_local_entropy, load_trust_report_json_dumped, create_local_trust_report_copy, accumulate_weighted_trustscores, build_weighted_trustscores_report, save_trust_report_json
+from nebula.addons.trustworthiness.helpers.csv_io import (
+    load_data_results_participant,
+    load_emissions_participant,
+    save_emissions_csv_cfl,
+    save_results_csv,
+    save_results_csv_cfl,
+    save_trustworthiness_reports_csv,
+)
+from nebula.addons.trustworthiness.helpers.data_distribution import (
+    get_class_imbalance_local,
+    get_local_entropy,
+    get_participation_variation_score,
+    save_class_count_per_participant,
+)
+from nebula.addons.trustworthiness.helpers.scenario_metrics import (
+    get_bytes_model,
+    stop_emissions_tracking_and_save,
+)
+from nebula.addons.trustworthiness.helpers.trust_reports import (
+    accumulate_weighted_trustscores,
+    build_weighted_trustscores_report,
+    create_local_trust_report_copy,
+    load_trust_report_json_dumped,
+    save_trust_report_json,
+)
 from codecarbon import EmissionsTracker
 from nebula.addons.trustworthiness.per_round_metrics import PerRoundTrustMetrics
 from datetime import datetime

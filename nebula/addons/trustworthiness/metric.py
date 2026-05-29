@@ -4,7 +4,7 @@ import os
 
 from nebula.addons.trustworthiness.graphics import Graphics
 from nebula.addons.trustworthiness.pillar import TrustPillar
-from nebula.addons.trustworthiness.utils import write_results_json
+from nebula.addons.trustworthiness.helpers.csv_io import write_results_json
 
 dirname = os.path.dirname(__file__)
 

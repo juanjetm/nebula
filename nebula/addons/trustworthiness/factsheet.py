@@ -4,16 +4,22 @@ from json import JSONDecodeError
 import numpy as np
 import pandas as pd
 
-from nebula.addons.trustworthiness.calculation import (
+from nebula.addons.trustworthiness.helpers.csv_io import read_csv
+from nebula.addons.trustworthiness.helpers.data_distribution import (
+    get_class_imbalance_score,
+    get_cv,
+)
+from nebula.addons.trustworthiness.helpers.factsheet_values import check_field_filled
+from nebula.addons.trustworthiness.helpers.privacy import (
+    get_global_privacy_risk,
+)
+from nebula.addons.trustworthiness.helpers.scenario_metrics import (
     get_avg_class_imbalance_model_size,
     get_avg_loss_accuracy,
     get_bytes_sent_recv,
-    get_class_imbalance_score,
-    get_cv,
     get_dp_global,
     get_elapsed_time,
     get_entropy_list,
-    get_global_privacy_risk,
     get_participant_loss_accuracy,
     get_underfitting_score,
 )
@@ -31,7 +37,6 @@ from nebula.addons.trustworthiness.factsheet_common import (
     write_factsheet,
 )
 from nebula.addons.trustworthiness.factsheet_populators import populate_profile_metrics
-from nebula.addons.trustworthiness.utils import read_csv, check_field_filled
 # from nebula.core.models.syscall.mlp import SyscallModelMLP
 
 logger = logging.getLogger(__name__)

@@ -1,7 +1,13 @@
 import logging
 
-from nebula.addons.trustworthiness import calculation
-from nebula.addons.trustworthiness.utils import get_input_value
+from nebula.addons.trustworthiness.helpers.factsheet_values import get_input_value
+from nebula.addons.trustworthiness.helpers.scoring import (
+    get_map_value_score,
+    get_mapped_score,
+    get_range_score,
+    get_scaled_score,
+    get_true_score,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,15 +102,15 @@ class TrustPillar:
                 logger.warning(f"{name} input value is null")
             else:
                 if score_type == "true_score":
-                    score = calculation.get_true_score(input_value, metric.get("direction"))
+                    score = get_true_score(input_value, metric.get("direction"))
                 elif score_type == "score_mapping":
-                    score = calculation.get_mapped_score(input_value, metric.get("score_map"))
+                    score = get_mapped_score(input_value, metric.get("score_map"))
                 elif score_type == "ranges":
-                    score = calculation.get_range_score(input_value, metric.get("ranges"), metric.get("direction"))
+                    score = get_range_score(input_value, metric.get("ranges"), metric.get("direction"))
                 elif score_type == "score_map_value":
-                    score = calculation.get_map_value_score(input_value, metric.get("score_map"))
+                    score = get_map_value_score(input_value, metric.get("score_map"))
                 elif score_type == "scaled_score":
-                    score = calculation.get_scaled_score(input_value, metric.get("scale"), metric.get("direction"))
+                    score = get_scaled_score(input_value, metric.get("scale"), metric.get("direction"))
                 elif score_type == "property_check":
                     score = 0 if input_value is None else input_value
 
