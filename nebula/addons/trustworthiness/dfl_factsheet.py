@@ -74,8 +74,6 @@ class DflFactsheet:
 
         files_dir = get_trustworthiness_dir(scenario_name)
 
-        emissions_file = os.path.join(files_dir, f"emissions_{participant_idx}.csv")
-
         get_all_data_entropy(scenario_name)
 
         factsheet["data"]["entropy_local"] = get_local_normalized_entropy(scenario_name, participant_idx)
@@ -90,7 +88,7 @@ class DflFactsheet:
         factsheet["performance"]["test_loss"] = float(final_loss)
         factsheet["performance"]["test_acc"] = float(final_acc)
 
-        bytes_sent, bytes_recv = get_bytes(scenario_name, participant_idx)
+        bytes_sent, bytes_recv, *_ = load_data_results_participant(scenario_name, participant_idx)
 
         factsheet["system"]["model_size"] = get_bytes_model(model)
 
@@ -110,8 +108,19 @@ class DflFactsheet:
 
         populate_participation(factsheet, participation_summary)
 
-        carbon_intensity_local, emissions_training_local, energy_consumed_local, sample_size = get_emissions(
-            emissions_file,
+        (
+            role,
+            carbon_intensity_local,
+            emissions_training_local,
+            workload,
+            cpu_model,
+            gpu_model,
+            cpu_used,
+            gpu_used,
+            energy_consumed_local,
+            sample_size,
+        ) = load_emissions_participant(
+            scenario_name,
             participant_idx,
         )
 
@@ -155,32 +164,3 @@ def load_round_metrics(scenario_name, participant_idx):
 
     df = df.dropna(subset=["loss", "accuracy"])
     return df
-
-
-def get_bytes(scenario_name, participant_idx):
-    data_file = os.path.join(
-        get_trustworthiness_dir(scenario_name),
-        f"data_results_{participant_idx}.csv",
-    )
-
-    data = read_csv(data_file)
-
-    row = data[data["id"] == participant_idx]
-
-    bytes_sent = row["bytes_sent"].iloc[0]
-    bytes_recv = row["bytes_recv"].iloc[0]
-
-    return bytes_sent, bytes_recv
-
-
-def get_emissions(emissions_file, participant_idx):
-    data = read_csv(emissions_file)
-
-    row = data[data["id"] == participant_idx]
-
-    avg_carbon_intensity_clients = row["energy_grid"].iloc[0]
-    emissions_training = row["emissions"].iloc[0]
-    energy_consumed = row["energy_consumed"].iloc[0]
-    sample_size = row["sample_size"].iloc[0]
-
-    return avg_carbon_intensity_clients, emissions_training, energy_consumed, sample_size

@@ -34,6 +34,7 @@ FEDERATION_DFL = "dfl"
 
 
 def get_federation_profile(federation):
+    # Group SDFL with DFL because both use decentralized factsheet profiles.
     return FEDERATION_DFL if str(federation).upper() in {"DFL", "SDFL"} else FEDERATION_CFL
 
 
@@ -45,9 +46,10 @@ def populate_profile_metrics(
     test_loader,
     test_accuracy,
 ):
+    # Select the profile-specific populator, falling back to the shared metric set.
     federation_profile = get_federation_profile(federation)
     data_type = get_normalized_model_data_type(model)
-    populator = PROFILE_POPULATORS.get((federation_profile, data_type), populate_default_metrics)
+    populator = PROFILE_POPULATORS.get((federation_profile, data_type), populate_common_profile_metrics)
 
     populator(
         factsheet=factsheet,
@@ -59,23 +61,28 @@ def populate_profile_metrics(
 
 
 def populate_cfl_images_metrics(factsheet, model, train_loader, test_loader, test_accuracy):
-    populate_default_metrics(factsheet, model, train_loader, test_loader, test_accuracy)
+    # Populate the current shared metrics for CFL image factsheets.
+    populate_common_profile_metrics(factsheet, model, train_loader, test_loader, test_accuracy)
 
 
 def populate_cfl_tabular_metrics(factsheet, model, train_loader, test_loader, test_accuracy):
-    populate_default_metrics(factsheet, model, train_loader, test_loader, test_accuracy)
+    # Populate the current shared metrics for CFL tabular factsheets.
+    populate_common_profile_metrics(factsheet, model, train_loader, test_loader, test_accuracy)
 
 
 def populate_dfl_images_metrics(factsheet, model, train_loader, test_loader, test_accuracy):
-    populate_default_metrics(factsheet, model, train_loader, test_loader, test_accuracy)
+    # Populate the current shared metrics for DFL/SDFL image factsheets.
+    populate_common_profile_metrics(factsheet, model, train_loader, test_loader, test_accuracy)
 
 
 def populate_dfl_tabular_metrics(factsheet, model, train_loader, test_loader, test_accuracy):
-    populate_default_metrics(factsheet, model, train_loader, test_loader, test_accuracy)
+    # Populate the current shared metrics for DFL/SDFL tabular factsheets.
+    populate_common_profile_metrics(factsheet, model, train_loader, test_loader, test_accuracy)
 
 
-def populate_default_metrics(factsheet, model, train_loader, test_loader, test_accuracy):
-    """Current shared metric set used by every factsheet profile."""
+def populate_common_profile_metrics(factsheet, model, train_loader, test_loader, test_accuracy):
+    # Current shared metric set used by every factsheet profile.
+    # Reuse one test batch for sample-based metrics and compute summary explainability once.
     test_sample = next(iter(test_loader))
     explainability_metrics = get_explainability_metrics_summary(model, test_loader)
 
@@ -87,8 +94,8 @@ def populate_default_metrics(factsheet, model, train_loader, test_loader, test_a
         test_accuracy,
         test_sample,
     )
-    populate_explainability_metrics(factsheet, explainability_metrics)
-    populate_image_robustness_metrics(factsheet, model, test_loader, test_sample)
+    populate_common_explainability_metrics(factsheet, explainability_metrics)
+    populate_common_robustness_metrics(factsheet, model, test_loader, test_sample)
 
 
 def populate_common_model_quality_metrics(
@@ -99,13 +106,16 @@ def populate_common_model_quality_metrics(
     test_accuracy,
     test_sample,
 ):
+    # Populate model quality, privacy, and fairness metrics shared by all profiles.
     factsheet["performance"]["test_macro_f1"] = get_macro_f1_score(model, test_loader)
 
+    # Privacy metrics derived from train/test behavior.
     factsheet["privacy"]["epsilon_star"] = get_epsilon_star(model, train_loader, test_loader)
     factsheet["privacy"]["inverse_epsilon_star"] = inverse_score(factsheet["privacy"]["epsilon_star"])
     factsheet["privacy"]["mia_auc"] = get_mia_auc(model, train_loader, test_loader)
     factsheet["privacy"]["mia_auc_score"] = 1 - 2 * abs(factsheet["privacy"]["mia_auc"] - 0.5)
 
+    # Fairness and calibration metrics expressed as inverse scores.
     overfitting_value = get_overfitting_score(model, train_loader, test_accuracy)
     factsheet["fairness"]["inverse_overfitting"] = inverse_score(overfitting_value)
 
@@ -121,11 +131,13 @@ def populate_common_model_quality_metrics(
     coefficient_of_variation_value = get_coefficient_of_variation(model, test_loader)
     factsheet["fairness"]["inverse_coefficient_of_variation"] = inverse_score(coefficient_of_variation_value)
 
+    # Confidence is capped so factsheet scores stay within the expected range.
     value_confidence_score = get_confidence_score(model, test_sample)
     factsheet["performance"]["clipped_test_confidence_score"] = cap_score(value_confidence_score)
 
 
-def populate_explainability_metrics(factsheet, explainability_metrics):
+def populate_common_explainability_metrics(factsheet, explainability_metrics):
+    # Copy explainability summary metrics into the factsheet schema.
     factsheet["explainability"]["alpha_score"] = explainability_metrics["alpha_score"]
     factsheet["explainability"]["spread_ratio"] = explainability_metrics["spread_ratio"]
     factsheet["explainability"]["spread_divergence"] = explainability_metrics["spread_divergence"]
@@ -134,16 +146,19 @@ def populate_explainability_metrics(factsheet, explainability_metrics):
     factsheet["performance"]["clipped_test_feature_importance_cv"] = cap_score(feature_importance)
 
 
-def populate_image_robustness_metrics(factsheet, model, test_loader, test_sample):
+def populate_common_robustness_metrics(factsheet, model, test_loader, test_sample):
+    # Populate adversarial robustness metrics shared by the current factsheet profiles.
     lr = factsheet["configuration"]["learning_rate"]
     num_classes = model.get_num_classes()
 
+    # Sample-based robustness scores.
     value_clever = get_clever_score(model, test_sample, num_classes, lr)
     factsheet["performance"]["clipped_test_clever"] = cap_score(value_clever)
 
     value_loss_sensitivity = get_loss_sensitivity_score(model, test_sample, num_classes, lr)
     factsheet["performance"]["inverse_test_loss_sensitivity"] = inverse_score(value_loss_sensitivity)
 
+    # Loader-based adversarial accuracy.
     value_adv_accuracy = compute_adversarial_accuracy_art(model, test_loader, num_classes, lr)
     factsheet["performance"]["clipped_test_adv_accuracy"] = cap_score(value_adv_accuracy)
 
@@ -155,6 +170,7 @@ def populate_image_robustness_metrics(factsheet, model, test_loader, test_sample
     )
     factsheet["performance"]["clipped_test_empirical_robustness"] = cap_score(value_empirical_robustness)
 
+    # Attack success is inverted so higher remains better in the factsheet.
     value_attack_success_rate = attack_success_rate(
         model,
         test_sample,

@@ -32,30 +32,37 @@ class TrustWorkloadException(Exception):
 class TrustWorkload(ABC):
     @abstractmethod
     async def init(self, experiment_name):
+        # Initialize workload resources and event subscriptions.
         raise NotImplementedError
 
     @abstractmethod
     def get_workload(self) -> str:
+        # Return the workload label persisted in trustworthiness outputs.
         raise NotImplementedError
 
     @abstractmethod
     def get_sample_size(self) -> float:
+        # Return the local sample size used by the workload.
         raise NotImplementedError
 
     @abstractmethod
     def get_metrics(self) -> tuple[float, float]:
+        # Return the latest test loss and accuracy.
         raise NotImplementedError
 
     @abstractmethod
     async def finish_experiment_role_pre_actions(self):
+        # Run role-specific work before final metrics are persisted.
         raise NotImplementedError
 
     @abstractmethod
     async def finish_experiment_role_post_actions(self, trust_config, experiment_name):
+        # Run role-specific work after final metrics are persisted.
         raise NotImplementedError
 
 class BaseTrustWorkload(TrustWorkload):
     def __init__(self, engine: Engine, idx, trust_files_route, workload: str, role_label: str, sample_size=None, start_time=None):
+        # Store shared workload state used by trainers and servers.
         self._engine: Engine = engine
         self._workload = workload
         self._idx = idx
@@ -77,6 +84,7 @@ class BaseTrustWorkload(TrustWorkload):
         self._timed_out_rounds_total = 0
 
     async def init(self, experiment_name):
+        # Subscribe to the events needed to build final trust summaries.
         self._experiment_name = experiment_name
         await EventManager.get_instance().subscribe_node_event(AggregationEvent, self._process_aggregation_event)
         await EventManager.get_instance().subscribe_node_event(RoundStartEvent, self._process_round_start_event)
@@ -94,26 +102,33 @@ class BaseTrustWorkload(TrustWorkload):
         await self._per_round.setup(self._engine)
 
     def get_workload(self):
+        # Return the workload name associated with this node role.
         return self._workload
 
     def get_sample_size(self):
+        # Return the sample size captured by the role pre-actions.
         return self._sample_size
 
     def get_metrics(self):
+        # Return the latest test metrics observed through events.
         return (self._current_loss, self._current_accuracy)
 
     def get_validation_metrics(self):
+        # Return the latest validation metrics observed through events.
         return (self._current_val_loss, self._current_val_accuracy)
 
     def _is_reputation_enabled(self) -> bool:
+        # Read the reputation toggle from the participant defense config.
         defense_args = self._engine.config.participant.get("defense_args", {})
         reputation_config = defense_args.get("reputation", {})
         return bool(reputation_config.get("enabled", False))
 
     def _get_reputation_system(self):
+        # Return the reputation system attached to the engine, when present.
         return getattr(self._engine, "_reputation", None)
 
     def _get_reputation_trust_summary(self) -> dict:
+        # Build the reputation fields added to the trust factsheet.
         summary = {
             "reputation_enabled": self._is_reputation_enabled(),
             "avg_neighbor_reputation": 0.0,
@@ -144,6 +159,7 @@ class BaseTrustWorkload(TrustWorkload):
         return summary
 
     def _get_participation_trust_summary(self) -> dict:
+        # Build the participation variability fields added to the trust factsheet.
         total_clients = int(self._engine.config.participant["scenario_args"]["n_nodes"]) - 1
         counts = list(self._round_participation_counts.values())
 
@@ -155,6 +171,7 @@ class BaseTrustWorkload(TrustWorkload):
         }
 
     def _get_system_reliability_summary(self) -> dict:
+        # Build dropout and timeout rates from aggregation events.
         dropout_rate = 0.0
         if self._dropout_expected_total > 0:
             dropout_rate = self._dropout_missing_total / self._dropout_expected_total
@@ -169,11 +186,13 @@ class BaseTrustWorkload(TrustWorkload):
         }
 
     async def _process_round_start_event(self, rse: RoundStartEvent):
+        # Track how often each peer is expected to participate.
         _, _, expected_nodes = await rse.get_event_data()
         for node_addr in expected_nodes:
             self._round_participation_counts[node_addr] = self._round_participation_counts.get(node_addr, 0) + 1
 
     async def _process_aggregation_event(self, age: AggregationEvent):
+        # Track missing peers and timed-out aggregation rounds.
         _, expected_nodes, missing_nodes = await age.get_event_data()
         self_addr = self._engine.addr
 
@@ -187,6 +206,7 @@ class BaseTrustWorkload(TrustWorkload):
             self._timed_out_rounds_total += 1
 
     async def _process_test_metrics_event(self, tme: TestMetricsEvent):
+        # Cache final test metrics and forward them to per-round trust metrics.
         cur_loss, cur_acc = await tme.get_event_data()
         if cur_loss is not None and cur_acc is not None:
             self._current_loss, self._current_accuracy = cur_loss, cur_acc
@@ -195,6 +215,7 @@ class BaseTrustWorkload(TrustWorkload):
                 await self._per_round.on_test_metrics(self._engine, float(cur_loss), float(cur_acc))
 
     async def _process_validation_metrics_event(self, vme: ValidationMetricsEvent):
+        # Cache final validation metrics for final trustworthiness outputs.
         cur_loss, cur_acc = await vme.get_event_data()
         if cur_loss is not None and cur_acc is not None:
             self._current_val_loss, self._current_val_accuracy = cur_loss, cur_acc
@@ -206,6 +227,7 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
     TRUSTSCORES_FORWARDING_GRACE_MARGIN_SECONDS = 1.0
 
     def __init__(self, engine, idx, trust_files_route):
+        # Initialize trainer-side state for CFL reports and DFL/SDFL trustscores.
         super().__init__(engine, idx, trust_files_route, workload="training", role_label="TRAINER")
         self._expected_trustscores_sources = set()
         self._expected_trustscores_reports = int(self._engine.config.participant["scenario_args"]["n_nodes"]) - 1
@@ -218,97 +240,119 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
         self._trustscores_local_report_initialized = False
 
     async def init(self, experiment_name):
+        # Reset exchange state before subscribing to shared workload events.
         self._reset_trustscores_exchange_state()
         self._trustscores_wait_event = asyncio.Event()
         await super().init(experiment_name)
 
     async def finish_experiment_role_pre_actions(self):
+        # Capture the training sample size before final trust outputs are written.
         self._engine.trainer.datamodule.setup(stage="fit")
         train_loader = self._engine.trainer.datamodule.train_dataloader()
         self._sample_size = len(train_loader)
 
     async def finish_experiment_role_post_actions(self, trust_config, experiment_name):
+        # Finish with the report flow required by the selected federation type.
         federation = trust_config.get("federation")
 
-        if federation == "DFL" or federation == "SDFL":
+        if self._uses_trustscores_exchange(federation):
             await self._finish_trustscores_exchange(federation, trust_config, experiment_name)
-        else:
-            cm = CommunicationsManager.get_instance()
+            return
 
-            server_addr = str(self._engine.config.participant["network_args"]["neighbors"]).strip()
+        await self._send_cfl_trustworthiness_report(experiment_name)
 
-            bytes_sent, bytes_recv, accuracy, loss, val_accuracy, dp_enabled, dp_epsilon = load_data_results_participant(experiment_name, self._idx)
+    def _uses_trustscores_exchange(self, federation: str | None) -> bool:
+        # DFL and SDFL share trust reports directly between participants.
+        return federation in {"DFL", "SDFL"}
 
-            role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size = load_emissions_participant(experiment_name, self._idx)
+    async def _send_cfl_trustworthiness_report(self, experiment_name: str):
+        # Send the participant trustworthiness report to the CFL server.
+        cm = CommunicationsManager.get_instance()
+        server_addr = str(self._engine.config.participant["network_args"]["neighbors"]).strip()
+        report = self._build_cfl_trustworthiness_report(experiment_name)
 
-            class_imbalance = get_class_imbalance_local(self._idx, experiment_name)
+        message = cm.create_message(
+            "trustworthiness",
+            action="report",
+            node_id=str(self._idx),
+            **report,
+        )
 
-            model_size = get_bytes_model(self._engine.trainer.model)
+        self._log_cfl_trustworthiness_report(server_addr, report)
 
-            local_entropy = get_local_entropy(self._idx, experiment_name)
+        await cm.send_message(
+            server_addr,
+            message,
+            message_type="trustworthiness",
+            allow_after_learning_finished=True,
+        )
 
-            message = cm.create_message(
-                "trustworthiness",
-                action="report",
-                node_id=str(self._idx),
-                bytes_sent=bytes_sent,
-                bytes_recv=bytes_recv,
-                accuracy=accuracy,
-                loss=loss,
-                role=role,
-                energy_grid=energy_grid,
-                emissions=emissions,
-                workload=workload,
-                cpu_model=cpu_model,
-                gpu_model=gpu_model,
-                cpu_used=cpu_used,
-                gpu_used=gpu_used,
-                energy_consumed=energy_consumed,
-                sample_size=sample_size,
-                class_imbalance=class_imbalance,
-                model_size=model_size,
-                local_entropy=local_entropy,
-                val_accuracy=val_accuracy,
-                dp_enabled=dp_enabled,
-                dp_epsilon=dp_epsilon
-            )
+    def _build_cfl_trustworthiness_report(self, experiment_name: str) -> dict:
+        # Load local metrics and shape them as a trustworthiness message payload.
+        bytes_sent, bytes_recv, accuracy, loss, val_accuracy, dp_enabled, dp_epsilon = load_data_results_participant(
+            experiment_name,
+            self._idx,
+        )
+        role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size = load_emissions_participant(
+            experiment_name,
+            self._idx,
+        )
 
-            logging.info(
-                "[TW SEND] dest=%s node_id=%s bytes_sent=%s bytes_recv=%s "
-                "accuracy=%s loss=%s role=%s energy_grid=%s emissions=%s workload=%s "
-                "cpu_model=%s gpu_model=%s cpu_used=%s gpu_used=%s energy_consumed=%s sample_size=%s class_imbalance=%s model_size=%s local_entropy=%s val_accuracy=%s dp_enabled=%s dp_epsilon=%s",
-                server_addr,
-                str(self._idx),
-                bytes_sent,
-                bytes_recv,
-                accuracy,
-                loss,
-                role,
-                energy_grid,
-                emissions,
-                workload,
-                cpu_model,
-                gpu_model,
-                cpu_used,
-                gpu_used,
-                energy_consumed,
-                sample_size,
-                class_imbalance,
-                model_size,
-                local_entropy,
-                val_accuracy,
-                dp_enabled,
-                dp_epsilon
-            )
+        return {
+            "bytes_sent": bytes_sent,
+            "bytes_recv": bytes_recv,
+            "accuracy": accuracy,
+            "loss": loss,
+            "role": role,
+            "energy_grid": energy_grid,
+            "emissions": emissions,
+            "workload": workload,
+            "cpu_model": cpu_model,
+            "gpu_model": gpu_model,
+            "cpu_used": cpu_used,
+            "gpu_used": gpu_used,
+            "energy_consumed": energy_consumed,
+            "sample_size": sample_size,
+            "class_imbalance": get_class_imbalance_local(self._idx, experiment_name),
+            "model_size": get_bytes_model(self._engine.trainer.model),
+            "local_entropy": get_local_entropy(self._idx, experiment_name),
+            "val_accuracy": val_accuracy,
+            "dp_enabled": dp_enabled,
+            "dp_epsilon": dp_epsilon,
+        }
 
-            await cm.send_message(
-                server_addr,
-                message,
-                message_type="trustworthiness",
-                allow_after_learning_finished=True,
-            )
+    def _log_cfl_trustworthiness_report(self, server_addr: str, report: dict):
+        # Log the CFL report with the same fields sent over the network.
+        logging.info(
+            "[TW SEND] dest=%s node_id=%s bytes_sent=%s bytes_recv=%s "
+            "accuracy=%s loss=%s role=%s energy_grid=%s emissions=%s workload=%s "
+            "cpu_model=%s gpu_model=%s cpu_used=%s gpu_used=%s energy_consumed=%s sample_size=%s class_imbalance=%s model_size=%s local_entropy=%s val_accuracy=%s dp_enabled=%s dp_epsilon=%s",
+            server_addr,
+            str(self._idx),
+            report["bytes_sent"],
+            report["bytes_recv"],
+            report["accuracy"],
+            report["loss"],
+            report["role"],
+            report["energy_grid"],
+            report["emissions"],
+            report["workload"],
+            report["cpu_model"],
+            report["gpu_model"],
+            report["cpu_used"],
+            report["gpu_used"],
+            report["energy_consumed"],
+            report["sample_size"],
+            report["class_imbalance"],
+            report["model_size"],
+            report["local_entropy"],
+            report["val_accuracy"],
+            report["dp_enabled"],
+            report["dp_epsilon"],
+        )
 
     async def _finish_trustscores_exchange(self, federation, trust_config, experiment_name):
+        # Compute, share, wait for, and optionally aggregate DFL/SDFL trustscores.
         self._end_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         await self._prepare_trustscores_exchange(federation)
 
@@ -332,11 +376,12 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
         await self._wait_for_trustscores_forwarding_drain(federation)
 
         if federation == "DFL":
-            self._finalize_trustscores_aggregation()
+            self._finalize_local_trustscores_aggregation()
         elif self._is_sdfl_aggregator_node():
             self._finalize_sdfl_global_trustscores_aggregation()
 
     def _compute_local_trustscores_report(self, experiment_name, trust_config, weights, federation) -> str:
+        # Build the local DFL/SDFL factsheet and return its JSON report.
         factsheet = DflFactsheet()
         self._engine.trainer.datamodule.setup(stage="fit")
         train_loader = self._engine.trainer.datamodule.train_dataloader()
@@ -362,10 +407,12 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
         return load_trust_report_json_dumped(experiment_name, self._idx)
 
     def _load_local_trustscores_weights(self, experiment_name: str) -> dict:
+        # Load trust metric weights for the active federation.
         federation = self._engine.config.participant["trust_args"]["scenario"].get("federation")
         return load_trust_weights(experiment_name, federation)
 
     def _reset_trustscores_exchange_state(self):
+        # Clear mutable state from any previous trustscores exchange.
         self._expected_trustscores_sources = set()
         self._received_trustscores_node_ids = set()
         self._trustscores_score_accumulator = {}
@@ -375,6 +422,7 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
         self._trustscores_local_report_initialized = False
 
     def _get_trustscores_weight_for_source(self, source: str, node_id: int | str) -> float:
+        # Resolve the aggregation weight for a remote trust report.
         if not self._is_reputation_enabled():
             return 0.5
 
@@ -399,6 +447,7 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
         return float(reputation_entry["reputation"])
 
     def _get_trustscores_peer_weights_from_reputation(self) -> dict:
+        # Extract peer trustscores weights from the reputation system.
         if not self._is_reputation_enabled():
             return {}
 
@@ -415,9 +464,11 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
         return peer_weights
 
     def _get_trustscores_self_weight(self) -> float:
+        # Keep local reports fully trusted in the weighted aggregation.
         return 1.0
 
     def _log_trustscores_node_weights(self, federation: str):
+        # Log the weights that will be used by trustscores aggregation.
         if not self._is_reputation_enabled():
             logging.info(
                 "[TW %s] Reputation system disabled. trustscores weights fallback to 0.5 for all nodes",
@@ -451,19 +502,12 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
             )
 
     def _initialize_local_trustscores_aggregation(self, experiment_name: str):
+        # Initialize a DFL local aggregation copy with this node's own report.
         if self._trustscores_local_report_initialized:
             return
 
         trust_report_template, copy_path = create_local_trust_report_copy(experiment_name, self._idx)
-        self._trustscores_template_report = trust_report_template
-        self._trustscores_local_copy_path = copy_path
-        accumulate_weighted_trustscores(
-            report=trust_report_template,
-            weight=self._get_trustscores_self_weight(),
-            score_accumulator=self._trustscores_score_accumulator,
-            weight_accumulator=self._trustscores_weight_accumulator,
-        )
-        self._trustscores_local_report_initialized = True
+        self._initialize_trustscores_accumulator(trust_report_template, copy_path, self._get_trustscores_self_weight())
         logging.info(
             "[TW DFL] Local trustscores copy created at %s and accumulator initialized with local weight=%s",
             copy_path,
@@ -471,6 +515,7 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
         )
 
     async def _prepare_trustscores_exchange(self, federation: str):
+        # Discover direct neighbors and prepare the wait event for incoming reports.
         cm = CommunicationsManager.get_instance()
         self._expected_trustscores_sources = await cm.get_all_addrs_current_connections(only_direct=True)
 
@@ -497,6 +542,7 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
             self._log_trustscores_node_weights(federation)
 
     async def _share_trustscores_report(self, trust_report_json: str, federation: str):
+        # Broadcast the local trustscores report to direct neighbors.
         cm = CommunicationsManager.get_instance()
         neighbors = self._expected_trustscores_sources.copy()
 
@@ -521,6 +567,7 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
             )
 
     async def _wait_for_trustscores_reports(self, federation: str):
+        # Wait until every expected report arrives or the exchange times out.
         if self._trustscores_wait_event is None:
             return
 
@@ -545,6 +592,7 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
             )
 
     async def _wait_for_trustscores_forwarding_drain(self, federation: str):
+        # Give the forwarder a short grace period before shutdown.
         if not self._expected_trustscores_sources:
             return
 
@@ -564,16 +612,24 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
         )
         await asyncio.sleep(forwarding_grace)
 
-    def _finalize_trustscores_aggregation(self):
+    def _build_weighted_trustscores_report(self) -> dict | None:
+        # Build the weighted report when the aggregation template is available.
         if self._trustscores_template_report is None or self._trustscores_local_copy_path is None:
-            logging.warning("[TW DFL] Skipping weighted trustscores write because local copy/template is not available")
-            return
+            return None
 
-        aggregated_report = build_weighted_trustscores_report(
+        return build_weighted_trustscores_report(
             template_report=self._trustscores_template_report,
             score_accumulator=self._trustscores_score_accumulator,
             weight_accumulator=self._trustscores_weight_accumulator,
         )
+
+    def _finalize_local_trustscores_aggregation(self):
+        # Write the weighted DFL report and generate DFL graphics.
+        aggregated_report = self._build_weighted_trustscores_report()
+        if aggregated_report is None:
+            logging.warning("[TW DFL] Skipping weighted trustscores write because local copy/template is not available")
+            return
+
         save_trust_report_json(self._trustscores_local_copy_path, aggregated_report)
         logging.info(
             "[TW DFL] Weighted trustscores written to local copy=%s",
@@ -583,11 +639,29 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
         graphics = Graphics(self._start_time, self._experiment_name, self._idx)
         graphics.graphics_dfl_global(self._idx)
 
+    def _finalize_sdfl_global_trustscores_aggregation(self):
+        # Write the weighted SDFL global report and generate SDFL graphics.
+        aggregated_report = self._build_weighted_trustscores_report()
+        if aggregated_report is None:
+            logging.warning("[TW SDFL] Skipping global trustscores write because the template/output is not available")
+            return
+
+        save_trust_report_json(self._trustscores_local_copy_path, aggregated_report)
+        logging.info(
+            "[TW SDFL] Global weighted trustscores written to %s",
+            self._trustscores_local_copy_path,
+        )
+
+        graphics = Graphics(self._start_time, self._experiment_name, self._idx)
+        graphics.graphics_sdfl_global(self._idx)
+
     def _is_sdfl_aggregator_node(self) -> bool:
+        # Check whether this node should aggregate global SDFL trustscores.
         effective_role = self._engine.rb.get_role_name(True)
         return effective_role in {Role.AGGREGATOR.value, Role.TRAINER_AGGREGATOR.value}
 
     def _initialize_sdfl_global_trustscores_aggregation(self, experiment_name: str):
+        # Initialize the SDFL global aggregation output with this node's own report.
         if self._trustscores_local_report_initialized:
             return
 
@@ -601,44 +675,31 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
         )
         save_trust_report_json(output_path, trust_report_template)
 
-        self._trustscores_template_report = trust_report_template
-        self._trustscores_local_copy_path = output_path
-        accumulate_weighted_trustscores(
-            report=trust_report_template,
-            weight=1.0,
-            score_accumulator=self._trustscores_score_accumulator,
-            weight_accumulator=self._trustscores_weight_accumulator,
-        )
-        self._trustscores_local_report_initialized = True
+        self._initialize_trustscores_accumulator(trust_report_template, output_path, self._get_trustscores_self_weight())
         logging.info(
             "[TW SDFL] Global trustscores accumulator initialized at %s with local weight=1.0",
             output_path,
         )
 
-    def _finalize_sdfl_global_trustscores_aggregation(self):
-        if self._trustscores_template_report is None or self._trustscores_local_copy_path is None:
-            logging.warning("[TW SDFL] Skipping global trustscores write because the template/output is not available")
-            return
-
-        aggregated_report = build_weighted_trustscores_report(
-            template_report=self._trustscores_template_report,
+    def _initialize_trustscores_accumulator(self, trust_report_template: dict, output_path: str, local_weight: float):
+        # Store the aggregation template and seed accumulators with the local report.
+        self._trustscores_template_report = trust_report_template
+        self._trustscores_local_copy_path = output_path
+        accumulate_weighted_trustscores(
+            report=trust_report_template,
+            weight=local_weight,
             score_accumulator=self._trustscores_score_accumulator,
             weight_accumulator=self._trustscores_weight_accumulator,
         )
-        save_trust_report_json(self._trustscores_local_copy_path, aggregated_report)
-        logging.info(
-            "[TW SDFL] Global weighted trustscores written to %s",
-            self._trustscores_local_copy_path,
-        )
-
-        graphics = Graphics(self._start_time, self._experiment_name, self._idx)
-        graphics.graphics_sdfl_global(self._idx)
+        self._trustscores_local_report_initialized = True
 
     async def register_trustscores_report(self, source, message):
+        # Register a remote trustscores message using the active federation.
         federation = self._engine.config.participant["trust_args"]["scenario"].get("federation")
         await self._register_trustscores_report(source, message, federation)
 
     async def _register_trustscores_report(self, source, message, federation: str):
+        # Deduplicate, optionally accumulate, and mark remote trustscores as received.
         if str(message.node_id) == str(self._idx):
             logging.info("[TW %s] Ignoring own trustscores report from %s", federation, source)
             return
@@ -691,6 +752,7 @@ class TrustWorkloadServer(BaseTrustWorkload):
     REPORTS_WAIT_TIMEOUT_SECONDS = 60
 
     def __init__(self, engine: Engine, idx, trust_files_route):
+        # Initialize server-side state for collecting participant reports.
         server_start_time: ServerRoleBehavior = engine.rb
         super().__init__(
             engine,
@@ -710,12 +772,15 @@ class TrustWorkloadServer(BaseTrustWorkload):
             self._reports_wait_event.set()
 
     async def init(self, experiment_name):
+        # Reuse the shared workload event subscriptions.
         await super().init(experiment_name)
 
     async def finish_experiment_role_pre_actions(self):
+        # Server has no pre-save work because aggregation sample size is zero.
         pass
 
     async def finish_experiment_role_post_actions(self, trust_config, experiment_name):
+        # Wait for participant reports, save CSV data, and generate the CFL factsheet.
         self._end_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         self._trust_config = trust_config
         self._experiment_name = experiment_name
@@ -723,27 +788,35 @@ class TrustWorkloadServer(BaseTrustWorkload):
         if self._csv_completed:
             logging.info("[TW SERVER] finish_experiment_role_post_actions called, trustworthiness reports OK, starting generate_factsheet")
             await self._save_local_server_report_and_generate_factsheet(trust_config, experiment_name)
-        else:
-            logging.info("[TW SERVER] finish_experiment_role_post_actions called, waiting for trustworthiness reports")
-            try:
-                await asyncio.wait_for(
-                    self._reports_wait_event.wait(),
-                    timeout=self.REPORTS_WAIT_TIMEOUT_SECONDS,
-                )
-            except asyncio.TimeoutError:
-                logging.warning(
-                    "[TW SERVER] Timeout waiting trustworthiness reports. Received=%s/%s",
-                    len(self._trustworthiness_reports),
-                    self._expected_reports,
-                )
+            return
 
-            if self._trustworthiness_reports is not None and not self._csv_completed:
-                save_trustworthiness_reports_csv(self._trustworthiness_reports, self._experiment_name)
-                self._csv_completed = True
+        logging.info("[TW SERVER] finish_experiment_role_post_actions called, waiting for trustworthiness reports")
+        await self._wait_for_trustworthiness_reports()
+        self._save_trustworthiness_reports_once()
+        await self._save_local_server_report_and_generate_factsheet(trust_config, experiment_name)
 
-            await self._save_local_server_report_and_generate_factsheet(trust_config, experiment_name)
+    async def _wait_for_trustworthiness_reports(self):
+        # Wait until reports arrive or the server-side timeout expires.
+        try:
+            await asyncio.wait_for(
+                self._reports_wait_event.wait(),
+                timeout=self.REPORTS_WAIT_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logging.warning(
+                "[TW SERVER] Timeout waiting trustworthiness reports. Received=%s/%s",
+                len(self._trustworthiness_reports),
+                self._expected_reports,
+            )
+
+    def _save_trustworthiness_reports_once(self):
+        # Persist received participant reports only once.
+        if self._trustworthiness_reports is not None and not self._csv_completed:
+            save_trustworthiness_reports_csv(self._trustworthiness_reports, self._experiment_name)
+            self._csv_completed = True
 
     async def _save_local_server_report_and_generate_factsheet(self, trust_config, experiment_name):
+        # Add the server's own local report and generate final trust artifacts.
         bytes_sent, bytes_recv, _, _, val_accuracy, dp_enabled, dp_epsilon = load_data_results_participant(
             self._experiment_name,
             self._idx,
@@ -768,6 +841,7 @@ class TrustWorkloadServer(BaseTrustWorkload):
         await self._generate_factsheet(trust_config, experiment_name)
 
     async def register_trustworthiness_report(self, source, message):
+        # Store one participant trustworthiness report received by the server.
         self._trustworthiness_reports[message.node_id] = {
             "source": source,
             "node_id": message.node_id,
@@ -801,13 +875,12 @@ class TrustWorkloadServer(BaseTrustWorkload):
 
         if (len(self._trustworthiness_reports) >= self._expected_reports):
             logging.info("[TW SERVER] all reports received, generating csv")
-            # Generate CSV files
-            save_trustworthiness_reports_csv(self._trustworthiness_reports, self._experiment_name)
-            self._csv_completed = True
+            self._save_trustworthiness_reports_once()
             self._reports_wait_event.set()
             logging.info(f"[TW SERVER] all reports received, waiting for finish post, csv_completed {self._csv_completed}")
 
     async def _generate_factsheet(self, trust_config, experiment_name):
+        # Generate the CFL factsheet and evaluate final trust metrics.
         factsheet = CflFactsheet()
         self._engine.trainer.datamodule.setup(stage="fit")
         train_loader = self._engine.trainer.datamodule.train_dataloader()
@@ -840,6 +913,7 @@ class TrustWorkloadServer(BaseTrustWorkload):
 
 class Trustworthiness():
     def __init__(self, engine: Engine, config: Config):
+        # Select the workload implementation for this node and start emissions tracking.
         config.reset_logging_configuration()
         print_msg_box(
             msg=f"Name Trustworthiness Module\nRole: {engine.rb.get_role_name()}",
@@ -864,15 +938,18 @@ class Trustworthiness():
     @property
     def tw(self):
         """TrustWorkload implementation chosen according to the node role."""
+        # Expose the role-specific trust workload.
         return self._trust_workload
 
     async def start(self):
+        # Prepare output directories, subscribe to finish events, and start tracking emissions.
         await self._create_trustworthiness_directory()
         await self.tw.init(self._experiment_name)
         await EventManager.get_instance().subscribe_node_event(ExperimentFinishEvent, self._process_experiment_finish_event)
         self._tracker.start()
 
     async def _create_trustworthiness_directory(self):
+        # Ensure the experiment trustworthiness directory exists.
         logs_dir = os.environ.get("NEBULA_LOGS_DIR", os.path.join("nebula", "app", "logs"))
         trust_dir = os.path.join(logs_dir, self._experiment_name, "trustworthiness")
         # Create a directory to store files used to compute trust
@@ -880,6 +957,7 @@ class Trustworthiness():
         os.chmod(trust_dir, 0o755)
 
     async def _process_experiment_finish_event(self, efe: ExperimentFinishEvent):
+        # Persist final local metrics and delegate role-specific finalization.
         class_counter = self._engine.trainer.datamodule.get_samples_per_label()
 
         save_class_count_per_participant(self._experiment_name, class_counter, self._idx)
@@ -911,6 +989,7 @@ class Trustworthiness():
         await self.tw.finish_experiment_role_post_actions(self._trust_config, self._experiment_name)
 
     def _factory_trust_workload(self, role: Role, engine: Engine, idx, trust_files_route) -> TrustWorkload:
+        # Create the workload implementation associated with the node role.
         trust_workloads = {
             Role.TRAINER: TrustWorkloadTrainer,
             Role.AGGREGATOR: TrustWorkloadTrainer,
