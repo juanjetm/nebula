@@ -210,6 +210,7 @@ async def main(config: Config):
     trainer_str = config.participant["training_args"]["trainer"]
     dp_enabled = config.participant["training_args"]["dp"]["enabled"]
     if trainer_str == "lightning":
+        # DP is implemented as a Lightning-specific trainer wrapper around Opacus.
         if dp_enabled:
             trainer = LightningDP
         else:

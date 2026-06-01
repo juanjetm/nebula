@@ -327,6 +327,7 @@ class AggregatorRoleBehavior(RoleBehavior):
 
 class SDFLRoleMixin:
     async def _send_reputation_model_update(self):
+        # SDFL reputation evaluates direct neighbors from the latest local model update.
         model_params = self._engine.trainer.get_model_parameters()
         serialized_model = (
             model_params
@@ -346,6 +347,7 @@ class SDFLRoleMixin:
             logging.info("SDFL reputation | No direct neighbors to send model/update")
             return
 
+        # Reputation model updates use the regular model channel and stay one-hop local.
         logging.info(f"SDFL reputation | Broadcasting model/update to direct neighbors: {neighbors}")
         await asyncio.gather(
             *[
@@ -357,9 +359,11 @@ class SDFLRoleMixin:
 
 class SDFLAggregatorRoleBehavior(SDFLRoleMixin, AggregatorRoleBehavior):
     async def before_round_start(self):
+        # Leadership transfer must be acknowledged before the new aggregator starts a round.
         await self._engine.wait_pending_leadership_ack()
 
     async def extended_learning_cycle(self):
+        # SDFL aggregators collect trainer updates, publish the global model, then rotate leadership.
         await self._engine.trainer.test()
         await self._send_reputation_model_update()
         await self._engine._waiting_model_updates()
@@ -370,12 +374,14 @@ class SDFLAggregatorRoleBehavior(SDFLRoleMixin, AggregatorRoleBehavior):
         await self._engine.mark_leadership_transfer_pending(successor)
 
     async def select_nodes_to_wait(self):
+        # The aggregator waits for all expected trainers, not just currently direct neighbors.
         nodes = self._engine.get_sdfl_expected_trainers()
         if nodes:
             return nodes
         return await super().select_nodes_to_wait()
 
     async def _send_global_model(self) -> None:
+        # Send the aggregated model through the SDFL forwarding channel.
         model_params = self._engine.trainer.get_model_parameters()
         serialized_model = (
             model_params
@@ -500,6 +506,7 @@ class SDFLTrainerRoleBehavior(SDFLRoleMixin, TrainerRoleBehavior):
 
         await self._engine.trainer.test()
         self._prepare_waiting_global_model()
+        # Trainers train locally, exchange reputation evidence, send their update, then wait for aggregation.
         await self._engine.trainning_in_progress_lock.acquire_async()
         try:
             await self._engine.trainer.train()
@@ -507,6 +514,7 @@ class SDFLTrainerRoleBehavior(SDFLRoleMixin, TrainerRoleBehavior):
             await self._engine.trainning_in_progress_lock.release_async()
 
         if self._engine._reputation is not None:
+            # Process reputation model updates that arrived before the local table is computed.
             await self._engine._reputation.process_pending_sdfl_reputation_updates(self._engine.round)
 
         await self._send_reputation_model_update()
@@ -515,10 +523,12 @@ class SDFLTrainerRoleBehavior(SDFLRoleMixin, TrainerRoleBehavior):
         await self._waiting_global_model()
 
     def _prepare_waiting_global_model(self):
+        # Reset the per-round event used by trainers to block until a GLOBAL_MODEL arrives.
         self._engine._global_model_source = None
         self._engine._global_model_received.clear()
 
     async def _calculate_and_send_reputation_table(self):
+        # Trainers publish direct-neighbor reputation tables for the aggregator to combine.
         if self._engine._reputation is None:
             return
 
@@ -544,6 +554,7 @@ class SDFLTrainerRoleBehavior(SDFLRoleMixin, TrainerRoleBehavior):
         await self._engine._reputation.calculate_and_send_sdfl_reputation_table()
 
     async def _send_trainer_update(self):
+        # Broadcast the local trainer update; forwarding delivers it to the current aggregator.
         model_params = self._engine.trainer.get_model_parameters()
         serialized_model = (
             model_params
@@ -585,6 +596,7 @@ class SDFLTrainerRoleBehavior(SDFLRoleMixin, TrainerRoleBehavior):
             logging.warning("SDFL trainer | No neighbors available to send TRAINER_UPDATE")
 
     async def _waiting_global_model(self):
+        # A trainer continues only after the aggregator's GLOBAL_MODEL is received or times out.
         timeout = self._config.participant["aggregator_args"]["aggregation_timeout"]
         logging.info(f"💤  Waiting global SDFL model in round {self._engine.round}.")
         try:

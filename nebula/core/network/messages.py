@@ -87,6 +87,7 @@ class MessagesManager:
                 },
             },
             "sdflmodel": {
+                # SDFL uses a dedicated model channel for forwarded trainer/global updates.
                 "parameters": ["action", "target", "parameters", "weight", "round", "node_id"],
                 "defaults": {
                     "weight": 1,
@@ -100,6 +101,7 @@ class MessagesManager:
                 },
             },
             "reputationtable": {
+                # Reputation tables carry one-hop trust scores for SDFL indirect reputation.
                 "parameters": ["action", "node_id", "round", "reputation_table_json"],
                 "defaults": {
                     "node_id": self.addr,
@@ -262,11 +264,13 @@ class MessagesManager:
             return True
 
         if  self.cm.config.participant["scenario_args"]["federation"] == "SDFL" and message_type == "sdflmodel_message":
+            # SDFL model messages must still flow after the generic learning-finished gate.
             return True
         if (
             self.cm.config.participant["scenario_args"]["federation"] == "SDFL"
             and message_type == "reputationtable_message"
         ):
+            # Reputation tables can arrive late while aggregation is waiting for trust evidence.
             return True
 
     def create_message(self, message_type: str, action: str = "", *args, **kwargs):

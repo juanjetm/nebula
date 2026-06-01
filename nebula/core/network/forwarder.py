@@ -143,8 +143,10 @@ class Forwarder:
             if message_type == "trustscores_message":
                 return True
             if message_type == "sdflmodel_message":
+                # Trainers may finish their local cycle before the forwarded global model arrives.
                 return message_wrapper.sdflmodel_message.action == nebula_pb2.SdflmodelMessage.Action.GLOBAL_MODEL
             if message_type == "reputationtable_message":
+                # SDFL reputation tables can be forwarded while the aggregator is waiting.
                 return True
             return False
         except Exception as e:

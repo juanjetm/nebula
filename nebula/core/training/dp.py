@@ -1,4 +1,5 @@
 class SimpleDPState:
+    # Minimal mutable state used to pass Opacus-wrapped objects between hooks.
     def __init__(self):
         self.extras = {}
 
@@ -17,6 +18,8 @@ class DifferentialPrivacyPlugin:
         poisson_sampling=True,
         clipping="flat",
     ):
+        # Fixed DP-SGD controls. Epsilon is not configured here; it is computed
+        # from the accountant as the consumed privacy budget after training.
         self.noise_multiplier = float(noise_multiplier)
         self.max_grad_norm = float(max_grad_norm)
         self.target_delta = target_delta
@@ -27,11 +30,14 @@ class DifferentialPrivacyPlugin:
         self._privacy_engine = None
 
     def on_train_start(self, model, optimizer, state):
+        # Import Opacus lazily so non-DP trainers do not need to load it.
         from opacus import PrivacyEngine
 
         dataloader = state.extras["dataloader"]
         model.train()
 
+        # Keep one PrivacyEngine per plugin instance so the accountant composes
+        # privacy loss across Nebula rounds instead of resetting every round.
         if self._privacy_engine is None:
             self._privacy_engine = PrivacyEngine(
                 accountant=self.accountant,
@@ -49,12 +55,14 @@ class DifferentialPrivacyPlugin:
             clipping=self.clipping,
         )
 
+        # Replace the training components with DP-aware versions used by LightningDP.
         state.extras["privacy_engine"] = privacy_engine
         state.extras["model"] = private_model
         state.extras["optimizer"] = private_optimizer
         state.extras["dataloader"] = private_dataloader
 
     def on_train_end(self, state):
+        # Query the accumulated epsilon for the configured delta after this round.
         privacy_engine = state.extras.get("privacy_engine")
         private_model = state.extras.get("model")
 
@@ -67,6 +75,8 @@ class DifferentialPrivacyPlugin:
                 pass
 
         if private_model is not None:
+            # Clean Opacus hook state so the same model can continue through later
+            # Nebula phases without stale per-sample gradient hooks.
             try:
                 private_model.zero_grad(set_to_none=True)
             except Exception:

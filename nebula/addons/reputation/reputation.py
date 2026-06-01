@@ -1861,6 +1861,7 @@ class Reputation:
 
     async def calculate_sdfl_reputation(self, _ree: RoundEndEvent):
         """Calculate SDFL reputation at round end for trainers and aggregators."""
+        # SDFL shares reputation tables instead of direct feedback messages at round end.
         await self.calculate_and_send_sdfl_reputation_table()
 
     async def calculate_and_send_sdfl_reputation_table(self):
@@ -1875,6 +1876,7 @@ class Reputation:
 
         await self._log_reputation_calculation_start()
 
+        # Each node computes direct-neighbor reputation from locally observed metrics.
         neighbors = set(await self._engine._cm.get_addrs_current_connections(only_direct=True))
         await self._process_neighbor_metrics(neighbors)
         await self._calculate_reputation_by_factor(neighbors)
@@ -1965,6 +1967,7 @@ class Reputation:
             await self.update_process_aggregation(updates)
             federation = self._engine.config.participant["scenario_args"].get("federation")
             if federation == "SDFL":
+                # SDFL forwards compact reputation tables so the aggregator can infer non-neighbor trust.
                 await self.send_reputation_table_to_neighbors(neighbors)
             elif federation != "CFL":
                 await self.send_reputation_to_neighbors(neighbors)
@@ -1975,6 +1978,7 @@ class Reputation:
             round_num = await self._engine.get_round()
 
         direct_neighbors = set(await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False))
+        # Only export scores observed locally for this round; indirect scores are not re-shared.
         return {
             node_id: float(data["reputation"])
             for node_id, data in self.reputation.items()
@@ -1985,6 +1989,7 @@ class Reputation:
 
     async def register_reputation_table(self, node_id: str, round_num: int, reputation_table: dict, received_from: str = None):
         """Store a reputation table received for a round."""
+        # Normalize table payloads at the boundary so aggregation uses numeric scores only.
         normalized_table = {}
         for neighbor, score in reputation_table.items():
             try:
@@ -2006,6 +2011,7 @@ class Reputation:
         expected = self._reputation_tables_expected.get(round_num)
         event = self._reputation_tables_events.get(round_num)
         if expected and event and expected.issubset(self.reputation_tables[round_num].keys()):
+            # Wake any aggregator task blocked waiting for all expected reputation tables.
             event.set()
 
     async def wait_reputation_tables(self, expected_nodes, round_num: int, timeout: float):
@@ -2014,6 +2020,7 @@ class Reputation:
         self._reputation_tables_expected[round_num] = expected_nodes
         event = self._reputation_tables_events.setdefault(round_num, asyncio.Event())
 
+        # The table may have arrived before the wait was registered.
         if expected_nodes.issubset(self.reputation_tables.get(round_num, {}).keys()):
             event.set()
 
@@ -2035,6 +2042,7 @@ class Reputation:
         if round_num in self._reputation_tables_wait_tasks:
             return
 
+        # Keep collecting in the background so late tables are visible before aggregation.
         async def _wait_and_log():
             tables, missing = await self.wait_reputation_tables(expected_nodes, round_num, timeout)
             logging.info(
@@ -2056,6 +2064,7 @@ class Reputation:
     ):
         """Calculate indirect SDFL reputation for non-neighbor nodes from received tables."""
         direct_neighbors = set(await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False))
+        # The aggregator already has direct scores for neighbors; tables fill the non-neighbor gap.
         target_nodes = set(target_nodes) - direct_neighbors - {self._addr}
         expected_table_nodes = set(expected_table_nodes)
 
@@ -2076,6 +2085,7 @@ class Reputation:
 
         indirect_reputations = {}
         for node_id in target_nodes:
+            # Average all tables that contain the target node to estimate indirect reputation.
             scores = [
                 float(table[node_id])
                 for table in tables.values()
@@ -2097,6 +2107,7 @@ class Reputation:
             indirect_reputations[node_id] = reputation
 
             if reputation < self.REPUTATION_THRESHOLD and round_num > 0:
+                # Rejections based on indirect reputation affect aggregation weights for this round.
                 self.rejected_nodes.add(node_id)
                 logging.info(f"SDFL reputation | Indirect reputation rejected node {node_id} at round {round_num}")
 
@@ -2110,9 +2121,11 @@ class Reputation:
         """Send the local SDFL reputation table through the forwarding channel."""
         round_num = await self._engine.get_round()
         reputation_table = await self.get_local_reputation_table(round_num)
+        # Register our own table locally so local aggregation paths see the same state as receivers.
         await self.register_reputation_table(self._addr, round_num, reputation_table, received_from=self._addr)
 
         if self._engine.rb.get_role_name(True) == "aggregator":
+            # Aggregators start waiting early because trainer tables may arrive before aggregation.
             expected_nodes = self._engine.get_sdfl_expected_trainers()
             timeout = float(
                 self._config.participant["defense_args"]
@@ -2130,6 +2143,7 @@ class Reputation:
         )
 
         for neighbor in neighbors:
+            # Reputation tables are forwarded by the network layer in SDFL.
             await self._engine.cm.send_message(neighbor, message)
 
         logging.info(
@@ -2477,6 +2491,7 @@ class Reputation:
     async def recollect_duplicated_number_message(self, dme: DuplicatedMessageEvent):
         """Record a duplicated message event."""
         if self._engine.config.participant["scenario_args"].get("federation") == "SDFL":
+            # SDFL forwards model/table messages, so duplicates are not a reliable reputation signal.
             return
 
         event_data = await dme.get_event_data()
@@ -2490,6 +2505,7 @@ class Reputation:
         """Record message data for the given source if it's not the current address."""
         if source != self._addr:
             if self._engine.config.participant["scenario_args"].get("federation") == "SDFL":
+                # In SDFL, message-count reputation is only meaningful for direct neighbors.
                 direct_neighbors = await self._engine.cm.get_addrs_current_connections(only_direct=True, myself=False)
                 if source not in direct_neighbors:
                     return

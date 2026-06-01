@@ -35,7 +35,7 @@ from nebula.addons.trustworthiness.helpers.trust_reports import (
 from codecarbon import EmissionsTracker
 from nebula.addons.trustworthiness.per_round_metrics import PerRoundTrustMetrics
 from datetime import datetime
-from nebula.addons.trustworthiness.factsheet import CflFactsheet
+from nebula.addons.trustworthiness.cfl_factsheet import CflFactsheet
 from nebula.addons.trustworthiness.metric import TrustMetricManager
 from nebula.addons.trustworthiness.dfl_factsheet import DflFactsheet
 from nebula.addons.trustworthiness.graphics import Graphics
@@ -996,6 +996,7 @@ class Trustworthiness():
         bytes_sent = self._engine.reporter.acc_bytes_sent
         bytes_recv = self._engine.reporter.acc_bytes_recv
 
+        # Persist the trainer-reported DP budget so factsheets can score privacy.
         privacy_metrics = self._engine.trainer.get_privacy_metrics()
         dp_enabled=bool(privacy_metrics.get("dp_enabled", False))
         dp_epsilon=privacy_metrics.get("dp_epsilon")

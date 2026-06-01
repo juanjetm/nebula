@@ -1,5 +1,3 @@
-"""Shared helpers for trustworthiness factsheet generation."""
-
 import json
 import os
 import shutil
@@ -7,12 +5,13 @@ import shutil
 
 dirname = os.path.dirname(__file__)
 
+# Shared helpers for trustworthiness factsheet generation.
 DATA_TYPE_IMAGES = "images"
 DATA_TYPE_TABULAR = "tabular"
 
 
 def get_model_data_type(model):
-    """Returns the data type declared by the model, when available."""
+    # Return the data type declared by the model, when available.
     if not hasattr(model, "get_data_type"):
         return ""
 
@@ -27,10 +26,12 @@ def get_model_data_type(model):
 
 
 def get_normalized_model_data_type(model):
+    # Normalize the model data type before matching templates or profiles.
     return get_model_data_type(model).lower()
 
 
 def get_factsheet_template_name(federation, model, default_template_name):
+    # Select a data-type-specific template when one exists for the federation.
     federation_prefix = "dfl" if str(federation).upper() in {"DFL", "SDFL"} else "cfl"
     data_type = get_normalized_model_data_type(model)
 
@@ -44,22 +45,22 @@ def get_factsheet_template_name(federation, model, default_template_name):
 
 
 def get_trustworthiness_dir(scenario_name):
-    """Returns the trustworthiness output directory for a scenario."""
+    # Return the trustworthiness output directory for a scenario.
     return os.path.join(os.environ.get("NEBULA_LOGS_DIR"), scenario_name, "trustworthiness")
 
 
 def get_factsheet_path(scenario_name, factsheet_name):
-    """Returns the path to a factsheet inside the scenario trustworthiness directory."""
+    # Return the path to a factsheet inside the scenario trustworthiness directory.
     return os.path.join(get_trustworthiness_dir(scenario_name), factsheet_name)
 
 
 def get_factsheet_template_path(template_name):
-    """Returns the path to a factsheet template bundled with the addon."""
+    # Return the path to a factsheet template bundled with the addon.
     return os.path.join(dirname, "configs", template_name)
 
 
 def load_or_create_factsheet(scenario_name, factsheet_name, template_name):
-    """Loads a factsheet, creating it from its template if it does not exist."""
+    # Load a factsheet, creating it from the selected template if needed.
     trustworthiness_dir = get_trustworthiness_dir(scenario_name)
     os.makedirs(trustworthiness_dir, exist_ok=True)
 
@@ -74,23 +75,23 @@ def load_or_create_factsheet(scenario_name, factsheet_name, template_name):
 
 
 def write_factsheet(factsheet_path, factsheet):
-    """Writes a factsheet using the standard JSON formatting."""
+    # Write a factsheet using readable standard JSON formatting.
     with open(factsheet_path, "w", encoding="utf-8") as factsheet_file:
         json.dump(factsheet, factsheet_file, indent=4)
 
 
 def cap_score(value, maximum=1):
-    """Caps a score to the maximum value expected by the factsheet."""
+    # Cap a score to the maximum value expected by the factsheet.
     return maximum if value > maximum else value
 
 
 def inverse_score(value):
-    """Converts an error or risk value into a bounded inverse score."""
+    # Convert an error or risk value into a bounded inverse score.
     return 1 / (1 + value)
 
 
 def build_project_background(data):
-    """Builds the natural-language scenario description used in factsheets."""
+    # Build the natural-language scenario description used in factsheets.
     federation = data["federation"]
     n_nodes = int(data["n_nodes"])
     dataset = data["dataset"]
@@ -121,7 +122,7 @@ def build_project_background(data):
 
 
 def populate_common_pre_train_sections(factsheet, data, model):
-    """Populates project, data, participant and training configuration fields."""
+    # Populate project, data, participant and training configuration fields.
     with_reputation = data["reputation"]["enabled"]
 
     factsheet["project"]["overview"] = data["scenario_title"]
@@ -153,13 +154,13 @@ def populate_common_pre_train_sections(factsheet, data, model):
 
 
 def set_dp_configuration(factsheet, dp_enabled, dp_epsilon):
-    """Writes differential privacy configuration using the factsheet schema."""
+    # Write differential privacy configuration using the factsheet schema.
     factsheet["configuration"]["differential_privacy"] = bool(dp_enabled)
     factsheet["configuration"]["dp_epsilon"] = dp_epsilon if dp_enabled else ""
 
 
 def populate_reliability(factsheet, reliability_summary):
-    """Writes dropout and timeout rates, defaulting to a fully reliable run."""
+    # Write dropout and timeout rates, defaulting to a fully reliable run.
     factsheet["system"]["dropout_rate"] = (
         reliability_summary.get("dropout_rate", 0.0)
         if reliability_summary is not None
@@ -173,7 +174,7 @@ def populate_reliability(factsheet, reliability_summary):
 
 
 def populate_participation(factsheet, participation_summary):
-    """Writes participant selection dispersion, defaulting to full participation."""
+    # Write participant selection dispersion, defaulting to full participation.
     factsheet["fairness"]["selection_cv"] = (
         participation_summary.get("selection_cv", 1)
         if participation_summary is not None
@@ -182,7 +183,7 @@ def populate_participation(factsheet, participation_summary):
 
 
 def populate_reputation(factsheet, reputation_summary, include_neighbor_num=False):
-    """Writes reputation information for centralized or decentralized factsheets."""
+    # Write reputation information for centralized or decentralized factsheets.
     if reputation_summary is not None:
         factsheet["participants"]["avg_neighbor_reputation"] = reputation_summary.get(
             "avg_neighbor_reputation",

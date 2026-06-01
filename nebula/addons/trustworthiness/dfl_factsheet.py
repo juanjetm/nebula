@@ -38,9 +38,7 @@ logger = logging.getLogger(__name__)
 
 class DflFactsheet:
     def __init__(self):
-        """
-        Manager class to populate the FactSheet
-        """
+        # Manage participant-specific DFL/SDFL factsheets.
         self.factsheet_template_file_nm = "factsheet_template_dfl.json"
 
     def populate_factsheet_dfl(
@@ -58,6 +56,7 @@ class DflFactsheet:
         reliability_summary=None,
     ):
 
+        # Resolve participant-specific output and data-type-aware template.
         self.factsheet_file_nm = f"factsheet_participant_{participant_idx}.json"
         factsheet_template_file_nm = get_factsheet_template_name(
             data["federation"],
@@ -77,15 +76,18 @@ class DflFactsheet:
 
         populate_common_pre_train_sections(factsheet, data, model)
 
+        # DP configuration is stored per participant in decentralized runs.
         dp_enabled, dp_epsilon = get_dp_local(scenario_name, participant_idx)
         set_dp_configuration(factsheet, dp_enabled, dp_epsilon)
 
         files_dir = get_trustworthiness_dir(scenario_name)
 
+        # Refresh entropy.json so participant-local entropy can be read consistently.
         get_all_data_entropy(scenario_name)
 
         factsheet["data"]["entropy_local"] = get_local_normalized_entropy(scenario_name, participant_idx)
 
+        # Use the final valid round metrics as participant test performance.
         df = load_round_metrics(scenario_name, participant_idx)
         acc = df["accuracy"].astype(float).to_numpy()
         loss = df["loss"].astype(float).to_numpy()
@@ -96,6 +98,7 @@ class DflFactsheet:
         factsheet["performance"]["test_loss"] = float(final_loss)
         factsheet["performance"]["test_acc"] = float(final_acc)
 
+        # Load local communication and privacy values reported by the participant.
         bytes_sent, bytes_recv, *_ = load_data_results_participant(scenario_name, participant_idx)
 
         factsheet["system"]["model_size"] = get_bytes_model(model)
@@ -107,6 +110,7 @@ class DflFactsheet:
 
         factsheet["system"]["time_minutes"] = get_elapsed_time(start_time, end_time)
 
+        # Class imbalance can only be populated after local class-counts exist.
         count_class_file = os.path.join(files_dir, f"{participant_idx}_class_count.json")
         factsheet["fairness"]["class_imbalance"] = (
             get_local_class_imbalance_score(scenario_name, participant_idx)
@@ -116,6 +120,7 @@ class DflFactsheet:
 
         populate_participation(factsheet, participation_summary)
 
+        # Local CodeCarbon output feeds participant sustainability fields.
         (
             role,
             carbon_intensity_local,
@@ -138,17 +143,20 @@ class DflFactsheet:
         factsheet["participants"]["local_dataset_size"] = sample_size
 
         populate_reputation(factsheet, reputation_summary, include_neighbor_num=True)
+        # DFL privacy risk depends on local DP settings and neighbor count.
         factsheet["privacy"]["privacy_risk"] = get_global_privacy_risk_dfl(
             dp_enabled,
             dp_epsilon,
             factsheet["participants"]["neighbor_num"],
         )
 
+        # Communication emissions are estimated from local bytes and carbon intensity.
         factsheet["sustainability"]["emissions_communication_local"] = (
             (bytes_sent * 2.24e-10 * carbon_intensity_local)
             + (bytes_recv * 2.24e-10 * carbon_intensity_local)
         )
 
+        # Populate model/profile metrics after final participant accuracy is known.
         factsheet["fairness"]["underfitting"] = get_underfitting_score_local(scenario_name, participant_idx)
         populate_profile_metrics(
             factsheet,
@@ -163,6 +171,7 @@ class DflFactsheet:
 
 
 def load_round_metrics(scenario_name, participant_idx):
+    # Load participant per-round metrics and keep only rows with loss/accuracy.
     files_dir = get_trustworthiness_dir(scenario_name)
     path = os.path.join(files_dir, f"round_metrics_participant_{participant_idx}.csv")
     df = pd.read_csv(path)

@@ -390,6 +390,7 @@ class Lightning:
         self.model.show_current_learning_rate()
 
     def get_privacy_metrics(self):
+        # Non-DP trainers expose the same metrics contract with neutral values.
         return {
             "dp_enabled": False,
             "dp_epsilon": 0,

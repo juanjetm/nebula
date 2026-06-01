@@ -559,6 +559,7 @@ class Engine:
 
     async def _reputationtable_table_callback(self, source, message):
         try:
+            # Reputation tables are an SDFL-only control plane for indirect reputation.
             if self.config.participant["scenario_args"].get("federation") != "SDFL":
                 return
             if self.rb.get_role_name(True) != "aggregator":
@@ -580,6 +581,7 @@ class Engine:
                 reputation_table,
                 received_from=source,
             )
+            # Start or refresh the async collection window for this SDFL round.
             expected_nodes = self.get_sdfl_expected_trainers()
             timeout = float(
                 self.config.participant["defense_args"]
@@ -685,6 +687,7 @@ class Engine:
                 )
                 return
 
+            # Valid trainer updates are converted into the normal aggregation event stream.
             decoded_model = self.trainer.deserialize_model(message.parameters)
 
             event = UpdateReceivedEvent(
@@ -729,6 +732,7 @@ class Engine:
                 )
                 return
 
+        # Trainers apply the aggregator's global model and unblock their SDFL round wait.
         decoded_model = self.trainer.deserialize_model(message.parameters)
         self.trainer.set_model_parameters(decoded_model)
 

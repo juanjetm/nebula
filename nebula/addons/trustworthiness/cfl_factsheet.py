@@ -43,9 +43,7 @@ logger = logging.getLogger(__name__)
 
 class CflFactsheet:
     def __init__(self):
-        """
-        Manager class to populate the FactSheet
-        """
+        # Manage the single CFL factsheet populated from server-side aggregation.
         self.factsheet_file_nm = "factsheet.json"
         self.factsheet_template_file_nm = "factsheet_template_cfl.json"
 
@@ -64,6 +62,7 @@ class CflFactsheet:
         reliability_summary=None,
     ):
 
+        # Resolve the output factsheet and template for federation/data type.
         factsheet_file = get_factsheet_path(scenario_name, self.factsheet_file_nm)
         factsheet_template_file_nm = get_factsheet_template_name(
             data["federation"],
@@ -82,10 +81,12 @@ class CflFactsheet:
 
             populate_common_pre_train_sections(factsheet, data, model)
 
+            # CFL reads aggregate CSV artifacts from the scenario trust directory.
             files_dir = get_trustworthiness_dir(scenario_name)
 
             emissions_file = os.path.join(files_dir, "emissions.csv")
 
+            # Aggregate class imbalance, entropy and model size across participants.
             avg_class_imbalance, avg_model_size = get_avg_class_imbalance_model_size(scenario_name)
             entropy_distribution = get_entropy_list (scenario_name)
 
@@ -97,7 +98,7 @@ class CflFactsheet:
 
             factsheet["data"]["avg_entropy"] = avg_entropy
 
-            # Set performance data
+            # Set global performance and fairness metrics from aggregate results.
             result_avg_loss_accuracy = get_avg_loss_accuracy(scenario_name)
             factsheet["performance"]["test_loss_avg"] = result_avg_loss_accuracy[0]
             factsheet["performance"]["test_acc_avg"] = result_avg_loss_accuracy[1]
@@ -105,6 +106,7 @@ class CflFactsheet:
             factsheet["fairness"]["test_acc_cv"] = 1 if test_acc_cv > 1 else test_acc_cv
             _, participant_test_acc = get_participant_loss_accuracy(scenario_name, participant_idx)
 
+            # Compute CFL privacy risk from aggregate DP settings and client count.
             dp_enabled, dp_epsilon = get_dp_global(scenario_name)
             set_dp_configuration(factsheet, dp_enabled, dp_epsilon)
             factsheet["privacy"]["privacy_risk"] = get_global_privacy_risk(
@@ -113,6 +115,7 @@ class CflFactsheet:
                 factsheet["participants"]["client_num"],
             )
 
+            # Populate system timing, model-size and communication totals.
             factsheet["system"]["avg_time_minutes"] = get_elapsed_time(start_time, end_time)
             factsheet["system"]["avg_model_size"] = avg_model_size
 
@@ -124,6 +127,7 @@ class CflFactsheet:
             populate_reliability(factsheet, reliability_summary)
             populate_participation(factsheet, participation_summary)
 
+            # Convert class imbalance and runtime summaries into factsheet fields.
             class_imbalance_score = get_class_imbalance_score(avg_class_imbalance)
             factsheet["fairness"]["class_imbalance"] = cap_score(class_imbalance_score)
             populate_reputation(factsheet, reputation_summary)
@@ -131,6 +135,7 @@ class CflFactsheet:
             underfitting_score = get_underfitting_score(scenario_name, participant_idx)
 
             factsheet["fairness"]["underfitting"] = underfitting_score
+            # Add model/profile-specific metrics after base factsheet fields exist.
             populate_profile_metrics(
                 factsheet,
                 data["federation"],
@@ -140,7 +145,7 @@ class CflFactsheet:
                 participant_test_acc,
             )
 
-            # Set emissions metrics
+            # Enrich CodeCarbon emissions with CPU/GPU benchmark metadata.
             emissions = None if emissions_file is None else read_csv(emissions_file)
             if emissions is not None:
                 logging.info("FactSheet: Populating emissions")
@@ -156,6 +161,7 @@ class CflFactsheet:
                 emissions.drop("gpuName", axis=1, inplace=True)
                 emissions["powerPerf"] = emissions["powerPerf"].astype(float)
                 emissions["powerPerformance"] = emissions["powerPerformance"].astype(float)
+                # Trainer rows represent client-side training cost.
                 client_emissions = emissions.loc[emissions["role"] == "trainer"]
                 client_avg_carbon_intensity = round(client_emissions["energy_grid"].mean(), 2)
                 factsheet["sustainability"]["avg_carbon_intensity_clients"] = check_field_filled(factsheet, ["sustainability", "avg_carbon_intensity_clients"], client_avg_carbon_intensity, "")
@@ -166,6 +172,7 @@ class CflFactsheet:
                 clients_power_performance = round(pd.concat([GPU_powerperf, CPU_powerperf]).mean(), 2)
                 factsheet["sustainability"]["avg_power_performance_clients"] = check_field_filled(factsheet, ["sustainability", "avg_power_performance_clients"], clients_power_performance, "")
 
+                # Server rows represent aggregation cost.
                 server_emissions = emissions.loc[emissions["role"] == "server"]
                 server_avg_carbon_intensity = round(server_emissions["energy_grid"].mean(), 2)
                 factsheet["sustainability"]["avg_carbon_intensity_server"] = check_field_filled(factsheet, ["sustainability", "avg_carbon_intensity_server"], server_avg_carbon_intensity, "")
@@ -175,11 +182,13 @@ class CflFactsheet:
                 server_power_performance = round(pd.concat([GPU_powerperf, CPU_powerperf]).mean(), 2)
                 factsheet["sustainability"]["avg_power_performance_server"] = check_field_filled(factsheet, ["sustainability", "avg_power_performance_server"], server_power_performance, "")
 
+                # Estimate communication emissions from byte counts and carbon intensity.
                 factsheet["sustainability"]["emissions_communication_uplink"] = check_field_filled(factsheet, ["sustainability", "emissions_communication_uplink"], factsheet["system"]["total_upload_bytes"] * 2.24e-10 * factsheet["sustainability"]["avg_carbon_intensity_clients"], "")
                 factsheet["sustainability"]["emissions_communication_downlink"] = check_field_filled(factsheet, ["sustainability", "emissions_communication_downlink"], factsheet["system"]["total_download_bytes"] * 2.24e-10 * factsheet["sustainability"]["avg_carbon_intensity_server"], "")
 
             write_factsheet(factsheet_file, factsheet)
 
         except JSONDecodeError as e:
+            # Keep corrupted factsheet failures explicit in logs.
             logging.info(f"{factsheet_file} is invalid")
             logging.error(e)

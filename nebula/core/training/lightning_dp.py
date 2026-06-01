@@ -19,11 +19,13 @@ class LightningDP(Lightning):
 
     def __init__(self, model, datamodule, config=None):
         super().__init__(model, datamodule, config)
+        # The DP plugin owns the Opacus PrivacyEngine and its cumulative accountant.
         self._dp_plugin = self.create_dp_plugin()
         self.dp_epsilon = None
         self.dp_delta = None
 
     def create_dp_plugin(self):
+        # Translate Nebula participant config into the fixed DP-SGD controls used by Opacus.
         dp_config = self.config.participant["training_args"].get("dp")
 
         if dp_config is None or not dp_config.get("enabled", False):
@@ -40,6 +42,7 @@ class LightningDP(Lightning):
         )
 
     def _train_sync(self):
+        # Keep the public Lightning trainer contract: train once and return loss/accuracy.
         try:
             self._fit_with_dp()
 
@@ -63,6 +66,7 @@ class LightningDP(Lightning):
             raise
 
     def _get_training_device(self):
+        # Resolve the effective device for any manual DP path that needs it.
         if (
             self.config.participant["device_args"]["accelerator"] == "gpu"
             and torch.cuda.is_available()
@@ -73,6 +77,7 @@ class LightningDP(Lightning):
         return torch.device("cpu")
 
     def _log_manual_metrics(self, phase, metrics):
+        # Log manually computed metrics using the same naming scheme as Lightning.
         output = metrics.compute()
         output = {
             f"{phase}/{key.replace('Multiclass', '').split('/')[-1]}": value.detach()
@@ -88,9 +93,11 @@ class LightningDP(Lightning):
         self._logger.log_data(output, step=self.model.global_number[phase])
 
     def _fit_with_dp(self):
+        # Bridge Nebula's Lightning trainer with Opacus' private optimizer/dataloader.
         state = SimpleDPState()
 
         if hasattr(self.model, "clear_optimizer_override"):
+            # Start from a clean optimizer so a previous round cannot leak into this fit.
             self.model.clear_optimizer_override()
 
         try:
@@ -102,6 +109,7 @@ class LightningDP(Lightning):
             optimizer = self.model.configure_optimizers()
             state.extras["dataloader"] = train_dataloader
 
+            # Opacus wraps the model, optimizer and dataloader, and updates the accountant.
             self._dp_plugin.on_train_start(self.model, optimizer, state)
 
             private_optimizer = state.extras["optimizer"]
@@ -114,6 +122,8 @@ class LightningDP(Lightning):
             # the original LightningModule and a DPOptimizer through configure_optimizers.
             self.model.dp_enabled = True
             self.model.set_optimizer_override(private_optimizer)
+            # Lightning still drives the training loop; the injected optimizer/dataloader
+            # make the loop perform DP-SGD instead of standard SGD.
             self._trainer.fit(
                 self.model,
                 train_dataloaders=private_dataloader,
@@ -123,6 +133,7 @@ class LightningDP(Lightning):
             self.model.train()
 
         finally:
+            # Always restore the model/trainer state, even if Lightning raises.
             self.model.dp_enabled = False
             if hasattr(self.model, "clear_optimizer_override"):
                 self.model.clear_optimizer_override()
@@ -132,6 +143,7 @@ class LightningDP(Lightning):
         dp_epsilon = state.extras.get("dp_epsilon")
 
         if dp_epsilon is not None:
+            # Store the accumulated privacy budget for logging and trustworthiness reports.
             dp_delta = state.extras["dp_delta"]
 
             self.dp_epsilon = float(dp_epsilon)
@@ -153,6 +165,7 @@ class LightningDP(Lightning):
             )
 
     def get_privacy_metrics(self):
+        # Trustworthiness consumes these values at experiment finish.
         return {
             "dp_enabled": True,
             "dp_epsilon": self.dp_epsilon,

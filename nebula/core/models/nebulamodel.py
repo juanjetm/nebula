@@ -215,6 +215,7 @@ class NebulaModel(pl.LightningModule, ABC):
         self._latest_validation_metrics = {}
         self._train_extra_metrics = {}
 
+        # DP trainers update these fields after querying the Opacus accountant.
         self.dp_enabled = False
         self.dp_epsilon = None
         self.dp_delta = None

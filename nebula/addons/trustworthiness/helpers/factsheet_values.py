@@ -13,6 +13,7 @@ from nebula.addons.trustworthiness.helpers.scoring import (
 
 logger = logging.getLogger(__name__)
 
+# Operations available from the eval_metrics JSON files.
 OPERATIONS = {
     "check_properties": check_properties,
     "comm_efficiency": comm_efficiency,
@@ -21,88 +22,62 @@ OPERATIONS = {
     "get_value": get_value,
 }
 
+
 def check_field_filled(factsheet_dict, factsheet_path, value, empty=""):
-    """
-    Check if the field in the factsheet file is filled or not.
+    # Keep an existing factsheet value; otherwise return a clean fallback for empty or NaN values.
+    current_value = factsheet_dict[factsheet_path[0]][factsheet_path[1]]
+    if current_value:
+        return current_value
 
-    Args:
-        factsheet_dict (dict): The factshett dict.
-        factsheet_path (list): The factsheet field to check.
-        value (float): The value to add in the field.
-        empty (string): If the value could not be appended, the empty string is returned.
-
-    Returns:
-        float: The value added in the factsheet or empty if the value could not be appened
-
-    """
-    if factsheet_dict[factsheet_path[0]][factsheet_path[1]]:
-        return factsheet_dict[factsheet_path[0]][factsheet_path[1]]
-    elif value != "" and value != "nan":
-        if type(value) != str and type(value) != list:
-            if math.isnan(value):
-                return 0
-            else:
-                return value
-        else:
-            return value
-    else:
+    if _is_empty_value(value):
         return empty
+
+    if _is_nan_number(value):
+        return 0
+
+    return value
+
+
+def _is_empty_value(value):
+    # Empty strings and the literal "nan" should not overwrite missing factsheet fields.
+    return value == "" or value == "nan"
+
+
+def _is_nan_number(value):
+    # Only numeric values can be checked with math.isnan safely.
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isnan(value)
 
 
 def get_input_value(input_docs, inputs, operation):
-    """
-    Gets the input value from input document and apply the metric operation on the value.
-
-    Args:
-        inputs_docs (map): The input document map.
-        inputs (list): All the inputs.
-        operation (string): The metric operation.
-
-    Returns:
-        float: The metric value
-
-    """
-
-    input_value = None
+    # Collect metric inputs from their configured paths and apply the configured operation.
     args = []
-    for i in inputs:
-        source = i.get("source", "")
-        field = i.get("field_path", "")
-        input_doc = input_docs.get(source, None)
+    for input_config in inputs:
+        source = input_config.get("source", "")
+        field = input_config.get("field_path", "")
+        input_doc = input_docs.get(source)
         if input_doc is None:
             logger.warning(f"{source} is null")
-        else:
-            input = get_value_from_path(input_doc, field)
-            args.append(input)
-    try:
-        operationFn = OPERATIONS[operation]
-        input_value = operationFn(*args)
-    except KeyError:
-        logger.warning(f"{operation} is not valid")
-    except TypeError:
-        logger.warning(f"{operation} is not valid")
+            continue
 
-    return input_value
+        args.append(get_value_from_path(input_doc, field))
+
+    try:
+        operation_fn = OPERATIONS[operation]
+        return operation_fn(*args)
+    except (KeyError, TypeError):
+        logger.warning(f"{operation} is not valid")
+        return None
 
 
 def get_value_from_path(input_doc, path):
-    """
-    Gets the input value from input document by path.
-
-    Args:
-        inputs_doc (map): The input document map.
-        path (string): The field name of the input value of interest.
-
-    Returns:
-        float: The input value from the input document
-
-    """
-
-    d = input_doc
+    # Walk a slash-separated path through a nested dict and return the leaf value.
+    current_value = input_doc
     for nested_key in path.split("/"):
-        temp = d.get(nested_key)
-        if isinstance(temp, dict):
-            d = d.get(nested_key)
-        else:
-            return temp
-    return None
+        if not isinstance(current_value, dict):
+            return None
+
+        current_value = current_value.get(nested_key)
+        if current_value is None:
+            return None
+
+    return current_value

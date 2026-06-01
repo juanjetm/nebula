@@ -4,40 +4,31 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+
+def _is_number(value):
+    # Score calculations expect real numeric values; booleans are handled explicitly.
+    return isinstance(value, (int, float, np.number)) and not isinstance(value, bool)
+
+
+def _warn_not_number(value):
+    # Keep the warning format consistent across all numeric scoring functions.
+    logger.warning("Input value is not a number")
+    logger.warning(f"{value}")
+
+
 def get_mapped_score(score_key, score_map):
-    """
-    Finds the score by the score_key in the score_map.
-
-    Args:
-        score_key (string): The key to look up in the score_map.
-        score_map (dict): The score map defined in the eval_metrics.json file.
-
-    Returns:
-        float: The normalized score of [0, 1].
-    """
-    score = 0
+    # Normalize the configured score map and return the normalized value for the input key.
     if score_map is None:
         logger.warning("Score map is missing")
-    else:
-        keys = [key for key, value in score_map.items()]
-        scores = [value for key, value in score_map.items()]
-        normalized_scores = get_normalized_scores(scores)
-        normalized_score_map = dict(zip(keys, normalized_scores, strict=False))
-        score = normalized_score_map.get(score_key, np.nan)
+        return 0
 
-    return score
+    normalized_scores = get_normalized_scores(list(score_map.values()))
+    normalized_score_map = dict(zip(score_map.keys(), normalized_scores, strict=False))
+    return normalized_score_map.get(score_key, np.nan)
 
 
 def get_normalized_scores(scores):
-    """
-    Calculates the normalized scores of a list.
-
-    Args:
-        scores (list): The values that will be normalized.
-
-    Returns:
-        list: The normalized list.
-    """
+    # Convert a list of raw configured scores to the [0, 1] range.
     if scores is None or len(scores) == 0:
         return []
 
@@ -46,145 +37,89 @@ def get_normalized_scores(scores):
     if max_score == min_score:
         return [1.0 for _ in scores]
 
-    normalized = [(x - min_score) / (max_score - min_score) for x in scores]
-    return normalized
+    return [(score - min_score) / (max_score - min_score) for score in scores]
 
 
 def get_range_score(value, ranges, direction="asc"):
-    """
-    Maps the value to a range and gets the score by the range and direction.
-
-    Args:
-        value (int): The input score.
-        ranges (list): The ranges defined.
-        direction (string): Asc means the higher the range the higher the score, desc means otherwise.
-
-    Returns:
-        float: The normalized score of [0, 1].
-    """
-
-    if not (type(value) == int or type(value) == float):
-        logger.warning("Input value is not a number")
-        logger.warning(f"{value}")
+    # Place the value in one of the configured bins and normalize that bin index.
+    if not _is_number(value):
+        _warn_not_number(value)
         return 0
-    else:
-        score = 0
-        if ranges is None:
-            logger.warning("Score ranges are missing")
-        else:
-            total_bins = len(ranges) + 1
-            bin = np.digitize(value, ranges, right=True)
-            score = 1 - (bin / total_bins) if direction == "desc" else bin / total_bins
-        return score
+
+    if ranges is None:
+        logger.warning("Score ranges are missing")
+        return 0
+
+    total_bins = len(ranges) + 1
+    bin_index = np.digitize(value, ranges, right=True)
+    score = bin_index / total_bins
+    return 1 - score if direction == "desc" else score
 
 
 def get_map_value_score(score_key, score_map):
-    """
-    Finds the score by the score_key in the score_map and returns the value.
-
-    Args:
-        score_key (string): The key to look up in the score_map.
-        score_map (dict): The score map defined in the eval_metrics.json file.
-
-    Returns:
-        float: The score obtained in the score_map.
-    """
-    score = 0
+    # Return the exact configured score for maps that already store normalized values.
     if score_map is None:
         logger.warning("Score map is missing")
-    else:
-        score = score_map[score_key]
-    return score
+        return 0
+
+    return score_map[score_key]
 
 
 def get_true_score(value, direction):
-    """
-    Returns the negative of the value if direction is 'desc', otherwise returns value.
-
-    Args:
-        value (int): The input score.
-        direction (string): Asc means the higher the range the higher the score, desc means otherwise.
-
-    Returns:
-        float: The score obtained.
-    """
-
+    # Booleans are direct scores; numeric values can be inverted for descending metrics.
     if value is True:
         return 1
-    elif value is False:
+    if value is False:
         return 0
-    else:
-        if not (type(value) == int or type(value) == float):
-            logger.warning("Input value is not a number")
-            logger.warning(f"{value}.")
-            return 0
-        else:
-            if direction == "desc":
-                return 1 - value
-            else:
-                return value
+
+    if not _is_number(value):
+        _warn_not_number(value)
+        return 0
+
+    return 1 - value if direction == "desc" else value
 
 
 def get_scaled_score(value, scale: list, direction: str):
-    """
-    Maps a score of a specific scale into the scale between zero and one.
-
-    Args:
-        value (int or float): The raw value of the metric.
-        scale (list): List containing the minimum and maximum value the value can fall in between.
-
-    Returns:
-        float: The normalized score of [0, 1].
-    """
-
-    score = 0
-    try:
-        value_min, value_max = scale[0], scale[1]
-    except Exception:
-        logger.warning("Score minimum or score maximum is missing. The minimum has been set to 0 and the maximum to 1")
-        value_min, value_max = 0, 1
+    # Clamp a metric from its configured scale into the [0, 1] score range.
     if value is None or value == "":
         logger.warning("Score value is missing. Set value to zero")
-    else:
-        low, high = 0, 1
-        if value >= value_max:
-            score = 1
-        elif value <= value_min:
-            score = 0
-        else:
-            diff = value_max - value_min
-            diffScale = high - low
-            score = (float(value) - value_min) * (float(diffScale) / diff) + low
-        if direction == "desc":
-            score = high - score
+        return 0
 
-    return score
+    if not _is_number(value):
+        _warn_not_number(value)
+        return 0
+
+    value_min, value_max = _get_scale_bounds(scale)
+    if value_max == value_min:
+        score = 1
+    elif value >= value_max:
+        score = 1
+    elif value <= value_min:
+        score = 0
+    else:
+        score = (float(value) - value_min) / (value_max - value_min)
+
+    return 1 - score if direction == "desc" else score
+
+
+def _get_scale_bounds(scale):
+    # Fall back to the default [0, 1] scale when the config is incomplete.
+    try:
+        return scale[0], scale[1]
+    except (TypeError, IndexError):
+        logger.warning("Score minimum or score maximum is missing. The minimum has been set to 0 and the maximum to 1")
+        return 0, 1
 
 
 def get_value(value):
-    """
-    Get the value of a metric.
-
-    Args:
-        value (float): The value of the metric.
-
-    Returns:
-        float: The value of the metric.
-    """
-
+    # Factsheet operations use this when a metric only needs the raw input value.
     return value
 
 
 def check_properties(*args):
-    """
-    Check if all the arguments have values.
+    # Return the fraction of required properties that are filled.
+    if not args:
+        return 0
 
-    Args:
-        args (list): All the arguments.
-
-    Returns:
-        float: The mean of arguments that have values.
-    """
-
-    result = map(lambda x: x is not None and x != "", args)
-    return np.mean(list(result))
+    filled = [value is not None and value != "" for value in args]
+    return np.mean(filled)
