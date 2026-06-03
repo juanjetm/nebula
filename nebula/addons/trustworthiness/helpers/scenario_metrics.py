@@ -69,12 +69,18 @@ def _find_participant_row_by_int_id(data, participant_id):
 
 def _client_count(data):
     # Global CSVs include the server row, so client averages exclude one row.
-    return max(1, len(data) - 1)
+    return len(_client_rows(data))
+
+
+def _client_rows(data):
+    # CFL writes client reports first and appends the server row last.
+    return data.iloc[:-1] if len(data) > 1 else data
 
 
 def _mean_client_column(data, column_name):
     # Average a global metric across clients while keeping the historical server-row exclusion.
-    return data[column_name].sum() / _client_count(data)
+    clients = _client_rows(data)
+    return clients[column_name].sum() / max(1, len(clients))
 
 
 def get_bytes_model(model):
@@ -99,14 +105,17 @@ def get_bytes_sent_recv(scenario_name):
 
 
 def get_avg_loss_accuracy(scenario_name):
-    # Return client-average test loss, test accuracy and accuracy standard deviation.
+    # Return client-average test loss, accuracy, accuracy std, macro F1 and train accuracy.
     data = _read_global_results(scenario_name)
+    clients = _client_rows(data)
 
     avg_loss = _mean_client_column(data, "loss")
     avg_accuracy = _mean_client_column(data, "accuracy")
-    std_accuracy = statistics.stdev(data["accuracy"]) if len(data) > 1 else 0.0
+    std_accuracy = statistics.stdev(clients["accuracy"]) if len(clients) > 1 else 0.0
+    avg_macro_f1 = _mean_client_column(data, "macro_f1")
+    avg_train_accuracy = _mean_client_column(data, "train_accuracy")
 
-    return avg_loss, avg_accuracy, std_accuracy
+    return avg_loss, avg_accuracy, std_accuracy, avg_macro_f1, avg_train_accuracy
 
 
 def get_underfitting_score(scenario_name, participant_id):
@@ -137,28 +146,30 @@ def get_dp_local(scenario_name, participant_id):
 def get_dp_global(scenario_name):
     # Return CFL DP settings, averaging epsilon across client rows when DP is enabled.
     data = _read_global_results(scenario_name)
+    clients = _client_rows(data)
 
-    if data["dp_enabled"].iloc[0] == False:
+    if clients["dp_enabled"].iloc[0] == False:
         return False, 0.0
 
     return True, _mean_client_column(data, "dp_epsilon")
 
 
 def get_avg_class_imbalance_model_size(scenario_name):
-    # Return average class imbalance and model size across all global result rows.
+    # Return average class imbalance and model size across client rows.
     data = _read_global_results(scenario_name)
-    number_files = len(data)
+    clients = _client_rows(data)
+    number_files = max(1, len(clients))
 
-    avg_class_imbalance = data["class_imbalance"].sum() / number_files
-    avg_model_size = data["model_size"].sum() / number_files
+    avg_class_imbalance = clients["class_imbalance"].sum() / number_files
+    avg_model_size = clients["model_size"].sum() / number_files
 
     return avg_class_imbalance, avg_model_size
 
 
 def get_entropy_list(scenario_name):
-    # Return local entropy values so callers can normalize the distribution.
+    # Return client entropy values so callers can normalize the distribution.
     data = _read_global_results(scenario_name)
-    return data["local_entropy"].tolist()
+    return _client_rows(data)["local_entropy"].tolist()
 
 
 def stop_emissions_tracking_and_save(

@@ -20,7 +20,6 @@ from nebula.addons.trustworthiness.helpers.scenario_metrics import (
     get_dp_global,
     get_elapsed_time,
     get_entropy_list,
-    get_participant_loss_accuracy,
     get_underfitting_score,
 )
 from nebula.addons.trustworthiness.factsheet_common import (
@@ -104,7 +103,8 @@ class CflFactsheet:
             factsheet["performance"]["test_acc_avg"] = result_avg_loss_accuracy[1]
             test_acc_cv = get_cv(std=result_avg_loss_accuracy[2], mean=result_avg_loss_accuracy[1])
             factsheet["fairness"]["test_acc_cv"] = 1 if test_acc_cv > 1 else test_acc_cv
-            _, participant_test_acc = get_participant_loss_accuracy(scenario_name, participant_idx)
+            factsheet["performance"]["test_macro_f1"] = result_avg_loss_accuracy[3]
+            factsheet["performance"]["train_accuracy"] = result_avg_loss_accuracy[4]
 
             # Compute CFL privacy risk from aggregate DP settings and client count.
             dp_enabled, dp_epsilon = get_dp_global(scenario_name)
@@ -142,7 +142,7 @@ class CflFactsheet:
                 model,
                 train_loader,
                 test_loader,
-                participant_test_acc,
+                factsheet["performance"]["test_acc_avg"],
             )
 
             # Enrich CodeCarbon emissions with CPU/GPU benchmark metadata.

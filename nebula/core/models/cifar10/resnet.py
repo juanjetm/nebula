@@ -47,7 +47,7 @@ class CIFAR10ModelResNet(NebulaModel):
                 MulticlassAccuracy(num_classes=num_classes),
                 MulticlassPrecision(num_classes=num_classes),
                 MulticlassRecall(num_classes=num_classes),
-                MulticlassF1Score(num_classes=num_classes),
+                MulticlassF1Score(num_classes=num_classes, average="macro"),
             ])
         self.train_metrics = metrics.clone(prefix="Train/")
         self.val_metrics = metrics.clone(prefix="Validation/")

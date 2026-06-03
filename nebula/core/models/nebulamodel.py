@@ -83,10 +83,18 @@ class NebulaModel(pl.LightningModule, ABC):
             f"{phase}/{key.replace('Multiclass', '').split('/')[-1]}": value.detach() for key, value in output.items()
         }
 
+        output_values = {
+            key: float(value.detach().cpu().item()) for key, value in output.items()
+        }
+
+        if phase == "Train":
+            self._latest_train_metrics = output_values
+
         if phase == "Validation":
-            self._latest_validation_metrics = {
-                key: float(value.detach().cpu().item()) for key, value in output.items()
-            }
+            self._latest_validation_metrics = output_values
+
+        if phase in {"Test", "Test (Local)"}:
+            self._latest_test_metrics = output_values
 
         if phase == "Train" and self._train_extra_metrics:
             output.update({
@@ -180,7 +188,7 @@ class NebulaModel(pl.LightningModule, ABC):
                 MulticlassAccuracy(num_classes=num_classes),
                 MulticlassPrecision(num_classes=num_classes),
                 MulticlassRecall(num_classes=num_classes),
-                MulticlassF1Score(num_classes=num_classes),
+                MulticlassF1Score(num_classes=num_classes, average="macro"),
             ])
         self.train_metrics = metrics.clone(prefix="Train/")
         self.val_metrics = metrics.clone(prefix="Validation/")
@@ -212,7 +220,9 @@ class NebulaModel(pl.LightningModule, ABC):
         self._current_loss = -1
         self._optimizer = None
         self._optimizer_override = None
+        self._latest_train_metrics = {}
         self._latest_validation_metrics = {}
+        self._latest_test_metrics = {}
         self._train_extra_metrics = {}
 
         # DP trainers update these fields after querying the Opacus accountant.
@@ -292,6 +302,18 @@ class NebulaModel(pl.LightningModule, ABC):
 
     def get_latest_validation_metrics(self):
         return self._latest_validation_metrics
+
+    def get_latest_train_metrics(self):
+        return self._latest_train_metrics
+
+    def get_latest_test_metrics(self):
+        return self._latest_test_metrics
+
+    def get_latest_train_accuracy(self):
+        return self._latest_train_metrics.get("Train/Accuracy")
+
+    def get_latest_test_macro_f1(self):
+        return self._latest_test_metrics.get("Test (Local)/F1Score")
 
     def modify_learning_rate(self, new_lr):
         logging.info(f"Modifiying | learning rate, new value: {new_lr}")

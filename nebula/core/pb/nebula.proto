@@ -185,6 +185,8 @@ message TrustworthinessMessage {
   float val_accuracy = 20;
   bool dp_enabled = 21;
   float dp_epsilon = 22;
+  double macro_f1 = 23;
+  double train_accuracy = 24;
 }
 
 message TrustscoresMessage {

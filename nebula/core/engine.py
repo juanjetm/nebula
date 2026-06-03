@@ -618,7 +618,9 @@ class Engine:
                 "local_entropy": message.local_entropy,
                 "val_accuracy": message.val_accuracy,
                 "dp_enabled": message.dp_enabled,
-                "dp_epsilon": message.dp_epsilon
+                "dp_epsilon": message.dp_epsilon,
+                "macro_f1": message.macro_f1,
+                "train_accuracy": message.train_accuracy,
             }
 
             logging.info(f"handle_trustworthiness_message | Trigger | {report}")

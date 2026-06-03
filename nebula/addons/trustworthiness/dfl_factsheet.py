@@ -99,7 +99,9 @@ class DflFactsheet:
         factsheet["performance"]["test_acc"] = float(final_acc)
 
         # Load local communication and privacy values reported by the participant.
-        bytes_sent, bytes_recv, *_ = load_data_results_participant(scenario_name, participant_idx)
+        bytes_sent, bytes_recv, _, _, _, macro_f1, train_accuracy, *_ = load_data_results_participant(scenario_name, participant_idx)
+        factsheet["performance"]["test_macro_f1"] = macro_f1
+        factsheet["performance"]["train_accuracy"] = train_accuracy
 
         factsheet["system"]["model_size"] = get_bytes_model(model)
 

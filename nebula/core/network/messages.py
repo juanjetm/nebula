@@ -134,7 +134,9 @@ class MessagesManager:
                     "local_entropy",
                     "val_accuracy",
                     "dp_enabled",
-                    "dp_epsilon"
+                    "dp_epsilon",
+                    "macro_f1",
+                    "train_accuracy"
                 ],
                 "defaults": {},
             },

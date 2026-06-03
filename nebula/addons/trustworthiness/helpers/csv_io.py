@@ -16,6 +16,8 @@ DATA_RESULTS_COLUMNS = [
     "accuracy",
     "loss",
     "val_accuracy",
+    "macro_f1",
+    "train_accuracy",
     "dp_enabled",
     "dp_epsilon",
 ]
@@ -30,6 +32,8 @@ CFL_DATA_RESULTS_COLUMNS = [
     "model_size",
     "local_entropy",
     "val_accuracy",
+    "macro_f1",
+    "train_accuracy",
     "dp_enabled",
     "dp_epsilon",
 ]
@@ -135,6 +139,8 @@ def load_data_results_participant(experiment_name: str, participant_id: int | st
     row = _read_first_csv_row(
         _trustworthiness_path(experiment_name, f"data_results_{participant_id}.csv")
     )
+    macro_f1 = row["macro_f1"] or 0.0
+    train_accuracy = row["train_accuracy"] or 0.0
 
     return (
         int(float(row["bytes_sent"])),
@@ -142,6 +148,8 @@ def load_data_results_participant(experiment_name: str, participant_id: int | st
         float(row["accuracy"]),
         float(row["loss"]),
         float(row["val_accuracy"]),
+        float(macro_f1),
+        float(train_accuracy),
         _to_bool(row["dp_enabled"]),
         float(row["dp_epsilon"]),
     )
@@ -185,6 +193,8 @@ def save_trustworthiness_reports_csv(
             "model_size": report["model_size"],
             "local_entropy": report["local_entropy"],
             "val_accuracy": report["val_accuracy"],
+            "macro_f1": report["macro_f1"],
+            "train_accuracy": report["train_accuracy"],
             "dp_enabled": report["dp_enabled"],
             "dp_epsilon": report["dp_epsilon"],
         }
@@ -231,6 +241,8 @@ def save_results_csv_cfl(
     model_size: int,
     local_entropy: float,
     val_accuracy: float,
+    macro_f1: float,
+    train_accuracy: float,
     dp_enabled: bool,
     dp_epsilon: float,
 ):
@@ -248,6 +260,8 @@ def save_results_csv_cfl(
             "model_size": model_size,
             "local_entropy": local_entropy,
             "val_accuracy": val_accuracy,
+            "macro_f1": macro_f1,
+            "train_accuracy": train_accuracy,
             "dp_enabled": dp_enabled,
             "dp_epsilon": dp_epsilon,
         },
@@ -296,6 +310,8 @@ def save_results_csv(
     accuracy: float,
     loss: float,
     val_accuracy: float,
+    macro_f1: float,
+    train_accuracy: float,
     dp_enabled: bool,
     dp_epsilon: float,
 ):
@@ -310,6 +326,8 @@ def save_results_csv(
             "accuracy": accuracy,
             "loss": loss,
             "val_accuracy": val_accuracy,
+            "macro_f1": macro_f1,
+            "train_accuracy": train_accuracy,
             "dp_enabled": dp_enabled,
             "dp_epsilon": dp_epsilon,
         },

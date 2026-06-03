@@ -295,9 +295,9 @@ class Lightning:
         try:
             self.create_trainer()
             logging.info(f"{'=' * 10} [Training] Started (check training logs for progress) {'=' * 10}")
-            val_loss, val_accuracy = await asyncio.to_thread(self._train_sync)
+            val_loss, val_accuracy, train_accuracy = await asyncio.to_thread(self._train_sync)
             logging.info(f"{'=' * 10} [Training] Finished (check training logs for progress) {'=' * 10}")
-            vme = ValidationMetricsEvent(val_loss, val_accuracy)
+            vme = ValidationMetricsEvent(val_loss, val_accuracy, train_accuracy)
             await EventManager.get_instance().publish_addonevent(vme)
         except Exception as e:
             logging_training.error(f"Error training model: {e}")
@@ -317,39 +317,51 @@ class Lightning:
                 loss = raw_loss.item() if hasattr(raw_loss, "item") else raw_loss
 
             accuracy = validation_metrics.get("Validation/Accuracy")
-            return loss, accuracy
+            train_accuracy = None
+            get_train_accuracy = getattr(self.model, "get_latest_train_accuracy", None)
+            if callable(get_train_accuracy):
+                train_accuracy = get_train_accuracy()
+
+            return loss, accuracy, train_accuracy
         except Exception as e:
             logging_training.error(f"Error in _train_sync: {e}")
             tb = traceback.format_exc()
             logging_training.error(f"Traceback: {tb}")
             # If "raise", the exception will be managed by the main thread
-            return None, None
+            return None, None, None
 
     async def test(self):
         try:
             self.create_trainer()
             logging.info(f"{'=' * 10} [Testing] Started (check training logs for progress) {'=' * 10}")
-            loss, accuracy = await asyncio.to_thread(self._test_sync)
+            loss, accuracy, macro_f1 = await asyncio.to_thread(self._test_sync)
             logging.info(f"{'=' * 10} [Testing] Finished (check training logs for progress) {'=' * 10}")
-            tme = TestMetricsEvent(loss, accuracy)
+            tme = TestMetricsEvent(loss, accuracy, macro_f1)
             await EventManager.get_instance().publish_addonevent(tme)
         except Exception as e:
             logging_training.error(f"Error testing model: {e}")
             logging_training.error(traceback.format_exc())
 
+    def _metric_value(self, value):
+        return value.item() if hasattr(value, "item") else value
+
     def _test_sync(self):
         try:
             self._trainer.test(self.model, self.datamodule, verbose=True)
             metrics = self._trainer.callback_metrics
-            loss = metrics.get('val_loss/dataloader_idx_0', None).item()
-            accuracy = metrics.get('val_accuracy/dataloader_idx_0', None).item()
-            return loss, accuracy
+            loss = self._metric_value(metrics.get('val_loss/dataloader_idx_0'))
+            accuracy = self._metric_value(metrics.get('val_accuracy/dataloader_idx_0'))
+            macro_f1 = None
+            get_macro_f1 = getattr(self.model, "get_latest_test_macro_f1", None)
+            if callable(get_macro_f1):
+                macro_f1 = get_macro_f1()
+
+            return loss, accuracy, macro_f1
         except Exception as e:
             logging_training.error(f"Error in _test_sync: {e}")
             tb = traceback.format_exc()
             logging_training.error(f"Traceback: {tb}")
-            # If "raise", the exception will be managed by the main thread
-            return None, None
+            return None, None, None
 
     def cleanup(self):
         if self._trainer is not None:

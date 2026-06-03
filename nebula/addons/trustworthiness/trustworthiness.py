@@ -69,8 +69,8 @@ class TrustWorkload(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_metrics(self) -> tuple[float, float]:
-        # Return the latest test loss and accuracy.
+    def get_metrics(self) -> tuple[float, float, float]:
+        # Return the latest test loss, accuracy and macro F1.
         raise NotImplementedError
 
     @abstractmethod
@@ -93,8 +93,10 @@ class BaseTrustWorkload(TrustWorkload):
         self._sample_size = sample_size
         self._current_loss = None
         self._current_accuracy = None
+        self._current_macro_f1 = None
         self._current_val_loss = None
         self._current_val_accuracy = None
+        self._current_train_accuracy = None
         self._experiment_name = ""
         self._per_round = None
         self._role_label = role_label
@@ -134,11 +136,11 @@ class BaseTrustWorkload(TrustWorkload):
 
     def get_metrics(self):
         # Return the latest test metrics observed through events.
-        return (self._current_loss, self._current_accuracy)
+        return (self._current_loss, self._current_accuracy, self._current_macro_f1)
 
     def get_validation_metrics(self):
-        # Return the latest validation metrics observed through events.
-        return (self._current_val_loss, self._current_val_accuracy)
+        # Return the latest validation metrics and train accuracy observed through events.
+        return (self._current_val_loss, self._current_val_accuracy, self._current_train_accuracy)
 
     def _is_reputation_enabled(self) -> bool:
         # Read the reputation toggle from the participant defense config.
@@ -230,18 +232,20 @@ class BaseTrustWorkload(TrustWorkload):
 
     async def _process_test_metrics_event(self, tme: TestMetricsEvent):
         # Cache final test metrics and forward them to per-round trust metrics.
-        cur_loss, cur_acc = await tme.get_event_data()
+        cur_loss, cur_acc, cur_macro_f1 = await tme.get_event_data()
         if cur_loss is not None and cur_acc is not None:
             self._current_loss, self._current_accuracy = cur_loss, cur_acc
+            self._current_macro_f1 = cur_macro_f1
 
             if self._per_round is not None:
                 await self._per_round.on_test_metrics(self._engine, float(cur_loss), float(cur_acc))
 
     async def _process_validation_metrics_event(self, vme: ValidationMetricsEvent):
         # Cache final validation metrics for final trustworthiness outputs.
-        cur_loss, cur_acc = await vme.get_event_data()
+        cur_loss, cur_acc, train_acc = await vme.get_event_data()
         if cur_loss is not None and cur_acc is not None:
             self._current_val_loss, self._current_val_accuracy = cur_loss, cur_acc
+            self._current_train_accuracy = train_acc
 
 
 class TrustWorkloadTrainer(BaseTrustWorkload):
@@ -312,7 +316,7 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
 
     def _build_cfl_trustworthiness_report(self, experiment_name: str) -> dict:
         # Load local metrics and shape them as a trustworthiness message payload.
-        bytes_sent, bytes_recv, accuracy, loss, val_accuracy, dp_enabled, dp_epsilon = load_data_results_participant(
+        bytes_sent, bytes_recv, accuracy, loss, val_accuracy, macro_f1, train_accuracy, dp_enabled, dp_epsilon = load_data_results_participant(
             experiment_name,
             self._idx,
         )
@@ -340,6 +344,8 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
             "model_size": get_bytes_model(self._engine.trainer.model),
             "local_entropy": get_local_entropy(self._idx, experiment_name),
             "val_accuracy": val_accuracy,
+            "macro_f1": macro_f1,
+            "train_accuracy": train_accuracy,
             "dp_enabled": dp_enabled,
             "dp_epsilon": dp_epsilon,
         }
@@ -349,7 +355,7 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
         logging.info(
             "[TW SEND] dest=%s node_id=%s bytes_sent=%s bytes_recv=%s "
             "accuracy=%s loss=%s role=%s energy_grid=%s emissions=%s workload=%s "
-            "cpu_model=%s gpu_model=%s cpu_used=%s gpu_used=%s energy_consumed=%s sample_size=%s class_imbalance=%s model_size=%s local_entropy=%s val_accuracy=%s dp_enabled=%s dp_epsilon=%s",
+            "cpu_model=%s gpu_model=%s cpu_used=%s gpu_used=%s energy_consumed=%s sample_size=%s class_imbalance=%s model_size=%s local_entropy=%s val_accuracy=%s dp_enabled=%s dp_epsilon=%s macro_f1=%s train_accuracy=%s",
             server_addr,
             str(self._idx),
             report["bytes_sent"],
@@ -372,6 +378,8 @@ class TrustWorkloadTrainer(BaseTrustWorkload):
             report["val_accuracy"],
             report["dp_enabled"],
             report["dp_epsilon"],
+            report["macro_f1"],
+            report["train_accuracy"],
         )
 
     async def _finish_trustscores_exchange(self, federation, trust_config, experiment_name):
@@ -840,7 +848,7 @@ class TrustWorkloadServer(BaseTrustWorkload):
 
     async def _save_local_server_report_and_generate_factsheet(self, trust_config, experiment_name):
         # Add the server's own local report and generate final trust artifacts.
-        bytes_sent, bytes_recv, _, _, val_accuracy, dp_enabled, dp_epsilon = load_data_results_participant(
+        bytes_sent, bytes_recv, _, _, val_accuracy, _, _, dp_enabled, dp_epsilon = load_data_results_participant(
             self._experiment_name,
             self._idx,
         )
@@ -859,7 +867,7 @@ class TrustWorkloadServer(BaseTrustWorkload):
         model_size = get_bytes_model(self._engine.trainer.model)
         local_entropy = get_local_entropy(self._idx, experiment_name)
 
-        save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, 0, 0, class_imbalance, model_size, local_entropy, val_accuracy, dp_enabled, dp_epsilon)
+        save_results_csv_cfl(self._experiment_name, self._idx, bytes_sent, bytes_recv, 0, 0, class_imbalance, model_size, local_entropy, val_accuracy, 0, 0, dp_enabled, dp_epsilon)
         save_emissions_csv_cfl(self._experiment_name, self._idx, role, energy_grid, emissions, workload, cpu_model, gpu_model, cpu_used, gpu_used, energy_consumed, sample_size)
         await self._generate_factsheet(trust_config, experiment_name)
 
@@ -887,7 +895,9 @@ class TrustWorkloadServer(BaseTrustWorkload):
             "local_entropy": message.local_entropy,
             "val_accuracy": message.val_accuracy,
             "dp_enabled": message.dp_enabled,
-            "dp_epsilon": message.dp_epsilon
+            "dp_epsilon": message.dp_epsilon,
+            "macro_f1": message.macro_f1,
+            "train_accuracy": message.train_accuracy,
         }
 
         logging.info(
@@ -987,8 +997,8 @@ class Trustworthiness():
 
         await self.tw.finish_experiment_role_pre_actions()
 
-        last_loss, last_accuracy = self.tw.get_metrics()
-        _, last_val_accuracy = self.tw.get_validation_metrics()
+        last_loss, last_accuracy, last_macro_f1 = self.tw.get_metrics()
+        _, last_val_accuracy, last_train_accuracy = self.tw.get_validation_metrics()
         if last_val_accuracy is None:
             last_val_accuracy = 0.0
 
@@ -1008,7 +1018,19 @@ class Trustworthiness():
         sample_size = self.tw.get_sample_size()
 
         # Final operations
-        save_results_csv(self._experiment_name, self._idx, bytes_sent, bytes_recv, last_accuracy, last_loss, last_val_accuracy, dp_enabled, dp_epsilon)
+        save_results_csv(
+            self._experiment_name,
+            self._idx,
+            bytes_sent,
+            bytes_recv,
+            last_accuracy,
+            last_loss,
+            last_val_accuracy,
+            last_macro_f1,
+            last_train_accuracy,
+            dp_enabled,
+            dp_epsilon,
+        )
         stop_emissions_tracking_and_save(self._tracker, self._trust_dir_files, f'emissions_{self._idx}.csv', self._role.value, workload, sample_size, self._idx)
         await self.tw.finish_experiment_role_post_actions(self._trust_config, self._experiment_name)
 

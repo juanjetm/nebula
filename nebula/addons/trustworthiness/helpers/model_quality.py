@@ -3,105 +3,16 @@ import math
 
 import numpy as np
 import torch
-from sklearn.metrics import f1_score
 
 logger = logging.getLogger(__name__)
 
-def _get_model_accuracy(model, dataloader):
-    """
-    Calculates model accuracy over a dataloader.
-
-    Args:
-        model (torch.nn.Module): Model to evaluate.
-        dataloader (DataLoader): Dataloader with (x, y) batches.
-
-    Returns:
-        float: Accuracy in [0, 1].
-    """
-    if not isinstance(model, torch.nn.Module):
-        logger.warning("Model is not a torch.nn.Module")
-        return 0.0
-
-    try:
-        device = next(model.parameters()).device
-    except Exception:
-        device = torch.device("cpu")
-
-    model.eval()
-    correct = 0
-    total = 0
-
-    with torch.no_grad():
-        for x, y in dataloader:
-            x = x.to(device)
-            y = y.to(device)
-
-            out = model(x)
-            logits = out[0] if isinstance(out, (tuple, list)) else out
-            preds = logits.argmax(dim=1)
-
-            correct += (preds == y).sum().item()
-            total += y.size(0)
-
-    return correct / total if total > 0 else 0.0
-
-
-def get_macro_f1_score(model, dataloader):
-    """
-    Calculates macro F1 score over a dataloader.
-
-    Args:
-        model (torch.nn.Module): Model to evaluate.
-        dataloader (DataLoader): Dataloader with (x, y) batches.
-
-    Returns:
-        float: Macro F1 score in [0, 1].
-    """
-    if not isinstance(model, torch.nn.Module):
-        logger.warning("Model is not a torch.nn.Module")
-        return 0.0
-
-    try:
-        device = next(model.parameters()).device
-    except Exception:
-        device = torch.device("cpu")
-
-    model.eval()
-    y_true = []
-    y_pred = []
-
-    with torch.no_grad():
-        for x, y in dataloader:
-            x = x.to(device)
-            y = y.to(device)
-
-            out = model(x)
-            logits = out[0] if isinstance(out, (tuple, list)) else out
-            preds = logits.argmax(dim=1)
-
-            y_true.extend(y.detach().cpu().numpy().tolist())
-            y_pred.extend(preds.detach().cpu().numpy().tolist())
-
-    if not y_true:
-        return 0.0
-
-    return float(f1_score(y_true, y_pred, average="macro", zero_division=0))
-
-
 def _extract_model_logits(model_output):
-    """
-    Normalize the output returned by a model forward pass into a logits tensor.
-
-    Some models may return tuples/lists; for trust metrics we always consume the
-    first element as the classification output.
-    """
+    # Normalize the output returned by a model forward pass into a logits tensor.
     return model_output[0] if isinstance(model_output, (tuple, list)) else model_output
 
 
 def _prepare_class_targets(y):
-    """
-    Convert different target representations into a flat class-index tensor.
-    """
+    # Convert different target representations into a flat class-index tensor.
     if not torch.is_tensor(y):
         y = torch.as_tensor(y)
 
@@ -115,14 +26,7 @@ def _prepare_class_targets(y):
 
 
 def _logits_to_probabilities(logits):
-    """
-    Convert model outputs into a probability matrix of shape (N, C).
-
-    Supports:
-    - multiclass logits/log-probabilities with shape (N, C)
-    - binary logits with shape (N,) or (N, 1)
-    - already-normalized probability matrices
-    """
+    # Convert model outputs into a probability matrix of shape (N, C).
     if not torch.is_tensor(logits):
         logits = torch.as_tensor(logits)
 
@@ -151,29 +55,20 @@ def _logits_to_probabilities(logits):
 
 
 def _collect_classification_statistics(model, dataloader):
-    """
-    Collect prediction statistics required by calibration and inequality metrics.
-
-    Returns:
-        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        predicted labels, true labels, prediction confidences, correctness flags,
-        and probability assigned to the true class.
-    """
+    # Collect prediction statistics required by calibration and inequality metrics.
     if not isinstance(model, torch.nn.Module):
         logger.warning("Model is not a torch.nn.Module")
         empty = np.array([], dtype=float)
-        return empty, empty, empty, empty, empty
+        return empty, empty, empty
 
     try:
         device = next(model.parameters()).device
     except Exception:
         device = torch.device("cpu")
 
-    preds_all = []
-    targets_all = []
-    confidences_all = []
-    correct_all = []
-    true_probs_all = []
+    confidences = []
+    correct = []
+    true_probs = []
 
     model.eval()
     with torch.no_grad():
@@ -188,19 +83,18 @@ def _collect_classification_statistics(model, dataloader):
             x = x.to(device)
             y = _prepare_class_targets(y).to(device)
 
-            out = model(x)
-            logits = _extract_model_logits(out)
-            probs = _logits_to_probabilities(logits)
+            # Metrics consume probabilities even when the model returns raw logits
+            # or wraps the classification output in a tuple/list.
+            probs = _logits_to_probabilities(_extract_model_logits(model(x)))
 
             if probs.ndim != 2 or probs.size(0) == 0:
                 continue
 
-            if y.numel() != probs.size(0):
-                n = min(int(y.numel()), int(probs.size(0)))
-                if n == 0:
-                    continue
-                y = y[:n]
-                probs = probs[:n]
+            n = min(int(y.numel()), int(probs.size(0)))
+            if n == 0:
+                continue
+            y = y[:n]
+            probs = probs[:n]
 
             valid_mask = (y >= 0) & (y < probs.size(1))
             if not torch.any(valid_mask):
@@ -209,74 +103,39 @@ def _collect_classification_statistics(model, dataloader):
             y = y[valid_mask]
             probs = probs[valid_mask]
 
+            # Confidence is the predicted-class probability. true_probs is the
+            # probability assigned to the actual class, used as a continuous benefit.
             conf, preds = probs.max(dim=1)
-            true_probs = probs.gather(1, y.view(-1, 1)).squeeze(1)
-            correct = preds.eq(y).float()
+            confidences.append(conf.cpu())
+            correct.append(preds.eq(y).float().cpu())
+            true_probs.append(probs.gather(1, y.view(-1, 1)).squeeze(1).cpu())
 
-            preds_all.extend(preds.detach().cpu().numpy().tolist())
-            targets_all.extend(y.detach().cpu().numpy().tolist())
-            confidences_all.extend(conf.detach().cpu().numpy().tolist())
-            correct_all.extend(correct.detach().cpu().numpy().tolist())
-            true_probs_all.extend(true_probs.detach().cpu().numpy().tolist())
+    if not confidences:
+        empty = np.array([], dtype=float)
+        return empty, empty, empty
 
     return (
-        np.asarray(preds_all, dtype=int),
-        np.asarray(targets_all, dtype=int),
-        np.asarray(confidences_all, dtype=float),
-        np.asarray(correct_all, dtype=float),
-        np.asarray(true_probs_all, dtype=float),
+        torch.cat(confidences).numpy(),
+        torch.cat(correct).numpy(),
+        torch.cat(true_probs).numpy(),
     )
 
 
-def get_overfitting_score(model, train_dataloader, test_accuracy):
-    """
-    Calculates overfitting as the positive train-test accuracy gap.
-
-    Args:
-        model (torch.nn.Module): Model to evaluate on training data.
-        train_dataloader (DataLoader): Training dataloader.
-        test_accuracy (float): Test accuracy in [0, 1].
-
-    Returns:
-        float: Positive train-test accuracy gap.
-    """
-    try:
-        train_accuracy = _get_model_accuracy(model, train_dataloader)
-        return max(0.0, float(train_accuracy) - float(test_accuracy))
-    except Exception as exc:
-        logger.warning("Could not compute overfitting score")
-        logger.warning(exc)
-        return 0.0
-
-
 def get_well_calibration_error(model, test_dataloader, n_bins=10):
-    """
-    Calculates a well-calibration error style metric using prediction confidence.
-
-    For multiclass models, confidence is taken as the max softmax probability and
-    the observed outcome is whether the prediction is correct.
-
-    Args:
-        model (torch.nn.Module): Model to evaluate.
-        test_dataloader (DataLoader): Test dataloader.
-        n_bins (int): Number of quantile bins.
-
-    Returns:
-        float: Calibration error in [0, 1] when computation succeeds.
-    """
+    # Calculates a well-calibration error style metric using prediction confidence.
     if not isinstance(model, torch.nn.Module):
         logger.warning("Model is not a torch.nn.Module")
-        return 0.0
+        return 1.0
 
     try:
         n_bins = max(2, int(n_bins))
     except Exception:
         n_bins = 10
 
-    _, _, confidences, correct, _ = _collect_classification_statistics(model, test_dataloader)
+    confidences, correct, _ = _collect_classification_statistics(model, test_dataloader)
 
     if len(confidences) == 0 or len(correct) == 0:
-        return 0.0
+        return 1.0
 
     confidences = np.clip(np.asarray(confidences, dtype=float), 0.0, 1.0)
     correct = np.clip(np.asarray(correct, dtype=float), 0.0, 1.0)
@@ -285,6 +144,7 @@ def get_well_calibration_error(model, test_dataloader, n_bins=10):
     ece = 0.0
     total = float(len(confidences))
 
+    # ECE compares empirical accuracy and average confidence within each bin.
     for idx in range(n_bins):
         left = bin_edges[idx]
         right = bin_edges[idx + 1]
@@ -305,32 +165,20 @@ def get_well_calibration_error(model, test_dataloader, n_bins=10):
 
 
 def get_generalized_entropy_index(model, test_dataloader, alpha=2):
-    """
-    Calculates generalized entropy index from model predictions.
-
-    Args:
-        model (torch.nn.Module): Model to evaluate.
-        test_dataloader (DataLoader): Test dataloader.
-        alpha (float): GEI alpha parameter.
-
-    Returns:
-        float: Generalized entropy index value.
-    """
+    # Calculates generalized entropy index from model predictions.
     try:
-        _, _, _, _, true_class_probs = _collect_classification_statistics(model, test_dataloader)
+        _, _, true_class_probs = _collect_classification_statistics(model, test_dataloader)
         if len(true_class_probs) == 0:
             return 0.0
 
-        # Use the probability assigned to the true class as a continuous, positive
-        # benefit. This works consistently for multiclass neural models on both
-        # images and tabular data, and avoids collapsing the metric to a coarse
-        # correct/incorrect indicator.
         eps = 1e-12
         b = np.clip(np.asarray(true_class_probs, dtype=float), eps, 1.0)
         mu = float(np.mean(b))
         if mu <= 0:
             return 0.0
 
+        # GEI measures dispersion around the mean benefit. Lower values mean the
+        # model gives more even true-class confidence across samples.
         ratio = np.clip(b / mu, eps, None)
 
         if alpha == 0:
@@ -352,16 +200,12 @@ def get_generalized_entropy_index(model, test_dataloader, alpha=2):
 
 
 def get_theil_index(model, test_dataloader):
-    """
-    Convenience wrapper for generalized entropy index with alpha=1.
-    """
+    # Convenience wrapper for generalized entropy index with alpha=1.
     return get_generalized_entropy_index(model, test_dataloader, alpha=1)
 
 
 def get_coefficient_of_variation(model, test_dataloader):
-    """
-    Calculates coefficient of variation from GEI(alpha=2).
-    """
+    # Calculates coefficient of variation from GEI(alpha=2).
     try:
         gei = get_generalized_entropy_index(model, test_dataloader, alpha=2)
         return float(np.sqrt(2 * gei))

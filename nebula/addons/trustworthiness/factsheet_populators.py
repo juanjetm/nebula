@@ -8,8 +8,6 @@ from nebula.addons.trustworthiness.helpers.explainability import (
 from nebula.addons.trustworthiness.helpers.model_quality import (
     get_coefficient_of_variation,
     get_generalized_entropy_index,
-    get_macro_f1_score,
-    get_overfitting_score,
     get_theil_index,
     get_well_calibration_error,
 )
@@ -113,7 +111,6 @@ def populate_common_model_quality_metrics(
     test_sample,
 ):
     # Populate model quality, privacy, and fairness metrics shared by all profiles.
-    factsheet["performance"]["test_macro_f1"] = get_macro_f1_score(model, test_loader)
 
     # Privacy metrics derived from train/test behavior.
     factsheet["privacy"]["epsilon_star"] = get_epsilon_star(model, train_loader, test_loader)
@@ -122,7 +119,7 @@ def populate_common_model_quality_metrics(
     factsheet["privacy"]["mia_auc_score"] = 1 - 2 * abs(factsheet["privacy"]["mia_auc"] - 0.5)
 
     # Fairness and calibration metrics expressed as inverse scores.
-    overfitting_value = get_overfitting_score(model, train_loader, test_accuracy)
+    overfitting_value = max(0.0, float(factsheet["performance"]["train_accuracy"]) - float(test_accuracy))
     factsheet["fairness"]["inverse_overfitting"] = inverse_score(overfitting_value)
 
     well_calibration_error_value = get_well_calibration_error(model, test_loader)

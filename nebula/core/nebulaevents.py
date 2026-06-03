@@ -464,24 +464,26 @@ class ChangeLocationEvent(AddonEvent):
         return (self.latitude, self.longitude)
 
 class TestMetricsEvent(AddonEvent):
-    def __init__(self, loss, accuracy):
+    def __init__(self, loss, accuracy, macro_f1=None):
         self._loss = loss
         self._accuracy = accuracy
+        self._macro_f1 = macro_f1
 
     def __str__(self):
         return "TestMetricsEvent"
 
     async def get_event_data(self):
-        return (self._loss, self._accuracy)
+        return (self._loss, self._accuracy, self._macro_f1)
 
 
 class ValidationMetricsEvent(AddonEvent):
-    def __init__(self, loss, accuracy):
+    def __init__(self, loss, accuracy, train_accuracy=None):
         self._loss = loss
         self._accuracy = accuracy
+        self._train_accuracy = train_accuracy
 
     def __str__(self):
         return "ValidationMetricsEvent"
 
     async def get_event_data(self):
-        return (self._loss, self._accuracy)
+        return (self._loss, self._accuracy, self._train_accuracy)
