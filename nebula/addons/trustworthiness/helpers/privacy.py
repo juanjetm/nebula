@@ -11,17 +11,7 @@ from torch import nn
 logger = logging.getLogger(__name__)
 
 def get_global_privacy_risk(dp, epsilon, n):
-    """
-    Calculates the global privacy risk by epsilon and the number of clients.
-
-    Args:
-        dp (bool): Indicates if differential privacy is used or not.
-        epsilon (int): The epsilon value.
-        n (int): The number of clients in the scenario.
-
-    Returns:
-        float: The global privacy risk.
-    """
+    # Calculates the global privacy risk by epsilon and the number of clients.
 
     try:
         epsilon = float(epsilon)
@@ -36,17 +26,7 @@ def get_global_privacy_risk(dp, epsilon, n):
 
 
 def get_global_privacy_risk_dfl(dp, epsilon, n):
-    """
-    Calculates the global privacy risk by epsilon and the number of clients.
-
-    Args:
-        dp (bool): Indicates if differential privacy is used or not.
-        epsilon (int): The epsilon value.
-        n (int): The number of neighbours.
-
-    Returns:
-        float: The global privacy risk.
-    """
+    # Calculates the global privacy risk by epsilon and the number of clients for DFL.
 
     try:
         epsilon = float(epsilon)
@@ -61,17 +41,7 @@ def get_global_privacy_risk_dfl(dp, epsilon, n):
 
 
 def _collect_per_sample_losses(model, dataloader, max_samples=5000):
-    """
-    Compute per-sample cross-entropy losses for a dataloader.
-
-    Args:
-        model (torch.nn.Module): The model to evaluate.
-        dataloader: DataLoader providing (samples, labels).
-        max_samples (int): Maximum number of samples to process.
-
-    Returns:
-        np.ndarray: Losses per sample.
-    """
+    # Compute per-sample cross-entropy losses for a dataloader.
     if not isinstance(model, torch.nn.Module) or dataloader is None:
         return np.array([])
 
@@ -110,7 +80,12 @@ def _collect_per_sample_losses(model, dataloader, max_samples=5000):
             logits = outputs[0] if isinstance(outputs, (tuple, list)) else outputs
             batch_losses = criterion(logits, labels)
 
-            losses.append(batch_losses.detach().cpu().numpy())
+            batch_losses_np = batch_losses.detach().cpu().numpy()
+            batch_losses_np = batch_losses_np[np.isfinite(batch_losses_np)]
+            if batch_losses_np.size == 0:
+                continue
+
+            losses.append(batch_losses_np)
             collected += int(batch_losses.shape[0])
 
     if not losses:
@@ -119,22 +94,8 @@ def _collect_per_sample_losses(model, dataloader, max_samples=5000):
     return np.concatenate(losses, axis=0)
 
 
-def get_epsilon_star(model, train_dataloader, test_dataloader, max_samples=5000):
-    """
-    Compute empirical epsilon* from train/test loss distributions.
-
-    This follows the same core structure as privacy_metrics_core.epsilon_star,
-    adapted to PyTorch models and DataLoaders used in Nebula.
-
-    Args:
-        model (torch.nn.Module): Model to evaluate.
-        train_dataloader: Training DataLoader.
-        test_dataloader: Test DataLoader.
-        max_samples (int): Maximum samples to evaluate per split.
-
-    Returns:
-        float: Empirical epsilon* value. Returns 0.0 on failure.
-    """
+def get_epsilon_star(model, train_dataloader, test_dataloader, max_samples=5000, percentile=95):
+    # Compute empirical epsilon* from train/test loss distributions.
     try:
         loss_train = _collect_per_sample_losses(model, train_dataloader, max_samples=max_samples)
         loss_test = _collect_per_sample_losses(model, test_dataloader, max_samples=max_samples)
@@ -147,9 +108,11 @@ def get_epsilon_star(model, train_dataloader, test_dataloader, max_samples=5000)
 
         fpr, tpr, _ = roc_curve(y_true, scores)
 
-        fpr = np.clip(fpr, 1e-10, 1 - 1e-10)
-        tpr = np.clip(tpr, 1e-10, 1 - 1e-10)
-        fnr = 1 - tpr
+        fpr_floor = 1.0 / len(loss_test)
+        fnr_floor = 1.0 / len(loss_train)
+
+        fpr = np.clip(fpr, fpr_floor, 1 - fpr_floor)
+        fnr = np.clip(1 - tpr, fnr_floor, 1 - fnr_floor)
 
         delta = 1.0 / len(loss_train) if len(loss_train) > 0 else 1e-5
 
@@ -158,9 +121,12 @@ def get_epsilon_star(model, train_dataloader, test_dataloader, max_samples=5000)
         m3 = (fnr - delta) / (1 - fpr)
         m4 = (fpr - delta) / (1 - fnr)
 
-        epsilon_star_val = np.log(
-            np.nanmax(np.maximum.reduce([m1, m2, m3, m4, np.ones_like(m1)]))
-        )
+        ratios = np.maximum.reduce([m1, m2, m3, m4, np.ones_like(m1)])
+        ratios = ratios[np.isfinite(ratios)]
+        if ratios.size == 0:
+            return 0.0
+
+        epsilon_star_val = np.log(np.nanpercentile(ratios, percentile))
 
         if np.isnan(epsilon_star_val) or np.isinf(epsilon_star_val):
             return 0.0
@@ -173,21 +139,7 @@ def get_epsilon_star(model, train_dataloader, test_dataloader, max_samples=5000)
 
 
 def get_mia_auc(model, train_dataloader, test_dataloader, max_samples=5000):
-    """
-    Compute membership inference attack AUC using per-sample loss as the attack score.
-
-    Lower loss suggests a sample is more likely to be a training member, so the
-    attack score is defined as negative loss.
-
-    Args:
-        model (torch.nn.Module): Model to evaluate.
-        train_dataloader: Training DataLoader.
-        test_dataloader: Test DataLoader.
-        max_samples (int): Maximum samples to evaluate per split.
-
-    Returns:
-        float: ROC-AUC of the loss-threshold membership attack. Returns 0.5 on failure.
-    """
+    # Compute membership inference attack AUC using per-sample loss as the attack score.
     try:
         loss_train = _collect_per_sample_losses(model, train_dataloader, max_samples=max_samples)
         loss_test = _collect_per_sample_losses(model, test_dataloader, max_samples=max_samples)
