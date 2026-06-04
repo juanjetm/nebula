@@ -2,7 +2,7 @@ import logging
 
 import torch
 
-from nebula.addons.defenses.adversarial_training_config import AdversarialTrainingConfig
+from nebula.addons.defenses.adversarial_training.config import AdversarialTrainingConfig
 from nebula.config.config import TRAINING_LOGGER
 
 logging_training = logging.getLogger(TRAINING_LOGGER)

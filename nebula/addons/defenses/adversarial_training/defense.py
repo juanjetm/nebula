@@ -3,8 +3,8 @@ from typing import Any
 
 import torch
 
-from nebula.addons.defenses.adversarial_training_base import AdversarialExampleGenerator
-from nebula.addons.defenses.adversarial_training_config import (
+from nebula.addons.defenses.adversarial_training.base import AdversarialExampleGenerator
+from nebula.addons.defenses.adversarial_training.config import (
     CAA_TABULAR_DATASETS,
     ERR_ALPHA,
     ERR_APPLY_PROBABILITY,
@@ -15,23 +15,26 @@ from nebula.addons.defenses.adversarial_training_config import (
     ERR_MIXED_WEIGHTS,
     ERR_MODE,
     ERR_STEPS,
+    ERR_TABULAR_ATTACK,
     ERR_TABULAR_METADATA,
     ERR_UNSUPPORTED_ATTACK,
     IMAGE_ADVERSARIAL_ATTACKS,
     IMAGE_DATASET_NORMALIZATION,
+    TABULAR_ADVERSARIAL_ATTACKS,
     AdversarialTrainingConfig,
     config_from_participant,
     validate_config,
 )
-from nebula.addons.defenses.adversarial_training_image import (
+from nebula.addons.defenses.adversarial_training.image import (
     ImageAdversarialExampleGenerator,
     ImageFGSMGenerator,
     ImagePGDGenerator,
 )
-from nebula.addons.defenses.adversarial_training_logging import AdversarialTrainingSampleLogger
-from nebula.addons.defenses.adversarial_training_tabular import (
+from nebula.addons.defenses.adversarial_training.logging import AdversarialTrainingSampleLogger
+from nebula.addons.defenses.adversarial_training.tabular import (
     TabularAdversarialExampleGenerator,
     TabularCAAGenerator,
+    TabularCAPGDGenerator,
     TabularConstraintSet,
 )
 from nebula.core.datasets.tabular_metadata import CATEGORICAL, CONTINUOUS, INTEGER, TabularAdversarialMetadata
@@ -62,18 +65,8 @@ class AdversarialTrainingDefense:
         validate_config(config)
 
         if config.domain == "tabular":
-            # CAA needs dataset metadata. Keep the allow-list explicit while more tabular datasets are added.
-            if config.dataset_name not in CAA_TABULAR_DATASETS:
-                logging.warning(
-                    "[AdversarialTrainingDefense] Skipping CAA tabular adversarial training: "
-                    "dataset '%s' is not supported yet",
-                    config.dataset_name,
-                )
-                return None
-
             metadata = cls._get_tabular_metadata(partition)
-            # For tabular data, the only valid adversarial-training generator is CAA.
-            return cls(config=config, generator=TabularCAAGenerator(config, metadata))
+            return cls(config=config, generator=TabularCAPGDGenerator(config, metadata))
 
         if config.domain == "image":
             # Image attacks run in normalized model space, so each dataset must provide mean/std.
@@ -254,10 +247,12 @@ __all__ = [
     "ERR_MIXED_WEIGHTS",
     "ERR_MODE",
     "ERR_STEPS",
+    "ERR_TABULAR_ATTACK",
     "ERR_TABULAR_METADATA",
     "ERR_UNSUPPORTED_ATTACK",
     "IMAGE_ADVERSARIAL_ATTACKS",
     "IMAGE_DATASET_NORMALIZATION",
+    "TABULAR_ADVERSARIAL_ATTACKS",
     "AdversarialExampleGenerator",
     "AdversarialTrainingConfig",
     "AdversarialTrainingDefense",
@@ -266,6 +261,7 @@ __all__ = [
     "ImagePGDGenerator",
     "TabularAdversarialExampleGenerator",
     "TabularCAAGenerator",
+    "TabularCAPGDGenerator",
     "TabularConstraintSet",
     "apply_adversarial_training_if_enabled",
 ]

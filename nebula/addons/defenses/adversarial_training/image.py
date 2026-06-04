@@ -1,7 +1,7 @@
 import torch
 
-from nebula.addons.defenses.adversarial_training_base import AdversarialExampleGenerator
-from nebula.addons.defenses.adversarial_training_config import AdversarialTrainingConfig
+from nebula.addons.defenses.adversarial_training.base import AdversarialExampleGenerator
+from nebula.addons.defenses.adversarial_training.config import AdversarialTrainingConfig
 
 
 class ImageAdversarialExampleGenerator(AdversarialExampleGenerator):
