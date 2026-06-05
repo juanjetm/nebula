@@ -132,3 +132,150 @@ class TabularAdversarialMetadata:
                 for group in data.get("categorical_groups") or []
             ],
         )
+
+
+def build_tabular_adversarial_metadata(
+    *,
+    feature_names: list[str],
+    x_train,
+    continuous_columns: list[str] | tuple[str, ...] = (),
+    integer_columns: list[str] | tuple[str, ...] = (),
+    categorical_columns: list[str] | tuple[str, ...] = (),
+    perturbable_continuous_columns: list[str] | tuple[str, ...] = (),
+    perturbable_integer_columns: list[str] | tuple[str, ...] = (),
+    perturbable_categorical_columns: list[str] | tuple[str, ...] = (),
+    integer_step_by_column: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    """Build tabular adversarial metadata from dataset-level perturbability lists."""
+    # Datasets should only decide which raw columns are perturbable. This helper
+    # maps that decision to the transformed feature vector consumed by the model.
+    _validate_perturbable_columns(
+        continuous_columns=continuous_columns,
+        integer_columns=integer_columns,
+        categorical_columns=categorical_columns,
+        perturbable_continuous_columns=perturbable_continuous_columns,
+        perturbable_integer_columns=perturbable_integer_columns,
+        perturbable_categorical_columns=perturbable_categorical_columns,
+    )
+
+    perturbable_continuous = set(perturbable_continuous_columns)
+    perturbable_integer = set(perturbable_integer_columns)
+    perturbable_categorical = set(perturbable_categorical_columns)
+
+    # Continuous/integer transformed features usually keep their raw column name
+    # after an optional transformer prefix, for example "integer__age".
+    continuous_features = [
+        idx
+        for idx, name in enumerate(feature_names)
+        if _raw_feature_name(name) in perturbable_continuous
+    ]
+    integer_features = [
+        idx
+        for idx, name in enumerate(feature_names)
+        if _raw_feature_name(name) in perturbable_integer
+    ]
+    # One raw categorical column becomes several one-hot features, for example
+    # "categorical__sex_Female" and "categorical__sex_Male".
+    categorical_features = [
+        idx
+        for idx, name in enumerate(feature_names)
+        if _categorical_column_name(name, categorical_columns) in perturbable_categorical
+    ]
+
+    continuous_feature_set = set(continuous_features)
+    integer_feature_set = set(integer_features)
+    categorical_feature_set = set(categorical_features)
+    perturbable_feature_set = continuous_feature_set | integer_feature_set | categorical_feature_set
+    non_perturbable_features = [
+        idx
+        for idx in range(len(feature_names))
+        if idx not in perturbable_feature_set
+    ]
+
+    categorical_groups = _categorical_groups(feature_names, perturbable_categorical)
+    integer_step_norm = _integer_step_norm(feature_names, integer_features, integer_step_by_column or {})
+    # The attack consumes only TabularAdversarialMetadata. The extra lists are
+    # returned so dataset wrappers and logs can expose the same mask clearly.
+    tabular_metadata = TabularAdversarialMetadata(
+        feature_names=feature_names,
+        feature_types=[
+            CONTINUOUS if idx in continuous_feature_set
+            else INTEGER if idx in integer_feature_set
+            else CATEGORICAL if idx in categorical_feature_set
+            else NON_PERTURBABLE
+            for idx in range(len(feature_names))
+        ],
+        feature_min_norm=[float(value) for value in x_train.min(axis=0)],
+        feature_max_norm=[float(value) for value in x_train.max(axis=0)],
+        integer_step_norm=integer_step_norm,
+        categorical_groups=categorical_groups,
+    ).to_dict()
+
+    return {
+        "continuous_features": continuous_features,
+        "integer_features": integer_features,
+        "categorical_features": categorical_features,
+        "non_perturbable_features": non_perturbable_features,
+        "categorical_groups": categorical_groups,
+        "integer_step_norm": integer_step_norm,
+        "tabular_metadata": tabular_metadata,
+    }
+
+
+def _validate_perturbable_columns(
+    *,
+    continuous_columns,
+    integer_columns,
+    categorical_columns,
+    perturbable_continuous_columns,
+    perturbable_integer_columns,
+    perturbable_categorical_columns,
+) -> None:
+    invalid_continuous = sorted(set(perturbable_continuous_columns) - set(continuous_columns))
+    invalid_integer = sorted(set(perturbable_integer_columns) - set(integer_columns))
+    invalid_categorical = sorted(set(perturbable_categorical_columns) - set(categorical_columns))
+    if invalid_continuous or invalid_integer or invalid_categorical:
+        raise ValueError(
+            "Perturbable columns must exist in the dataset schema: "
+            f"continuous={invalid_continuous}, integer={invalid_integer}, categorical={invalid_categorical}"
+        )
+
+
+def _raw_feature_name(feature_name: str) -> str:
+    # Strip sklearn ColumnTransformer prefixes such as "integer__" or
+    # "categorical__" while leaving plain feature names untouched.
+    return feature_name.split("__", maxsplit=1)[1] if "__" in feature_name else feature_name
+
+
+def _categorical_column_name(feature_name: str, categorical_columns) -> str | None:
+    # Recover the raw categorical column name from a one-hot feature name.
+    raw_name = _raw_feature_name(feature_name)
+    for column in categorical_columns:
+        if raw_name.startswith(f"{column}_"):
+            return column
+    return None
+
+
+def _categorical_groups(feature_names: list[str], perturbable_categorical_columns: set[str]) -> list[list[int]]:
+    # Constrained PGD projects each group back to exactly one active one-hot value.
+    groups = []
+    for column in perturbable_categorical_columns:
+        prefix = f"categorical__{column}_"
+        group = [idx for idx, name in enumerate(feature_names) if name.startswith(prefix)]
+        if group:
+            groups.append(group)
+    return groups
+
+
+def _integer_step_norm(
+    feature_names: list[str],
+    integer_features: list[int],
+    integer_step_by_column: dict[str, float],
+) -> dict[int, float]:
+    # Integer columns may be scaled. The step tells constrained PGD what "+1 raw unit"
+    # means in the normalized model-input space.
+    return {
+        idx: float(integer_step_by_column[_raw_feature_name(feature_names[idx])])
+        for idx in integer_features
+        if _raw_feature_name(feature_names[idx]) in integer_step_by_column
+    }

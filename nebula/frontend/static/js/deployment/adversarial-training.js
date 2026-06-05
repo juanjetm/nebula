@@ -15,13 +15,13 @@ const AdversarialTrainingManager = (function() {
     };
 
     const IMAGE_DATASETS = new Set(["MNIST", "FashionMNIST", "EMNIST", "CIFAR10", "CIFAR100"]);
-    const TABULAR_ADVERSARIAL_DATASETS = new Set(["AdultCensus"]);
+    const TABULAR_ADVERSARIAL_DATASETS = new Set(["AdultCensus", "BreastCancer", "Covtype"]);
     const IMAGE_ATTACK_OPTIONS = [
         {value: "fgsm", label: "FGSM"},
         {value: "pgd", label: "PGD"}
     ];
     const TABULAR_ATTACK_OPTIONS = [
-        {value: "capgd", label: "CAPGD"}
+        {value: "constrained_pgd", label: "Constrained PGD"}
     ];
 
     function initializeAdversarialTraining() {
@@ -75,12 +75,12 @@ const AdversarialTrainingManager = (function() {
         const domain = document.getElementById("adversarialTrainingDomain")?.value || DEFAULT_ADVERSARIAL_TRAINING_CONFIG.domain;
         if (!pgdSettings) return;
 
-        pgdSettings.style.display = ["pgd", "capgd"].includes(attack) ? "block" : "none";
+        pgdSettings.style.display = ["pgd", "constrained_pgd"].includes(attack) ? "block" : "none";
         if (lossWindowSettings) {
             lossWindowSettings.style.display = domain === "tabular" ? "block" : "none";
         }
         if (stepsTitle) {
-            stepsTitle.textContent = domain === "tabular" ? "CAPGD steps" : "PGD steps";
+            stepsTitle.textContent = domain === "tabular" ? "Constrained PGD steps" : "PGD steps";
         }
     }
 
@@ -94,7 +94,7 @@ const AdversarialTrainingManager = (function() {
 
         if (datasetNote) {
             datasetNote.style.display = domain === "unsupported" ? "block" : "none";
-            datasetNote.textContent = "Adversarial Training for tabular datasets currently supports AdultCensus with CAPGD.";
+            datasetNote.textContent = "Adversarial Training for tabular datasets currently supports AdultCensus, BreastCancer, and Covtype with constrained PGD.";
         }
         if (domainInput) {
             domainInput.value = domain === "unsupported" ? "tabular" : domain;
@@ -129,7 +129,7 @@ const AdversarialTrainingManager = (function() {
         const attackSelect = document.getElementById("adversarialTrainingAttack");
         if (!attackSelect) return;
 
-        // Tabular datasets intentionally expose only CAPGD; image datasets expose FGSM/PGD.
+        // Tabular datasets intentionally expose only constrained PGD; image datasets expose FGSM/PGD.
         const options = domain === "tabular" ? TABULAR_ATTACK_OPTIONS : IMAGE_ATTACK_OPTIONS;
         const currentAttack = preferredAttack || attackSelect.value;
         attackSelect.innerHTML = "";
@@ -170,7 +170,7 @@ const AdversarialTrainingManager = (function() {
     function getAdversarialTrainingConfig() {
         const domain = document.getElementById("adversarialTrainingDomain")?.value || DEFAULT_ADVERSARIAL_TRAINING_CONFIG.domain;
         const attack = domain === "tabular"
-            ? "capgd"
+            ? "constrained_pgd"
             : (document.getElementById("adversarialTrainingAttack")?.value || DEFAULT_ADVERSARIAL_TRAINING_CONFIG.attack);
         const config = {
             enabled: Boolean(document.getElementById("adversarialTrainingSwitch")?.checked),
@@ -252,7 +252,7 @@ const AdversarialTrainingManager = (function() {
         if (config.epsilon < 0) {
             return "[Adversarial Training] Epsilon must be greater than or equal to 0.";
         }
-        if (["pgd", "capgd"].includes(config.attack) && config.steps < 1) {
+        if (["pgd", "constrained_pgd"].includes(config.attack) && config.steps < 1) {
             return "[Adversarial Training] Search steps must be at least 1.";
         }
         if (!["mixed", "adversarial"].includes(config.mode)) {

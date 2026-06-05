@@ -1,12 +1,15 @@
+import logging
 import os
-from typing import Tuple, Any
+from typing import Any
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
 from nebula.core.datasets.nebuladataset import NebulaDataset, NebulaPartitionHandler
-from nebula.core.datasets.tabular_metadata import CONTINUOUS, INTEGER, NON_PERTURBABLE, TabularAdversarialMetadata
+from nebula.core.datasets.tabular_metadata import build_tabular_adversarial_metadata
+
+logger = logging.getLogger(__name__)
 
 
 class BreastCancerTorchDataset(Dataset):
@@ -38,14 +41,14 @@ class BreastCancerTorchDataset(Dataset):
         self.x = x.astype(np.float32, copy=False)
         self.y = y.astype(np.int64, copy=False)
 
-        # Nebula conventions (some utilities expect these)
+        # Nebula dataset conventions used by partitioning, logging and model setup.
         self.data = self.x
         self.targets = self.y
         self.classes = ["0", "1"]
         self.feature_names = feature_names or [f"feature_{i}" for i in range(self.x.shape[1])]
-        self.continuous_features = continuous_features or list(range(self.x.shape[1]))
-        self.integer_features = integer_features or []
-        self.non_perturbable_features = non_perturbable_features or []
+        self.continuous_features = list(range(self.x.shape[1])) if continuous_features is None else continuous_features
+        self.integer_features = [] if integer_features is None else integer_features
+        self.non_perturbable_features = [] if non_perturbable_features is None else non_perturbable_features
         self.binary_features = []
         self.tabular_metadata = tabular_metadata
         self.input_dim = int(self.x.shape[1])
@@ -53,7 +56,7 @@ class BreastCancerTorchDataset(Dataset):
     def __len__(self) -> int:
         return int(self.y.shape[0])
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         x_i = torch.from_numpy(self.x[idx])
         y_i = torch.tensor(self.y[idx], dtype=torch.long)
         return x_i, y_i
@@ -97,7 +100,9 @@ class BreastCancerDataset(NebulaDataset):
     - tabular features (30)
     - deterministic stratified train/test split
     """
-    PERTURBABLE_CONTINUOUS_COLUMNS = [
+    # Raw sklearn feature names. These names are also the schema used to decide
+    # which variables adversarial training may perturb.
+    FEATURE_COLUMNS = [
         "mean radius",
         "mean texture",
         "mean perimeter",
@@ -129,8 +134,11 @@ class BreastCancerDataset(NebulaDataset):
         "worst symmetry",
         "worst fractal dimension",
     ]
+    # Breast Cancer has only continuous medical measurements. Keeping this as a
+    # list makes perturbability a dataset-level decision: remove a column here
+    # and the shared metadata builder will mark it as non-perturbable.
+    PERTURBABLE_CONTINUOUS_COLUMNS = list(FEATURE_COLUMNS)
     PERTURBABLE_INTEGER_COLUMNS = []
-    NON_PERTURBABLE_COLUMNS = []
 
     def __init__(
         self,
@@ -164,30 +172,7 @@ class BreastCancerDataset(NebulaDataset):
 
         self.data_partitioning(plot=True)
 
-    @classmethod
-    def _validate_manual_schema(cls, columns) -> None:
-        continuous_columns = set(cls.PERTURBABLE_CONTINUOUS_COLUMNS)
-        integer_columns = set(cls.PERTURBABLE_INTEGER_COLUMNS)
-        non_perturbable_columns = set(cls.NON_PERTURBABLE_COLUMNS)
-        overlapping_columns = sorted(
-            (continuous_columns & integer_columns)
-            | (continuous_columns & non_perturbable_columns)
-            | (integer_columns & non_perturbable_columns)
-        )
-        if overlapping_columns:
-            raise ValueError(f"BreastCancerDataset columns configured twice: {overlapping_columns}")
-
-        configured_columns = continuous_columns | integer_columns | non_perturbable_columns
-        dataset_columns = set(columns)
-        missing_columns = sorted(configured_columns - dataset_columns)
-        if missing_columns:
-            raise ValueError(f"BreastCancerDataset is missing configured columns: {missing_columns}")
-        unconfigured_columns = sorted(dataset_columns - configured_columns)
-        if unconfigured_columns:
-            raise ValueError(f"BreastCancerDataset has unconfigured columns: {unconfigured_columns}")
-
     def load_breast_cancer_dataset(self):
-        # Local cache directory (aunque load_breast_cancer no descarga, seguimos el patrón)
         data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
         os.makedirs(data_dir, exist_ok=True)
 
@@ -219,55 +204,70 @@ class BreastCancerDataset(NebulaDataset):
         x_train = scaler.fit_transform(x_train)
         x_test = scaler.transform(x_test)
 
+        # Constrained PGD receives standardized tensors, so metadata bounds must also be
+        # computed in this transformed model-input space.
         x_train_np = np.asarray(x_train, dtype=np.float32)
         x_test_np = np.asarray(x_test, dtype=np.float32)
-        continuous_features = [
-            idx for idx, name in enumerate(feature_names)
-            if name in self.PERTURBABLE_CONTINUOUS_COLUMNS
-        ]
-        integer_features = [
-            idx for idx, name in enumerate(feature_names)
-            if name in self.PERTURBABLE_INTEGER_COLUMNS
-        ]
-        non_perturbable_features = [
-            idx for idx, name in enumerate(feature_names)
-            if name in self.NON_PERTURBABLE_COLUMNS
-        ]
-        continuous_feature_set = set(continuous_features)
-        integer_feature_set = set(integer_features)
-        tabular_metadata = TabularAdversarialMetadata(
-            feature_names=feature_names,
-            feature_types=[
-                CONTINUOUS if idx in continuous_feature_set
-                else INTEGER if idx in integer_feature_set
-                else NON_PERTURBABLE
-                for idx in range(len(feature_names))
-            ],
-            feature_min_norm=np.min(x_train_np, axis=0).astype(float).tolist(),
-            feature_max_norm=np.max(x_train_np, axis=0).astype(float).tolist(),
-            integer_step_norm={},
-        ).to_dict()
+        metadata = self._build_adversarial_metadata(feature_names, x_train_np)
+        self._log_adversarial_metadata(metadata, feature_names)
 
-        train_ds = BreastCancerTorchDataset(
-            x_train_np,
-            y_train,
-            feature_names=feature_names,
-            continuous_features=continuous_features,
-            integer_features=integer_features,
-            non_perturbable_features=non_perturbable_features,
-            tabular_metadata=tabular_metadata,
-        )
-        test_ds = BreastCancerTorchDataset(
-            x_test_np,
-            y_test,
-            feature_names=feature_names,
-            continuous_features=continuous_features,
-            integer_features=integer_features,
-            non_perturbable_features=non_perturbable_features,
-            tabular_metadata=tabular_metadata,
+        return (
+            self._make_dataset(x_train_np, y_train, feature_names, metadata),
+            self._make_dataset(x_test_np, y_test, feature_names, metadata),
         )
 
-        return train_ds, test_ds
+    @classmethod
+    def _validate_manual_schema(cls, columns) -> None:
+        dataset_columns = set(columns)
+        expected_columns = set(cls.FEATURE_COLUMNS)
+        missing_columns = sorted(expected_columns - dataset_columns)
+        extra_columns = sorted(dataset_columns - expected_columns)
+        if missing_columns or extra_columns:
+            raise ValueError(
+                "BreastCancerDataset schema mismatch: "
+                f"missing={missing_columns}, extra={extra_columns}"
+            )
+
+    @classmethod
+    def _build_adversarial_metadata(cls, feature_names, x_train):
+        # The dataset only declares perturbable columns. The shared builder
+        # turns that declaration into feature types, bounds and masks for constrained PGD.
+        return build_tabular_adversarial_metadata(
+            feature_names=feature_names,
+            x_train=x_train,
+            continuous_columns=cls.FEATURE_COLUMNS,
+            integer_columns=[],
+            categorical_columns=[],
+            perturbable_continuous_columns=cls.PERTURBABLE_CONTINUOUS_COLUMNS,
+            perturbable_integer_columns=cls.PERTURBABLE_INTEGER_COLUMNS,
+        )
+
+    @staticmethod
+    def _make_dataset(x, y, feature_names, metadata) -> BreastCancerTorchDataset:
+        # Store the same metadata on train and test. Training uses it to create
+        # adversarial examples; evaluation can inspect it for robustness reports.
+        return BreastCancerTorchDataset(
+            x,
+            y,
+            feature_names=feature_names,
+            continuous_features=metadata["continuous_features"],
+            integer_features=metadata["integer_features"],
+            non_perturbable_features=metadata["non_perturbable_features"],
+            tabular_metadata=metadata["tabular_metadata"],
+        )
+
+    @staticmethod
+    def _log_adversarial_metadata(metadata: dict[str, Any], feature_names: list[str]) -> None:
+        continuous_features = metadata["continuous_features"]
+        non_perturbable_features = metadata["non_perturbable_features"]
+        logger.info(
+            "[BreastCancer] Tabular adversarial feature mask | continuous=%s | "
+            "non_perturbable=%s | continuous_features=%s | non_perturbable_preview=%s",
+            len(continuous_features),
+            len(non_perturbable_features),
+            [feature_names[idx] for idx in continuous_features],
+            [feature_names[idx] for idx in non_perturbable_features[:20]],
+        )
 
     def generate_non_iid_map(self, dataset, partition: str = "dirichlet", partition_parameter: float = 0.5):
         if partition == "dirichlet":

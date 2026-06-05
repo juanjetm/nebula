@@ -15,7 +15,7 @@ class TabularConstraintSet:
         self._tensor_cache: dict[tuple[torch.device, torch.dtype], dict[str, torch.Tensor]] = {}
 
     def tensors(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
-        # Masks and bounds are reused in every CAPGD step, so build them once for each tensor placement.
+        # Masks and bounds are reused in every constrained PGD step, so build them once per placement.
         key = (x.device, x.dtype)
         cached = self._tensor_cache.get(key)
         if cached is not None:
@@ -140,7 +140,7 @@ class TabularAdversarialExampleGenerator(AdversarialExampleGenerator):
         self.constraints = TabularConstraintSet(metadata)
 
     def _alpha(self, epsilon: float) -> float:
-        # By default, distribute the epsilon budget evenly across CAPGD steps.
+        # By default, distribute the epsilon budget evenly across constrained PGD steps.
         if self.config.alpha is not None:
             return float(self.config.alpha)
         return float(epsilon) / max(int(self.config.steps), 1)
@@ -153,12 +153,12 @@ class TabularAdversarialExampleGenerator(AdversarialExampleGenerator):
         return other_logits.max(dim=1).values - true_logits
 
     def _per_sample_loss(self, logits: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        # CAPGD needs per-sample scores so each row can stop once it is hard enough.
+        # The attack needs per-sample scores so each row can stop once it is hard enough.
         return F.cross_entropy(logits, y, reduction="none")
 
 
-class TabularCAPGDGenerator(TabularAdversarialExampleGenerator):
-    """First-phase constrained tabular CAPGD generator."""
+class TabularConstrainedPGDGenerator(TabularAdversarialExampleGenerator):
+    """Constrained PGD generator for tabular adversarial examples."""
 
     def generate(self, model, x, y, criterion):
         # Sample one attack strength for this batch, matching the image generator behavior.
@@ -178,7 +178,7 @@ class TabularCAPGDGenerator(TabularAdversarialExampleGenerator):
         clean_loss = self._clean_loss(model, x_clean, y) if use_loss_window else None
 
         for _ in range(steps):
-            # CAPGD step: move in the sign of the loss gradient, but only on perturbable features.
+            # PGD step: move in the sign of the loss gradient, but only on perturbable features.
             x_grad = x_adv.detach().requires_grad_(True)
             logits = model(x_grad)
             loss = criterion(logits, y)

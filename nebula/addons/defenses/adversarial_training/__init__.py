@@ -20,7 +20,7 @@ from nebula.addons.defenses.adversarial_training.defense import (
     ImageFGSMGenerator,
     ImagePGDGenerator,
     TabularAdversarialExampleGenerator,
-    TabularCAPGDGenerator,
+    TabularConstrainedPGDGenerator,
     TabularConstraintSet,
     apply_adversarial_training_if_enabled,
 )
@@ -47,7 +47,7 @@ __all__ = [
     "ImageFGSMGenerator",
     "ImagePGDGenerator",
     "TabularAdversarialExampleGenerator",
-    "TabularCAPGDGenerator",
+    "TabularConstrainedPGDGenerator",
     "TabularConstraintSet",
     "apply_adversarial_training_if_enabled",
 ]

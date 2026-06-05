@@ -90,6 +90,28 @@ def inverse_score(value):
     return 1 / (1 + value)
 
 
+def get_enabled_defences(data):
+    # Return the active training-time defences declared in the scenario.
+    defences = []
+    if data.get("reputation", {}).get("enabled", False):
+        defences.append("reputation-based defence")
+    if data.get("feature_squeezing", {}).get("enabled", False):
+        defences.append("feature squeezing")
+    if data.get("adversarial_training", {}).get("enabled", False):
+        defences.append(_format_adversarial_training_defence(data["adversarial_training"]))
+    return defences
+
+
+def _format_adversarial_training_defence(adversarial_training):
+    attack = str(adversarial_training.get("attack", "")).upper()
+    domain = str(adversarial_training.get("domain", "")).lower()
+    if attack:
+        return f"adversarial training with {attack}"
+    if domain:
+        return f"adversarial training for {domain} data"
+    return "adversarial training"
+
+
 def build_project_background(data):
     # Build the natural-language scenario description used in factsheets.
     federation = data["federation"]
@@ -99,7 +121,7 @@ def build_project_background(data):
     aggregation_algorithm = data["agg_algorithm"]
     n_rounds = int(data["rounds"])
     attack = data["attack_params"]["attacks"]
-    with_reputation = data["reputation"]["enabled"]
+    enabled_defences = get_enabled_defences(data)
 
     base = (
         "For the project setup, the most important aspects are the following: "
@@ -113,8 +135,9 @@ def build_project_background(data):
     else:
         attack_text = "No attacks are used. "
 
-    if with_reputation:
-        defence_text = "A reputation-based defence is used, and the trustworthiness of the project is desired."
+    if enabled_defences:
+        defence_list = ", ".join(enabled_defences)
+        defence_text = f"The active defence mechanisms are: {defence_list}. The trustworthiness of the project is desired."
     else:
         defence_text = "No defence mechanism is used, and the trustworthiness of the project is desired."
 
@@ -144,6 +167,19 @@ def populate_common_pre_train_sections(factsheet, data, model):
     factsheet["configuration"]["personalization"] = False
     factsheet["configuration"]["reputation_enabled"] = bool(
         data.get("reputation", {}).get("enabled", False)
+    )
+    adversarial_training = data.get("adversarial_training", {}) or {}
+    factsheet["configuration"]["adversarial_training"] = bool(
+        adversarial_training.get("enabled", False)
+    )
+    factsheet["configuration"]["adversarial_training_domain"] = (
+        adversarial_training.get("domain", "") if adversarial_training.get("enabled", False) else ""
+    )
+    factsheet["configuration"]["adversarial_training_attack"] = (
+        adversarial_training.get("attack", "") if adversarial_training.get("enabled", False) else ""
+    )
+    factsheet["configuration"]["adversarial_training_mode"] = (
+        adversarial_training.get("mode", "") if adversarial_training.get("enabled", False) else ""
     )
     factsheet["configuration"]["visualization"] = True
     factsheet["configuration"]["monitoring"] = True

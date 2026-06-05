@@ -588,7 +588,7 @@
                             style="display: inline; width: 80px; height: 30px;">
                     </div>
                     <small id="adversarial-training-dataset-note" class="form-text text-muted" style="display: none;">
-                        Adversarial Training for tabular datasets currently supports AdultCensus with CAPGD.
+                        Adversarial Training for tabular datasets currently supports AdultCensus, BreastCancer, and Covtype with constrained PGD.
                     </small>
                     <div id="adversarial-training-settings" style="margin-top: 10px; display: none;">
                         <input type="hidden" id="adversarialTrainingDomain" value="image">
@@ -641,7 +641,7 @@
                             </select>
                         </div>
                         <small class="form-text text-muted">
-                            Image datasets use FGSM/PGD. AdultCensus uses CAPGD for tabular adversarial training.
+                            Image datasets use FGSM/PGD. AdultCensus, BreastCancer, and Covtype use constrained PGD for tabular adversarial training.
                         </small>
                     </div>
                 </div>

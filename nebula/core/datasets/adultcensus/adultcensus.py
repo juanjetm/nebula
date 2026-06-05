@@ -1,5 +1,6 @@
 # nebula/core/datasets/adultcensus/adultcensus.py
 
+import logging
 import os
 from typing import Any, ClassVar
 
@@ -8,7 +9,11 @@ import torch
 from torch.utils.data import Dataset
 
 from nebula.core.datasets.nebuladataset import NebulaDataset, NebulaPartitionHandler
-from nebula.core.datasets.tabular_metadata import CATEGORICAL, CONTINUOUS, INTEGER, TabularAdversarialMetadata
+from nebula.core.datasets.tabular_metadata import (
+    build_tabular_adversarial_metadata,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class AdultCensusTorchDataset(Dataset):
@@ -25,6 +30,7 @@ class AdultCensusTorchDataset(Dataset):
         continuous_features: list[int] | None = None,
         integer_features: list[int] | None = None,
         categorical_features: list[int] | None = None,
+        non_perturbable_features: list[int] | None = None,
         categorical_groups: list[list[int]] | None = None,
         tabular_metadata: dict | None = None,
     ):
@@ -41,7 +47,7 @@ class AdultCensusTorchDataset(Dataset):
         self.x: np.ndarray = x.astype(np.float32, copy=False)
         self.y: np.ndarray = y_arr.astype(np.int64, copy=False)
 
-        # Nebula conventions
+        # Nebula dataset conventions used by partitioning, logging and model setup.
         self.data: np.ndarray = self.x
         self.targets: np.ndarray = self.y
         self.classes: list[str] = ["<=50K", ">50K"]
@@ -49,6 +55,7 @@ class AdultCensusTorchDataset(Dataset):
         self.continuous_features = continuous_features or []
         self.integer_features = integer_features or []
         self.categorical_features = categorical_features or []
+        self.non_perturbable_features = non_perturbable_features or []
         self.categorical_groups = categorical_groups or []
         self.tabular_metadata = tabular_metadata
         self.input_dim = int(self.x.shape[1])
@@ -120,6 +127,10 @@ class AdultCensusDataset(NebulaDataset):
         "sex",
         "native-country",
     ]
+    # Experimental wide attack surface for testing constrained PGD thoroughly.
+    # This intentionally allows broad changes, including categorical flips.
+    PERTURBABLE_INTEGER_COLUMNS: ClassVar[list[str]] = list(INTEGER_COLUMNS)
+    PERTURBABLE_CATEGORICAL_COLUMNS: ClassVar[list[str]] = list(CATEGORICAL_COLUMNS)
 
     def __init__(
         self,
@@ -219,17 +230,18 @@ class AdultCensusDataset(NebulaDataset):
                 "AdultCensusDataset requires pandas + scikit-learn. Install them (e.g., pip install pandas scikit-learn)."
             ) from e
 
-        # 1) Load from OpenML
+        # Raw Adult Census uses mixed pandas columns; the model receives the
+        # numeric matrix produced later by the ColumnTransformer.
         bunch = fetch_openml(data_id=1590, as_frame=True, data_home=data_dir)
         X_df = bunch.data.copy()
         y_raw = bunch.target
 
-        # 2) Target -> {0,1}
-        # Normalize spaces to avoid variants like ' >50K'
+        # Normalize target labels to {0, 1}; 1 means income >50K.
         y_str = y_raw.astype(str).str.strip()
         y: np.ndarray = (y_str == ">50K").astype(np.int64).to_numpy()
 
-        # 3) Replace '?' markers with np.nan and drop rows with missing configured features.
+        # Adult encodes missing values as '?'. Drop incomplete rows so the
+        # adversarial metadata is based on real observed feature ranges.
         X_df = X_df.replace(r"^\s*\?\s*$", np.nan, regex=True)
         self._validate_manual_schema(X_df.columns)
 
@@ -243,12 +255,12 @@ class AdultCensusDataset(NebulaDataset):
         valid_rows = ~X_df[configured_columns].isna().any(axis=1)
         removed_rows = int((~valid_rows).sum())
         if removed_rows:
-            import logging
-            logging.getLogger().info("[AdultCensus] Dropping %s rows with NA values", removed_rows)
+            logger.info("[AdultCensus] Dropping %s rows with NA values", removed_rows)
         X_df = X_df.loc[valid_rows].copy()
         y = y[valid_rows.to_numpy()]
 
-        # 4) Preprocess
+        # Numeric columns are standardized; categorical columns become one-hot
+        # columns. Constrained PGD metadata is built after this, in model input space.
         numeric_transformer = Pipeline(
             steps=[
                 ("impute", SimpleImputer(strategy="median")),
@@ -273,7 +285,7 @@ class AdultCensusDataset(NebulaDataset):
 
         preprocessor = ColumnTransformer(transformers=transformers, remainder="drop")
 
-        # 5) Split then fit on train
+        # Fit preprocessing only on train to avoid leaking test statistics.
         X_train_df, X_test_df, y_train, y_test = train_test_split(
             X_df,
             y,
@@ -285,10 +297,7 @@ class AdultCensusDataset(NebulaDataset):
 
         X_train = preprocessor.fit_transform(X_train_df)
         X_test = preprocessor.transform(X_test_df)
-        try:
-            feature_names = [str(name) for name in preprocessor.get_feature_names_out()]
-        except Exception:
-            feature_names = [f"feature_{i}" for i in range(X_train.shape[1])]
+        feature_names = self._feature_names(preprocessor, X_train.shape[1])
 
         # In case some sklearn path returns sparse matrices, densify safely
         if hasattr(X_train, "toarray"):
@@ -296,101 +305,77 @@ class AdultCensusDataset(NebulaDataset):
         if hasattr(X_test, "toarray"):
             X_test = X_test.toarray()
 
-        X_train_np: np.ndarray = np.asarray(X_train, dtype=np.float32)
-        import logging
-        logging.getLogger().info(f"[AdultCensus] X_train shape = {X_train_np.shape}")
-        logging.getLogger().info(f"[AdultCensus] INPUT_DIM (post-OHE) = {int(X_train_np.shape[1])}")
+        X_train_np = np.asarray(X_train, dtype=np.float32)
         X_test_np: np.ndarray = np.asarray(X_test, dtype=np.float32)
-        continuous_features = [
-            idx for idx, name in enumerate(feature_names)
-            if name.startswith("continuous__")
-        ]
-        integer_features = [
-            idx for idx, name in enumerate(feature_names)
-            if name.startswith("integer__")
-        ]
-        categorical_features = [
-            idx for idx, name in enumerate(feature_names)
-            if name.startswith("categorical__")
-        ]
-        continuous_feature_set = set(continuous_features)
-        integer_feature_set = set(integer_features)
-        categorical_feature_set = set(categorical_features)
-        assigned_feature_set = continuous_feature_set | integer_feature_set | categorical_feature_set
-        unknown_features = [
-            feature_names[idx]
-            for idx in range(len(feature_names))
-            if idx not in assigned_feature_set
-        ]
-        if unknown_features:
-            raise ValueError(f"AdultCensusDataset generated untyped features: {unknown_features}")
-        feature_type_by_idx = {
-            **{idx: CONTINUOUS for idx in continuous_feature_set},
-            **{idx: INTEGER for idx in integer_feature_set},
-            **{idx: CATEGORICAL for idx in categorical_feature_set},
-        }
+        metadata = self._build_adversarial_metadata(feature_names, X_train_np, preprocessor)
+        logger.info("[AdultCensus] X_train shape = %s", X_train_np.shape)
+        logger.info("[AdultCensus] INPUT_DIM (post-OHE) = %s", int(X_train_np.shape[1]))
+        self._log_adversarial_metadata(metadata, feature_names)
 
-        categorical_groups = self._build_categorical_groups(feature_names)
-        integer_step_norm = {}
-        if integer_features:
-            integer_scaler = preprocessor.named_transformers_["integer"].named_steps["scaler"]
-            integer_step_norm = {
-                idx: float(1.0 / scale)
-                for idx, scale in zip(integer_features, integer_scaler.scale_, strict=False)
-            }
-        tabular_metadata = TabularAdversarialMetadata(
-            feature_names=feature_names,
-            feature_types=[feature_type_by_idx[idx] for idx in range(len(feature_names))],
-            feature_min_norm=np.min(X_train_np, axis=0).astype(float).tolist(),
-            feature_max_norm=np.max(X_train_np, axis=0).astype(float).tolist(),
-            integer_step_norm=integer_step_norm,
-            categorical_groups=categorical_groups,
-        ).to_dict()
-        logging.getLogger().info(
-            "[AdultCensus] Tabular adversarial feature mask | continuous=%s | integer=%s | "
-            "categorical=%s | categorical_groups=%s | continuous_features=%s | integer_features=%s | "
-            "integer_step_norm=%s",
-            len(continuous_features),
-            len(integer_features),
-            len(categorical_features),
-            len(categorical_groups),
-            [feature_names[idx] for idx in continuous_features],
-            [feature_names[idx] for idx in integer_features],
-            integer_step_norm,
-        )
-
-        train_ds = AdultCensusTorchDataset(
-            X_train_np,
-            np.asarray(y_train, dtype=np.int64),
-            feature_names=feature_names,
-            continuous_features=continuous_features,
-            integer_features=integer_features,
-            categorical_features=categorical_features,
-            categorical_groups=categorical_groups,
-            tabular_metadata=tabular_metadata,
-        )
-        test_ds = AdultCensusTorchDataset(
-            X_test_np,
-            np.asarray(y_test, dtype=np.int64),
-            feature_names=feature_names,
-            continuous_features=continuous_features,
-            integer_features=integer_features,
-            categorical_features=categorical_features,
-            categorical_groups=categorical_groups,
-            tabular_metadata=tabular_metadata,
-        )
+        train_ds = self._make_dataset(X_train_np, y_train, feature_names, metadata)
+        test_ds = self._make_dataset(X_test_np, y_test, feature_names, metadata)
 
         return train_ds, test_ds
 
+    @staticmethod
+    def _feature_names(preprocessor, n_features: int) -> list[str]:
+        try:
+            return [str(name) for name in preprocessor.get_feature_names_out()]
+        except Exception:
+            return [f"feature_{idx}" for idx in range(n_features)]
+
+    @staticmethod
+    def _make_dataset(x, y, feature_names, metadata) -> AdultCensusTorchDataset:
+        return AdultCensusTorchDataset(
+            x,
+            np.asarray(y, dtype=np.int64),
+            feature_names=feature_names,
+            continuous_features=[],
+            integer_features=metadata["integer_features"],
+            categorical_features=metadata["categorical_features"],
+            non_perturbable_features=metadata["non_perturbable_features"],
+            categorical_groups=metadata["categorical_groups"],
+            tabular_metadata=metadata["tabular_metadata"],
+        )
+
     @classmethod
-    def _build_categorical_groups(cls, feature_names: list[str]) -> list[list[int]]:
-        groups = []
-        for column in cls.CATEGORICAL_COLUMNS:
-            prefix = f"categorical__{column}_"
-            group = [idx for idx, name in enumerate(feature_names) if name.startswith(prefix)]
-            if group:
-                groups.append(group)
-        return groups
+    def _build_adversarial_metadata(cls, feature_names, x_train, preprocessor) -> dict[str, Any]:
+        # Dataset responsibility ends here: declare which raw columns are perturbable.
+        # The shared metadata builder maps those declarations to transformed model features.
+        integer_scaler = preprocessor.named_transformers_["integer"].named_steps["scaler"]
+        integer_step_by_column = {
+            column: float(1.0 / scale)
+            for column, scale in zip(cls.INTEGER_COLUMNS, integer_scaler.scale_, strict=False)
+        }
+        return build_tabular_adversarial_metadata(
+            feature_names=feature_names,
+            x_train=x_train,
+            continuous_columns=cls.CONTINUOUS_COLUMNS,
+            integer_columns=cls.INTEGER_COLUMNS,
+            categorical_columns=cls.CATEGORICAL_COLUMNS,
+            perturbable_integer_columns=cls.PERTURBABLE_INTEGER_COLUMNS,
+            perturbable_categorical_columns=cls.PERTURBABLE_CATEGORICAL_COLUMNS,
+            integer_step_by_column=integer_step_by_column,
+        )
+
+    @staticmethod
+    def _log_adversarial_metadata(metadata: dict[str, Any], feature_names: list[str]) -> None:
+        integer_features = metadata["integer_features"]
+        categorical_features = metadata["categorical_features"]
+        non_perturbable_features = metadata["non_perturbable_features"]
+        logger.info(
+            "[AdultCensus] Tabular adversarial feature mask | integer=%s | categorical=%s | "
+            "categorical_groups=%s | non_perturbable=%s | integer_features=%s | "
+            "categorical_preview=%s | non_perturbable_preview=%s | integer_step_norm=%s",
+            len(integer_features),
+            len(categorical_features),
+            len(metadata["categorical_groups"]),
+            len(non_perturbable_features),
+            [feature_names[idx] for idx in integer_features],
+            [feature_names[idx] for idx in categorical_features[:20]],
+            [feature_names[idx] for idx in non_perturbable_features[:20]],
+            metadata["integer_step_norm"],
+        )
 
     def generate_non_iid_map(self, dataset, partition: str = "dirichlet", partition_parameter: float = 0.5):
         if partition == "dirichlet":

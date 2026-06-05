@@ -2,11 +2,11 @@ from dataclasses import dataclass
 from typing import Any
 
 IMAGE_ADVERSARIAL_ATTACKS = {"fgsm", "pgd"}
-TABULAR_ADVERSARIAL_ATTACKS = {"capgd"}
-TABULAR_ADVERSARIAL_DATASETS = {"AdultCensus"}
+TABULAR_ADVERSARIAL_ATTACKS = {"constrained_pgd"}
+TABULAR_ADVERSARIAL_DATASETS = {"AdultCensus", "BreastCancer", "Covtype"}
 
 ERR_IMAGE_ATTACK = "image adversarial_training.attack must be one of: fgsm, pgd"
-ERR_TABULAR_ATTACK = "tabular adversarial_training.attack must be one of: capgd"
+ERR_TABULAR_ATTACK = "tabular adversarial_training.attack must be one of: constrained_pgd"
 ERR_MODE = "adversarial_training.mode must be one of: adversarial, mixed"
 ERR_EPSILON = "adversarial_training.epsilon must be >= 0"
 ERR_ALPHA = "adversarial_training.alpha must be >= 0"
@@ -51,7 +51,7 @@ def config_from_participant(participant_config: dict[str, Any]) -> AdversarialTr
 
     dataset_name = participant_config.get("data_args", {}).get("dataset")
     domain = str(raw.get("domain", "image")).lower()
-    attack = str(raw.get("attack", "capgd" if domain == "tabular" else "fgsm")).lower()
+    attack = str(raw.get("attack", "constrained_pgd" if domain == "tabular" else "fgsm")).lower()
 
     mode = str(raw.get("mode", "mixed")).lower()
     clean_weight, adversarial_weight = _loss_weights_for_mode(mode)

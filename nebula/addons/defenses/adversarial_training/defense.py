@@ -31,7 +31,7 @@ from nebula.addons.defenses.adversarial_training.image import (
 from nebula.addons.defenses.adversarial_training.logging import AdversarialTrainingSampleLogger
 from nebula.addons.defenses.adversarial_training.tabular import (
     TabularAdversarialExampleGenerator,
-    TabularCAPGDGenerator,
+    TabularConstrainedPGDGenerator,
     TabularConstraintSet,
 )
 from nebula.core.datasets.tabular_metadata import CATEGORICAL, CONTINUOUS, INTEGER, TabularAdversarialMetadata
@@ -63,7 +63,7 @@ class AdversarialTrainingDefense:
 
         if config.domain == "tabular":
             metadata = cls._get_tabular_metadata(partition)
-            return cls(config=config, generator=TabularCAPGDGenerator(config, metadata))
+            return cls(config=config, generator=TabularConstrainedPGDGenerator(config, metadata))
 
         if config.domain == "image":
             # Image attacks run in normalized model space, so each dataset must provide mean/std.
@@ -164,7 +164,7 @@ class AdversarialTrainingDefense:
 
 
 def _log_tabular_metadata(tabular_metadata: TabularAdversarialMetadata) -> None:
-    # Log a compact metadata summary to make CAPGD setup auditable.
+    # Log a compact metadata summary to make constrained PGD setup auditable.
     integer_features = _feature_names_by_type(tabular_metadata, {INTEGER})
     continuous_features = _feature_names_by_type(tabular_metadata, {CONTINUOUS})
     categorical_features = _feature_names_by_type(tabular_metadata, {CATEGORICAL})
@@ -255,7 +255,7 @@ __all__ = [
     "ImageFGSMGenerator",
     "ImagePGDGenerator",
     "TabularAdversarialExampleGenerator",
-    "TabularCAPGDGenerator",
+    "TabularConstrainedPGDGenerator",
     "TabularConstraintSet",
     "apply_adversarial_training_if_enabled",
 ]
