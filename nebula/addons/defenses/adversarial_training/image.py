@@ -3,6 +3,9 @@ import torch
 from nebula.addons.defenses.adversarial_training.base import AdversarialExampleGenerator
 from nebula.addons.defenses.adversarial_training.config import AdversarialTrainingConfig
 
+IMAGE_CLIP_MIN = 0.0
+IMAGE_CLIP_MAX = 1.0
+
 
 class ImageAdversarialExampleGenerator(AdversarialExampleGenerator):
     def __init__(self, config: AdversarialTrainingConfig, mean: tuple[float, ...], std: tuple[float, ...]):
@@ -33,15 +36,15 @@ class ImageAdversarialExampleGenerator(AdversarialExampleGenerator):
         # Convert valid pixel bounds to the normalized space where the model operates.
         mean = self._channel_tensor(self.mean, x)
         std = self._channel_tensor(self.std, x)
-        lower = (float(self.config.clip_min) - mean) / std
-        upper = (float(self.config.clip_max) - mean) / std
+        lower = (IMAGE_CLIP_MIN - mean) / std
+        upper = (IMAGE_CLIP_MAX - mean) / std
         return lower, upper
 
     def denormalize(self, x: torch.Tensor) -> torch.Tensor:
         # Convert normalized tensors back to pixel scale for logging.
         mean = self._channel_tensor(self.mean, x)
         std = self._channel_tensor(self.std, x)
-        return (x * std + mean).clamp(float(self.config.clip_min), float(self.config.clip_max))
+        return (x * std + mean).clamp(IMAGE_CLIP_MIN, IMAGE_CLIP_MAX)
 
     def _project(self, x_adv: torch.Tensor, x_clean: torch.Tensor, epsilon: float) -> torch.Tensor:
         # Keep the adversarial image inside both the epsilon ball and valid pixel bounds.

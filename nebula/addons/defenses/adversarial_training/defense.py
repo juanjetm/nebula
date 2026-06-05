@@ -5,14 +5,11 @@ import torch
 
 from nebula.addons.defenses.adversarial_training.base import AdversarialExampleGenerator
 from nebula.addons.defenses.adversarial_training.config import (
-    CAA_TABULAR_DATASETS,
     ERR_ALPHA,
     ERR_APPLY_PROBABILITY,
-    ERR_CLIP_BOUNDS,
     ERR_EPSILON,
     ERR_IMAGE_ATTACK,
-    ERR_LOSS_WEIGHTS,
-    ERR_MIXED_WEIGHTS,
+    ERR_LOSS_INCREASE,
     ERR_MODE,
     ERR_STEPS,
     ERR_TABULAR_ATTACK,
@@ -21,6 +18,7 @@ from nebula.addons.defenses.adversarial_training.config import (
     IMAGE_ADVERSARIAL_ATTACKS,
     IMAGE_DATASET_NORMALIZATION,
     TABULAR_ADVERSARIAL_ATTACKS,
+    TABULAR_ADVERSARIAL_DATASETS,
     AdversarialTrainingConfig,
     config_from_participant,
     validate_config,
@@ -33,7 +31,6 @@ from nebula.addons.defenses.adversarial_training.image import (
 from nebula.addons.defenses.adversarial_training.logging import AdversarialTrainingSampleLogger
 from nebula.addons.defenses.adversarial_training.tabular import (
     TabularAdversarialExampleGenerator,
-    TabularCAAGenerator,
     TabularCAPGDGenerator,
     TabularConstraintSet,
 )
@@ -126,12 +123,6 @@ class AdversarialTrainingDefense:
             loss = criterion(logits, y)
             return loss, logits, {}
 
-        # "clean" mode keeps the normal training step but still goes through the defense hook.
-        if self.config.mode == "clean":
-            logits = model(x)
-            loss = criterion(logits, y)
-            return loss, logits, {}
-
         # Generate x_adv once and reuse it for logging, adversarial loss and metrics.
         x_adv = self.generator.generate(model, x, y, criterion)
         self._log_adversarial_samples(model, x, x_adv, y)
@@ -147,11 +138,8 @@ class AdversarialTrainingDefense:
 
         clean_logits = model(x)
         clean_loss = criterion(clean_logits, y)
-        total_weight = self.config.clean_weight + self.config.adversarial_weight
-        # "mixed" combines clean and adversarial losses with user-provided weights.
-        loss = (
-            self.config.clean_weight * clean_loss + self.config.adversarial_weight * adv_loss
-        ) / total_weight
+        # "mixed" uses a fixed 50/50 clean/adversarial objective.
+        loss = self.config.clean_weight * clean_loss + self.config.adversarial_weight * adv_loss
 
         return loss, clean_logits, self._extra_metrics({
             "Clean Loss": clean_loss,
@@ -176,7 +164,7 @@ class AdversarialTrainingDefense:
 
 
 def _log_tabular_metadata(tabular_metadata: TabularAdversarialMetadata) -> None:
-    # Log a compact metadata summary to make CAA setup auditable.
+    # Log a compact metadata summary to make CAPGD setup auditable.
     integer_features = _feature_names_by_type(tabular_metadata, {INTEGER})
     continuous_features = _feature_names_by_type(tabular_metadata, {CONTINUOUS})
     categorical_features = _feature_names_by_type(tabular_metadata, {CATEGORICAL})
@@ -225,26 +213,32 @@ def apply_adversarial_training_if_enabled(model, participant_config: dict[str, A
         model.set_adversarial_training(defense)
         logging.info(
             "[AdversarialTrainingDefense] Enabled | dataset=%s | attack=%s | epsilon_max=%s | "
-            "epsilon_range=[%.6f, %.6f] | epsilon_step=%.6f | mode=%s",
+            "epsilon_range=[%.6f, %.6f] | epsilon_step=%.6f | steps=%s | mode=%s | "
+            "clean_weight=%.2f | adversarial_weight=%.2f | apply_probability=%.2f | "
+            "target_loss_increase=%s | max_loss_increase=%s | log_adversarial_metrics=%s",
             defense.config.dataset_name,
             defense.config.attack,
             defense.config.epsilon,
             defense.config.epsilon / 4.0,
             defense.config.epsilon,
             defense.config.epsilon / 8.0,
+            defense.config.steps,
             defense.config.mode,
+            defense.config.clean_weight,
+            defense.config.adversarial_weight,
+            defense.config.apply_probability,
+            defense.config.target_loss_increase,
+            defense.config.max_loss_increase,
+            defense.config.log_adversarial_metrics,
         )
 
 
 __all__ = [
-    "CAA_TABULAR_DATASETS",
     "ERR_ALPHA",
     "ERR_APPLY_PROBABILITY",
-    "ERR_CLIP_BOUNDS",
     "ERR_EPSILON",
     "ERR_IMAGE_ATTACK",
-    "ERR_LOSS_WEIGHTS",
-    "ERR_MIXED_WEIGHTS",
+    "ERR_LOSS_INCREASE",
     "ERR_MODE",
     "ERR_STEPS",
     "ERR_TABULAR_ATTACK",
@@ -253,6 +247,7 @@ __all__ = [
     "IMAGE_ADVERSARIAL_ATTACKS",
     "IMAGE_DATASET_NORMALIZATION",
     "TABULAR_ADVERSARIAL_ATTACKS",
+    "TABULAR_ADVERSARIAL_DATASETS",
     "AdversarialExampleGenerator",
     "AdversarialTrainingConfig",
     "AdversarialTrainingDefense",
@@ -260,7 +255,6 @@ __all__ = [
     "ImageFGSMGenerator",
     "ImagePGDGenerator",
     "TabularAdversarialExampleGenerator",
-    "TabularCAAGenerator",
     "TabularCAPGDGenerator",
     "TabularConstraintSet",
     "apply_adversarial_training_if_enabled",

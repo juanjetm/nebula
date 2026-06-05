@@ -8,22 +8,20 @@ const AdversarialTrainingManager = (function() {
         alpha: null,
         steps: 1,
         mode: "mixed",
-        clean_weight: 0.5,
-        adversarial_weight: 0.5,
-        apply_probability: 1.0,
-        clip_min: 0.0,
-        clip_max: 1.0,
-        log_adversarial_metrics: true
+        apply_probability: 0.3,
+        log_adversarial_metrics: true,
+        target_loss_increase: null,
+        max_loss_increase: null
     };
 
     const IMAGE_DATASETS = new Set(["MNIST", "FashionMNIST", "EMNIST", "CIFAR10", "CIFAR100"]);
-    const CAA_TABULAR_DATASETS = new Set(["AdultCensus"]);
+    const TABULAR_ADVERSARIAL_DATASETS = new Set(["AdultCensus"]);
     const IMAGE_ATTACK_OPTIONS = [
         {value: "fgsm", label: "FGSM"},
         {value: "pgd", label: "PGD"}
     ];
     const TABULAR_ATTACK_OPTIONS = [
-        {value: "caa", label: "CAA"}
+        {value: "capgd", label: "CAPGD"}
     ];
 
     function initializeAdversarialTraining() {
@@ -73,11 +71,16 @@ const AdversarialTrainingManager = (function() {
     function toggleAttackSettings(attack) {
         const pgdSettings = document.getElementById("adversarial-training-pgd-settings");
         const stepsTitle = document.getElementById("adversarialTrainingStepsTitle");
+        const lossWindowSettings = document.getElementById("adversarial-training-loss-window-settings");
+        const domain = document.getElementById("adversarialTrainingDomain")?.value || DEFAULT_ADVERSARIAL_TRAINING_CONFIG.domain;
         if (!pgdSettings) return;
 
-        pgdSettings.style.display = ["pgd", "caa"].includes(attack) ? "block" : "none";
+        pgdSettings.style.display = ["pgd", "capgd"].includes(attack) ? "block" : "none";
+        if (lossWindowSettings) {
+            lossWindowSettings.style.display = domain === "tabular" ? "block" : "none";
+        }
         if (stepsTitle) {
-            stepsTitle.textContent = attack === "caa" ? "CAA search steps" : "PGD steps";
+            stepsTitle.textContent = domain === "tabular" ? "CAPGD steps" : "PGD steps";
         }
     }
 
@@ -91,7 +94,7 @@ const AdversarialTrainingManager = (function() {
 
         if (datasetNote) {
             datasetNote.style.display = domain === "unsupported" ? "block" : "none";
-            datasetNote.textContent = "Adversarial Training for tabular datasets currently supports AdultCensus with CAA.";
+            datasetNote.textContent = "Adversarial Training for tabular datasets currently supports AdultCensus with CAPGD.";
         }
         if (domainInput) {
             domainInput.value = domain === "unsupported" ? "tabular" : domain;
@@ -116,7 +119,7 @@ const AdversarialTrainingManager = (function() {
         if (IMAGE_DATASETS.has(dataset)) {
             return "image";
         }
-        if (CAA_TABULAR_DATASETS.has(dataset)) {
+        if (TABULAR_ADVERSARIAL_DATASETS.has(dataset)) {
             return "tabular";
         }
         return "unsupported";
@@ -126,7 +129,7 @@ const AdversarialTrainingManager = (function() {
         const attackSelect = document.getElementById("adversarialTrainingAttack");
         if (!attackSelect) return;
 
-        // Tabular datasets intentionally expose only CAA; image datasets expose FGSM/PGD.
+        // Tabular datasets intentionally expose only CAPGD; image datasets expose FGSM/PGD.
         const options = domain === "tabular" ? TABULAR_ATTACK_OPTIONS : IMAGE_ATTACK_OPTIONS;
         const currentAttack = preferredAttack || attackSelect.value;
         attackSelect.innerHTML = "";
@@ -167,7 +170,7 @@ const AdversarialTrainingManager = (function() {
     function getAdversarialTrainingConfig() {
         const domain = document.getElementById("adversarialTrainingDomain")?.value || DEFAULT_ADVERSARIAL_TRAINING_CONFIG.domain;
         const attack = domain === "tabular"
-            ? "caa"
+            ? "capgd"
             : (document.getElementById("adversarialTrainingAttack")?.value || DEFAULT_ADVERSARIAL_TRAINING_CONFIG.attack);
         const config = {
             enabled: Boolean(document.getElementById("adversarialTrainingSwitch")?.checked),
@@ -177,16 +180,26 @@ const AdversarialTrainingManager = (function() {
             alpha: optionalNumberValue("adversarialTrainingAlpha", DEFAULT_ADVERSARIAL_TRAINING_CONFIG.alpha),
             steps: integerValue("adversarialTrainingSteps", DEFAULT_ADVERSARIAL_TRAINING_CONFIG.steps),
             mode: document.getElementById("adversarialTrainingMode")?.value || DEFAULT_ADVERSARIAL_TRAINING_CONFIG.mode,
-            clean_weight: numberValue("adversarialTrainingCleanWeight", DEFAULT_ADVERSARIAL_TRAINING_CONFIG.clean_weight),
-            adversarial_weight: numberValue("adversarialTrainingAdversarialWeight", DEFAULT_ADVERSARIAL_TRAINING_CONFIG.adversarial_weight),
             apply_probability: numberValue("adversarialTrainingApplyProbability", DEFAULT_ADVERSARIAL_TRAINING_CONFIG.apply_probability),
-            clip_min: numberValue("adversarialTrainingClipMin", DEFAULT_ADVERSARIAL_TRAINING_CONFIG.clip_min),
-            clip_max: numberValue("adversarialTrainingClipMax", DEFAULT_ADVERSARIAL_TRAINING_CONFIG.clip_max),
-            log_adversarial_metrics: Boolean(document.getElementById("adversarialTrainingLogMetrics")?.checked)
+            target_loss_increase: optionalNumberValue(
+                "adversarialTrainingTargetLossIncrease",
+                DEFAULT_ADVERSARIAL_TRAINING_CONFIG.target_loss_increase
+            ),
+            max_loss_increase: optionalNumberValue(
+                "adversarialTrainingMaxLossIncrease",
+                DEFAULT_ADVERSARIAL_TRAINING_CONFIG.max_loss_increase
+            ),
+            log_adversarial_metrics: true
         };
 
         if (config.alpha === null || config.attack !== "pgd") {
             delete config.alpha;
+        }
+        if (config.target_loss_increase === null) {
+            delete config.target_loss_increase;
+        }
+        if (config.max_loss_increase === null) {
+            delete config.max_loss_increase;
         }
         return config;
     }
@@ -204,17 +217,15 @@ const AdversarialTrainingManager = (function() {
         setValue("adversarialTrainingEpsilon", adversarialTrainingConfig.epsilon);
         setValue("adversarialTrainingAlpha", adversarialTrainingConfig.alpha ?? "");
         setValue("adversarialTrainingSteps", adversarialTrainingConfig.steps);
-        setValue("adversarialTrainingMode", adversarialTrainingConfig.mode);
-        setValue("adversarialTrainingCleanWeight", adversarialTrainingConfig.clean_weight);
-        setValue("adversarialTrainingAdversarialWeight", adversarialTrainingConfig.adversarial_weight);
+        setValue(
+            "adversarialTrainingMode",
+            ["mixed", "adversarial"].includes(adversarialTrainingConfig.mode)
+                ? adversarialTrainingConfig.mode
+                : DEFAULT_ADVERSARIAL_TRAINING_CONFIG.mode
+        );
         setValue("adversarialTrainingApplyProbability", adversarialTrainingConfig.apply_probability);
-        setValue("adversarialTrainingClipMin", adversarialTrainingConfig.clip_min);
-        setValue("adversarialTrainingClipMax", adversarialTrainingConfig.clip_max);
-
-        const logMetricsInput = document.getElementById("adversarialTrainingLogMetrics");
-        if (logMetricsInput) {
-            logMetricsInput.checked = Boolean(adversarialTrainingConfig.log_adversarial_metrics);
-        }
+        setValue("adversarialTrainingTargetLossIncrease", adversarialTrainingConfig.target_loss_increase ?? "");
+        setValue("adversarialTrainingMaxLossIncrease", adversarialTrainingConfig.max_loss_increase ?? "");
 
         updateDatasetAvailability();
         const domain = document.getElementById("adversarialTrainingDomain")?.value || adversarialTrainingConfig.domain;
@@ -241,20 +252,27 @@ const AdversarialTrainingManager = (function() {
         if (config.epsilon < 0) {
             return "[Adversarial Training] Epsilon must be greater than or equal to 0.";
         }
-        if (["pgd", "caa"].includes(config.attack) && config.steps < 1) {
+        if (["pgd", "capgd"].includes(config.attack) && config.steps < 1) {
             return "[Adversarial Training] Search steps must be at least 1.";
         }
-        if (config.clean_weight < 0 || config.adversarial_weight < 0) {
-            return "[Adversarial Training] Loss weights must be greater than or equal to 0.";
-        }
-        if (config.mode === "mixed" && config.clean_weight + config.adversarial_weight === 0) {
-            return "[Adversarial Training] Mixed mode needs at least one positive loss weight.";
+        if (!["mixed", "adversarial"].includes(config.mode)) {
+            return "[Adversarial Training] Training mode must be Clean + adversarial or Adversarial only.";
         }
         if (config.apply_probability < 0 || config.apply_probability > 1) {
             return "[Adversarial Training] Apply probability must be between 0 and 1.";
         }
-        if (config.clip_min >= config.clip_max) {
-            return "[Adversarial Training] Min bound must be smaller than max bound.";
+        if (config.target_loss_increase !== undefined && config.target_loss_increase < 0) {
+            return "[Adversarial Training] Target loss increase must be greater than or equal to 0.";
+        }
+        if (config.max_loss_increase !== undefined && config.max_loss_increase < 0) {
+            return "[Adversarial Training] Max loss increase must be greater than or equal to 0.";
+        }
+        if (
+            config.target_loss_increase !== undefined
+            && config.max_loss_increase !== undefined
+            && config.target_loss_increase > config.max_loss_increase
+        ) {
+            return "[Adversarial Training] Target loss increase must be smaller than or equal to max loss increase.";
         }
         return null;
     }

@@ -40,7 +40,7 @@ class TabularConstraintSet:
         return self.tensors(x)["perturbable"]
 
     def project(self, x_candidate: torch.Tensor, x_clean: torch.Tensor, epsilon: float) -> torch.Tensor:
-        """Clamp numeric features, round integers, restore immutable features and fix one-hot groups."""
+        # Clamp numeric features, round integers, restore immutable features and fix one-hot groups.
         tensors = self.tensors(x_clean)
         lower, upper = self._bounds(x_clean, epsilon, tensors)
 
@@ -152,6 +152,10 @@ class TabularAdversarialExampleGenerator(AdversarialExampleGenerator):
         other_logits = logits.masked_fill(true_class_mask, float("-inf"))
         return other_logits.max(dim=1).values - true_logits
 
+    def _per_sample_loss(self, logits: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        # CAPGD needs per-sample scores so each row can stop once it is hard enough.
+        return F.cross_entropy(logits, y, reduction="none")
+
 
 class TabularCAPGDGenerator(TabularAdversarialExampleGenerator):
     """First-phase constrained tabular CAPGD generator."""
@@ -170,6 +174,8 @@ class TabularCAPGDGenerator(TabularAdversarialExampleGenerator):
         x_adv = x_clean.clone()
         best_adv = x_adv.clone()
         best_score = torch.full((x_clean.size(0),), float("-inf"), dtype=x_clean.dtype, device=x_clean.device)
+        use_loss_window = self._use_loss_window()
+        clean_loss = self._clean_loss(model, x_clean, y) if use_loss_window else None
 
         for _ in range(steps):
             # CAPGD step: move in the sign of the loss gradient, but only on perturbable features.
@@ -184,16 +190,49 @@ class TabularCAPGDGenerator(TabularAdversarialExampleGenerator):
             candidate = self.constraints.project(candidate, x_clean, epsilon)
 
             with torch.no_grad():
-                # Keep the strongest candidate per sample, not just the last step.
-                candidate_score = self._margin(model(candidate), y)
-                better = candidate_score > best_score
+                # Keep the best candidate per sample, not just the last step.
+                candidate_logits = model(candidate)
+                if use_loss_window:
+                    candidate_score = self._loss_increase(candidate_logits, y, clean_loss)
+                    better = self._loss_window_better(candidate_score, best_score)
+                else:
+                    candidate_score = self._margin(candidate_logits, y)
+                    better = candidate_score > best_score
                 best_adv = torch.where(better.view(-1, 1), candidate, best_adv)
                 best_score = torch.where(better, candidate_score, best_score)
+
+                if self._target_reached(best_score):
+                    break
 
             x_adv = candidate
 
         return best_adv.detach()
 
+    def _use_loss_window(self) -> bool:
+        return self.config.target_loss_increase is not None or self.config.max_loss_increase is not None
 
-# Compatibility alias while old configs/UI still refer to the future CAA attack.
-TabularCAAGenerator = TabularCAPGDGenerator
+    def _clean_loss(self, model, x_clean: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        # Baseline difficulty. Candidate scores become loss(candidate) - loss(clean).
+        with torch.no_grad():
+            return self._per_sample_loss(model(x_clean), y)
+
+    def _loss_increase(
+        self,
+        candidate_logits: torch.Tensor,
+        y: torch.Tensor,
+        clean_loss: torch.Tensor,
+    ) -> torch.Tensor:
+        return self._per_sample_loss(candidate_logits, y) - clean_loss
+
+    def _loss_window_better(self, candidate_score: torch.Tensor, best_score: torch.Tensor) -> torch.Tensor:
+        # A candidate must make the sample harder. If max_loss_increase is set, reject overshoots.
+        valid = candidate_score > 0.0
+        if self.config.max_loss_increase is not None:
+            valid = valid & (candidate_score <= float(self.config.max_loss_increase))
+        return valid & (candidate_score > best_score)
+
+    def _target_reached(self, best_score: torch.Tensor) -> bool:
+        # Once every sample has reached the requested hardness, stop taking stronger steps.
+        if self.config.target_loss_increase is None:
+            return False
+        return bool((best_score >= float(self.config.target_loss_increase)).all().item())

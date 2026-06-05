@@ -748,11 +748,9 @@ class ScenarioManagement:
             for key in (
                 "epsilon",
                 "alpha",
-                "clean_weight",
-                "adversarial_weight",
                 "apply_probability",
-                "clip_min",
-                "clip_max",
+                "target_loss_increase",
+                "max_loss_increase",
             ):
                 if key in adversarial_training and adversarial_training[key] is not None:
                     participant_config["defense_args"]["adversarial_training"][key] = float(
@@ -765,10 +763,6 @@ class ScenarioManagement:
             if "mode" in adversarial_training:
                 participant_config["defense_args"]["adversarial_training"]["mode"] = str(
                     adversarial_training["mode"]
-                )
-            if "log_adversarial_metrics" in adversarial_training:
-                participant_config["defense_args"]["adversarial_training"]["log_adversarial_metrics"] = bool(
-                    adversarial_training["log_adversarial_metrics"]
                 )
             participant_config["device_args"]["accelerator"] = self.scenario.accelerator
             participant_config["device_args"]["gpu_id"] = self.scenario.gpu_id

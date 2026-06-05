@@ -588,7 +588,7 @@
                             style="display: inline; width: 80px; height: 30px;">
                     </div>
                     <small id="adversarial-training-dataset-note" class="form-text text-muted" style="display: none;">
-                        Adversarial Training for tabular datasets currently supports AdultCensus with CAA.
+                        Adversarial Training for tabular datasets currently supports AdultCensus with CAPGD.
                     </small>
                     <div id="adversarial-training-settings" style="margin-top: 10px; display: none;">
                         <input type="hidden" id="adversarialTrainingDomain" value="image">
@@ -606,6 +606,23 @@
                                 placeholder="Epsilon" min="0" step="0.001" value="0.031372549"
                                 style="display: inline; width: 80%">
                         </div>
+                        <h5 class="step-title">Apply probability</h5>
+                        <div class="form-check form-check-inline">
+                            <input type="number" class="form-control" id="adversarialTrainingApplyProbability"
+                                placeholder="Probability" min="0" max="1" step="0.05" value="0.3"
+                                style="display: inline; width: 80%">
+                        </div>
+                        <div id="adversarial-training-loss-window-settings" style="display: none;">
+                            <h5 class="step-title">Tabular hard-example loss window</h5>
+                            <div class="form-check form-check-inline">
+                                <input type="number" class="form-control" id="adversarialTrainingTargetLossIncrease"
+                                    placeholder="Target loss increase" min="0" step="0.01" value=""
+                                    style="display: inline; width: 39%">
+                                <input type="number" class="form-control" id="adversarialTrainingMaxLossIncrease"
+                                    placeholder="Max loss increase" min="0" step="0.01" value=""
+                                    style="display: inline; width: 39%">
+                            </div>
+                        </div>
                         <div id="adversarial-training-pgd-settings" style="display: none;">
                             <h5 class="step-title" id="adversarialTrainingStepsTitle">PGD steps</h5>
                             <div class="form-check form-check-inline">
@@ -621,43 +638,10 @@
                                 style="display: inline; width: 80%">
                                 <option value="mixed" selected>Clean + adversarial</option>
                                 <option value="adversarial">Adversarial only</option>
-                                <option value="clean">Clean only</option>
                             </select>
                         </div>
-                        <details style="margin-top: 10px;">
-                            <summary class="step-title" style="cursor: pointer;">Advanced parameters</summary>
-                            <h5 class="step-title">Loss weights</h5>
-                            <div class="form-check form-check-inline">
-                                <input type="number" class="form-control" id="adversarialTrainingCleanWeight"
-                                    placeholder="Clean weight" min="0" step="0.1" value="0.5"
-                                    style="display: inline; width: 39%">
-                                <input type="number" class="form-control" id="adversarialTrainingAdversarialWeight"
-                                    placeholder="Adversarial weight" min="0" step="0.1" value="0.5"
-                                    style="display: inline; width: 39%">
-                            </div>
-                            <h5 class="step-title">Apply probability</h5>
-                            <div class="form-check form-check-inline">
-                                <input type="number" class="form-control" id="adversarialTrainingApplyProbability"
-                                    placeholder="Probability" min="0" max="1" step="0.05" value="1.0"
-                                    style="display: inline; width: 80%">
-                            </div>
-                            <h5 class="step-title">Pixel bounds</h5>
-                            <div class="form-check form-check-inline">
-                                <input type="number" class="form-control" id="adversarialTrainingClipMin"
-                                    placeholder="Min" step="0.1" value="0.0"
-                                    style="display: inline; width: 39%">
-                                <input type="number" class="form-control" id="adversarialTrainingClipMax"
-                                    placeholder="Max" step="0.1" value="1.0"
-                                    style="display: inline; width: 39%">
-                            </div>
-                            <h5 class="step-title">Log adversarial metrics</h5>
-                            <div class="form-check form-switch" style="margin-left: 23px;">
-                                <input class="form-check-input" type="checkbox" id="adversarialTrainingLogMetrics"
-                                    checked style="display: inline; width: 80px; height: 30px;">
-                            </div>
-                        </details>
                         <small class="form-text text-muted">
-                            Image datasets use FGSM/PGD. AdultCensus uses CAA for tabular adversarial training.
+                            Image datasets use FGSM/PGD. AdultCensus uses CAPGD for tabular adversarial training.
                         </small>
                     </div>
                 </div>
