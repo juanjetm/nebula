@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class CovtypeTorchDataset(Dataset):
     """
-    Simple torch Dataset wrapper for tabular Covtype data.
+    Torch Dataset wrapper for tabular Covtype data.
 
     Returns:
         x: torch.float32 tensor of shape (n_features,)
@@ -81,18 +81,16 @@ class CovtypePartitionHandler(NebulaPartitionHandler):
     def __init__(self, file_path: str, prefix: str, config: Any, empty: bool = False):
         super().__init__(file_path, prefix, config, empty)
 
-        # For tabular data we typically don't apply torchvision transforms.
-        # If you later want normalization here, do it explicitly and carefully
-        # (train stats vs test stats, per-partition stats, etc.).
+        # Tabular features are already preprocessed before partitioning, so no
+        # torchvision-style transform is applied here.
         self.transform = None
 
     def __getitem__(self, idx: int):
         data, target = super().__getitem__(idx)
 
-        # Defensive: depending on how NebulaPartitionHandler stores/returns,
-        # "data" might be list/tuple/np.ndarray. Ensure we end up with 1D float32 tensor.
+        # Partition storage can return lists, numpy arrays or tensors. The model
+        # expects a 1D float32 tensor for each tabular sample.
         if isinstance(data, tuple):
-            # Some vision datasets store (img, meta). For tabular we ignore extras.
             data = data[0]
 
         if isinstance(data, torch.Tensor):
@@ -100,7 +98,7 @@ class CovtypePartitionHandler(NebulaPartitionHandler):
         else:
             x = torch.tensor(np.asarray(data), dtype=torch.float32)
 
-        # Ensure target in [0..num_classes-1] and torch.long
+        # Targets are stored as class indices and consumed by CrossEntropyLoss.
         if isinstance(target, torch.Tensor):
             y = target.to(dtype=torch.long)
         else:
@@ -119,7 +117,7 @@ class CovtypeDataset(NebulaDataset):
     Notes:
     - Covtype has 7 classes.
     - Features are tabular (54 features in the classic version).
-    - We provide a simple train/test split with fixed seed.
+    - Deterministic stratified train/test split.
 
     Requirements:
     - scikit-learn must be installed (for fetch_covtype + train_test_split).
@@ -184,10 +182,14 @@ class CovtypeDataset(NebulaDataset):
     ]
     # Covtype has two kinds of inputs:
     # - terrain measurements, which constrained PGD may perturb;
-    # - binary wilderness/soil indicators, which stay immutable to avoid broken
-    #   one-hot-like combinations.
+    # - binary wilderness/soil indicators, which are already one-hot-like.
+    #
+    # The binary groups are immutable in the current metadata. This avoids
+    # invalid wilderness/soil combinations while still exercising constrained
+    # PGD on the numeric part of the dataset.
     PERTURBABLE_CONTINUOUS_COLUMNS = list(CONTINUOUS_COLUMNS)
     PERTURBABLE_INTEGER_COLUMNS = []
+    NON_PERTURBABLE_COLUMNS = list(BINARY_COLUMNS)
 
     def __init__(
         self,
@@ -236,7 +238,7 @@ class CovtypeDataset(NebulaDataset):
     def _validate_manual_schema(cls, columns) -> None:
         continuous_columns = set(cls.CONTINUOUS_COLUMNS)
         integer_columns = set(cls.PERTURBABLE_INTEGER_COLUMNS)
-        non_perturbable_columns = set(cls.BINARY_COLUMNS)
+        non_perturbable_columns = set(cls.NON_PERTURBABLE_COLUMNS)
         overlapping_columns = sorted(
             (continuous_columns & integer_columns)
             | (continuous_columns & non_perturbable_columns)
@@ -290,13 +292,13 @@ class CovtypeDataset(NebulaDataset):
             feature_names = self._default_feature_names(x.shape[1])
             self._validate_manual_schema(feature_names)
 
-        # Map labels to 0..6 (CrossEntropyLoss convention)
-        # If already 0..6, this is harmless for 1..7 only if we detect min.
+        # sklearn usually returns labels in 1..7. CrossEntropyLoss expects
+        # zero-based class indices, so map them to 0..6 when needed.
         y = np.asarray(y).reshape(-1)
         if y.min() == 1:
             y = y - 1
 
-        # Split "grande"
+        # Build a deterministic stratified train/test split.
         x_train, x_test, y_train, y_test = train_test_split(
             x, y,
             test_size=self.test_size,
@@ -305,7 +307,8 @@ class CovtypeDataset(NebulaDataset):
             stratify=y,
         )
 
-        # Submuestreo estratificado (corto y determinista)
+        # Optional stratified limits keep experiments manageable without
+        # changing the class distribution unnecessarily.
         if self.train_limit is not None and len(y_train) > self.train_limit:
             x_train, _, y_train, _ = train_test_split(
                 x_train, y_train,
@@ -324,8 +327,8 @@ class CovtypeDataset(NebulaDataset):
                 stratify=y_test,
             )
 
-        # Scale only the perturbable terrain measurements. The binary columns
-        # must remain 0/1 because they encode wilderness and soil indicators.
+        # Scale only the terrain measurements. The binary columns must remain
+        # exact 0/1 values because they encode wilderness and soil indicators.
         scaler = StandardScaler()
         x_train = np.asarray(x_train, dtype=np.float32).copy()
         x_test = np.asarray(x_test, dtype=np.float32).copy()
@@ -364,7 +367,8 @@ class CovtypeDataset(NebulaDataset):
     @classmethod
     def _build_adversarial_metadata(cls, feature_names, x_train):
         # Dataset responsibility: declare which variables are perturbable. The
-        # shared builder maps those declarations to feature masks and bounds.
+        # shared builder marks every other feature, including binary indicators,
+        # as non-perturbable and creates the masks consumed by constrained PGD.
         return build_tabular_adversarial_metadata(
             feature_names=feature_names,
             x_train=x_train,
@@ -380,7 +384,7 @@ class CovtypeDataset(NebulaDataset):
         continuous_features = metadata["continuous_features"]
         non_perturbable_features = metadata["non_perturbable_features"]
         logger.info(
-            "[Covtype] Tabular adversarial feature mask | continuous=%s | non_perturbable=%s | "
+            "[Covtype] Tabular adversarial feature mask | continuous=%s | binary_non_perturbable=%s | "
             "continuous_features=%s | non_perturbable_preview=%s",
             len(continuous_features),
             len(non_perturbable_features),

@@ -7,9 +7,11 @@ from nebula.addons.defenses.adversarial_training.base import AdversarialExampleG
 from nebula.addons.defenses.adversarial_training.config import (
     ERR_ALPHA,
     ERR_APPLY_PROBABILITY,
+    ERR_CANDIDATE_SELECTION,
     ERR_EPSILON,
     ERR_IMAGE_ATTACK,
     ERR_LOSS_INCREASE,
+    ERR_MARGIN_WINDOW,
     ERR_MODE,
     ERR_STEPS,
     ERR_TABULAR_ATTACK,
@@ -215,7 +217,8 @@ def apply_adversarial_training_if_enabled(model, participant_config: dict[str, A
             "[AdversarialTrainingDefense] Enabled | dataset=%s | attack=%s | epsilon_max=%s | "
             "epsilon_range=[%.6f, %.6f] | epsilon_step=%.6f | steps=%s | mode=%s | "
             "clean_weight=%.2f | adversarial_weight=%.2f | apply_probability=%.2f | "
-            "target_loss_increase=%s | max_loss_increase=%s | log_adversarial_metrics=%s",
+            "candidate_selection=%s | target_loss_increase=%s | max_loss_increase=%s | "
+            "target_margin=%s | max_margin=%s | log_adversarial_metrics=%s",
             defense.config.dataset_name,
             defense.config.attack,
             defense.config.epsilon,
@@ -227,8 +230,11 @@ def apply_adversarial_training_if_enabled(model, participant_config: dict[str, A
             defense.config.clean_weight,
             defense.config.adversarial_weight,
             defense.config.apply_probability,
+            defense.config.candidate_selection,
             defense.config.target_loss_increase,
             defense.config.max_loss_increase,
+            defense.config.target_margin,
+            defense.config.max_margin,
             defense.config.log_adversarial_metrics,
         )
 
@@ -236,9 +242,11 @@ def apply_adversarial_training_if_enabled(model, participant_config: dict[str, A
 __all__ = [
     "ERR_ALPHA",
     "ERR_APPLY_PROBABILITY",
+    "ERR_CANDIDATE_SELECTION",
     "ERR_EPSILON",
     "ERR_IMAGE_ATTACK",
     "ERR_LOSS_INCREASE",
+    "ERR_MARGIN_WINDOW",
     "ERR_MODE",
     "ERR_STEPS",
     "ERR_TABULAR_ATTACK",

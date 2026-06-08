@@ -1,9 +1,11 @@
 from nebula.addons.defenses.adversarial_training.defense import (
     ERR_ALPHA,
     ERR_APPLY_PROBABILITY,
+    ERR_CANDIDATE_SELECTION,
     ERR_EPSILON,
     ERR_IMAGE_ATTACK,
     ERR_LOSS_INCREASE,
+    ERR_MARGIN_WINDOW,
     ERR_MODE,
     ERR_STEPS,
     ERR_TABULAR_ATTACK,
@@ -28,9 +30,11 @@ from nebula.addons.defenses.adversarial_training.defense import (
 __all__ = [
     "ERR_ALPHA",
     "ERR_APPLY_PROBABILITY",
+    "ERR_CANDIDATE_SELECTION",
     "ERR_EPSILON",
     "ERR_IMAGE_ATTACK",
     "ERR_LOSS_INCREASE",
+    "ERR_MARGIN_WINDOW",
     "ERR_MODE",
     "ERR_STEPS",
     "ERR_TABULAR_ATTACK",

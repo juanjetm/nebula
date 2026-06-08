@@ -1,18 +1,20 @@
 import logging
 import os
-from typing import Tuple, Any
+from typing import Any
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
 from nebula.core.datasets.nebuladataset import NebulaDataset, NebulaPartitionHandler
-from nebula.core.datasets.tabular_metadata import CONTINUOUS, INTEGER, NON_PERTURBABLE, TabularAdversarialMetadata
+from nebula.core.datasets.tabular_metadata import build_tabular_adversarial_metadata
+
+logger = logging.getLogger(__name__)
 
 
 class KDDCUP99TorchDataset(Dataset):
     """
-    Simple torch Dataset wrapper for tabular KDDCUP99 data.
+    Torch Dataset wrapper for tabular KDDCUP99 data.
 
     Returns:
         x: torch.float32 tensor of shape (n_features,)
@@ -59,7 +61,7 @@ class KDDCUP99TorchDataset(Dataset):
     def __len__(self) -> int:
         return int(self.y.shape[0])
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         x_i = torch.from_numpy(self.x[idx])
         y_i = torch.tensor(self.y[idx], dtype=torch.long)
         return x_i, y_i
@@ -76,14 +78,15 @@ class KDDCUP99PartitionHandler(NebulaPartitionHandler):
     def __init__(self, file_path: str, prefix: str, config: Any, empty: bool = False):
         super().__init__(file_path, prefix, config, empty)
 
-        # For tabular data we typically don't apply torchvision transforms.
+        # Tabular features are already preprocessed before partitioning, so no
+        # torchvision-style transform is applied here.
         self.transform = None
 
     def __getitem__(self, idx: int):
         data, target = super().__getitem__(idx)
 
-        # Defensive: depending on how NebulaPartitionHandler stores/returns,
-        # "data" might be list/tuple/np.ndarray. Ensure we end up with 1D float32 tensor.
+        # Partition storage can return lists, numpy arrays or tensors. The model
+        # expects a 1D float32 tensor for each tabular sample.
         if isinstance(data, tuple):
             data = data[0]
 
@@ -92,7 +95,7 @@ class KDDCUP99PartitionHandler(NebulaPartitionHandler):
         else:
             x = torch.tensor(np.asarray(data), dtype=torch.float32)
 
-        # Ensure target in [0..num_classes-1] and torch.long
+        # Targets are stored as class indices and consumed by CrossEntropyLoss.
         if isinstance(target, torch.Tensor):
             y = target.to(dtype=torch.long)
         else:
@@ -112,7 +115,7 @@ class KDDCUP99Dataset(NebulaDataset):
     - KDDCUP99 is a tabular intrusion-detection dataset.
     - sklearn fetch_kddcup99 exposes 41 features.
     - Targets are mapped to a binary task: normal vs attack.
-    - Some columns are categorical/string-like, so we one-hot encode them.
+    - Categorical string columns are one-hot encoded.
     - Targets may come as bytes/strings, so we decode before mapping labels.
 
     Requirements:
@@ -162,7 +165,7 @@ class KDDCUP99Dataset(NebulaDataset):
         "dst_host_rerror_rate",
         "dst_host_srv_rerror_rate",
     ]
-    PERTURBABLE_CONTINUOUS_COLUMNS = [
+    CONTINUOUS_COLUMNS = [
         "serror_rate",
         "srv_serror_rate",
         "rerror_rate",
@@ -179,7 +182,7 @@ class KDDCUP99Dataset(NebulaDataset):
         "dst_host_rerror_rate",
         "dst_host_srv_rerror_rate",
     ]
-    PERTURBABLE_INTEGER_COLUMNS = [
+    INTEGER_COLUMNS = [
         "duration",
         "src_bytes",
         "dst_bytes",
@@ -198,10 +201,12 @@ class KDDCUP99Dataset(NebulaDataset):
         "dst_host_count",
         "dst_host_srv_count",
     ]
-    NON_PERTURBABLE_RAW_COLUMNS = [
+    CATEGORICAL_COLUMNS = [
         "protocol_type",
         "service",
         "flag",
+    ]
+    NON_PERTURBABLE_COLUMNS = [
         "land",
         "logged_in",
         "root_shell",
@@ -209,6 +214,12 @@ class KDDCUP99Dataset(NebulaDataset):
         "is_host_login",
         "is_guest_login",
     ]
+    # KDDCUP99 exposes mixed network-traffic features. For the first supported
+    # adversarial-training version, constrained PGD may perturb numeric traffic
+    # measurements and counters. Protocol/service/flag one-hot columns and
+    # binary login/status flags stay immutable to avoid invalid records.
+    PERTURBABLE_CONTINUOUS_COLUMNS = list(CONTINUOUS_COLUMNS)
+    PERTURBABLE_INTEGER_COLUMNS = list(INTEGER_COLUMNS)
 
     def __init__(
         self,
@@ -259,18 +270,22 @@ class KDDCUP99Dataset(NebulaDataset):
 
     @classmethod
     def _validate_manual_schema(cls, columns) -> None:
-        continuous_columns = set(cls.PERTURBABLE_CONTINUOUS_COLUMNS)
-        integer_columns = set(cls.PERTURBABLE_INTEGER_COLUMNS)
-        non_perturbable_columns = set(cls.NON_PERTURBABLE_RAW_COLUMNS)
+        continuous_columns = set(cls.CONTINUOUS_COLUMNS)
+        integer_columns = set(cls.INTEGER_COLUMNS)
+        categorical_columns = set(cls.CATEGORICAL_COLUMNS)
+        non_perturbable_columns = set(cls.NON_PERTURBABLE_COLUMNS)
         overlapping_columns = sorted(
             (continuous_columns & integer_columns)
+            | (continuous_columns & categorical_columns)
             | (continuous_columns & non_perturbable_columns)
+            | (integer_columns & categorical_columns)
             | (integer_columns & non_perturbable_columns)
+            | (categorical_columns & non_perturbable_columns)
         )
         if overlapping_columns:
             raise ValueError(f"KDDCUP99Dataset columns configured twice: {overlapping_columns}")
 
-        configured_columns = continuous_columns | integer_columns | non_perturbable_columns
+        configured_columns = continuous_columns | integer_columns | categorical_columns | non_perturbable_columns
         dataset_columns = set(columns)
         missing_columns = sorted(configured_columns - dataset_columns)
         if missing_columns:
@@ -284,7 +299,6 @@ class KDDCUP99Dataset(NebulaDataset):
         Loads KDDCUP99 via sklearn, performs deterministic preprocessing
         and train/test split, and wraps into torch Datasets.
         """
-        # Local cache directory for sklearn dataset downloads
         data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
         os.makedirs(data_dir, exist_ok=True)
 
@@ -296,7 +310,6 @@ class KDDCUP99Dataset(NebulaDataset):
         except Exception as e:
             raise ImportError(
                 "KDDCUP99Dataset requires scikit-learn and pandas. "
-                "Install them (e.g., pip install scikit-learn pandas)."
             ) from e
 
         kdd = fetch_kddcup99(
@@ -312,7 +325,8 @@ class KDDCUP99Dataset(NebulaDataset):
         x = kdd.data
         y = kdd.target
 
-        # Defensive conversion to pandas objects
+        # fetch_kddcup99 can return numpy arrays depending on sklearn version.
+        # The preprocessing below expects pandas columns.
         if not hasattr(x, "columns"):
             x = pd.DataFrame(x)
         if not hasattr(y, "astype"):
@@ -320,47 +334,30 @@ class KDDCUP99Dataset(NebulaDataset):
         x = self._ensure_raw_feature_names(x)
         self._validate_manual_schema(x.columns)
 
-        # Decode bytes -> str where needed
         def _decode_if_bytes(v):
             if isinstance(v, (bytes, bytearray)):
                 return v.decode("utf-8", errors="ignore")
             return v
 
-        # Some KDDCUP99 columns are categorical (e.g. protocol/service/flag).
-        # We decode bytes and one-hot encode object/category columns.
+        # Decode bytes before one-hot encoding categorical columns and mapping labels.
         for col in x.columns:
             if x[col].dtype == object:
                 x[col] = x[col].map(_decode_if_bytes)
 
         y = y.map(_decode_if_bytes)
 
-        # One-hot encode categorical columns, keep numeric ones as-is.
+        # One-hot encode protocol/service/flag and keep numeric columns as-is.
         x = pd.get_dummies(x, drop_first=False)
         feature_names = [str(col) for col in x.columns]
-        logging.getLogger().info("[KDDCUP99] Encoded feature dimension: %s", len(feature_names))
-        continuous_features = [
-            x.columns.get_loc(col)
-            for col in self.PERTURBABLE_CONTINUOUS_COLUMNS
-            if col in x.columns
-        ]
-        integer_features = [
-            x.columns.get_loc(col)
-            for col in self.PERTURBABLE_INTEGER_COLUMNS
-            if col in x.columns
-        ]
-        perturbable_features = set(continuous_features) | set(integer_features)
-        non_perturbable_features = [i for i in range(len(feature_names)) if i not in perturbable_features]
-        binary_features = non_perturbable_features
+        logger.info("[KDDCUP99] Encoded feature dimension: %s", len(feature_names))
 
         # Map labels to a binary task: 0 = normal, 1 = attack.
         y = pd.Series(y).astype(str)
         y = y.str.strip()
         y = (y != "normal.").astype(np.int64).to_numpy(copy=False)
-
-        classes = ["normal", "attack"]
         self.num_classes = 2
 
-        # Split "grande"
+        # Build a deterministic stratified train/test split.
         x_train, x_test, y_train, y_test = train_test_split(
             x, y,
             test_size=self.test_size,
@@ -369,7 +366,8 @@ class KDDCUP99Dataset(NebulaDataset):
             stratify=y,
         )
 
-        # Submuestreo estratificado (corto y determinista)
+        # Optional stratified limits keep experiments manageable without
+        # changing the class distribution unnecessarily.
         if self.train_limit is not None and len(y_train) > self.train_limit:
             x_train, _, y_train, _ = train_test_split(
                 x_train, y_train,
@@ -378,7 +376,7 @@ class KDDCUP99Dataset(NebulaDataset):
                 shuffle=True,
                 stratify=y_train,
             )
-            logging.getLogger().info("[KDDCUP99] Limited train split to %s samples", len(y_train))
+            logger.info("[KDDCUP99] Limited train split to %s samples", len(y_train))
 
         if self.test_limit is not None and len(y_test) > self.test_limit:
             x_test, _, y_test, _ = train_test_split(
@@ -388,64 +386,97 @@ class KDDCUP99Dataset(NebulaDataset):
                 shuffle=True,
                 stratify=y_test,
             )
-            logging.getLogger().info("[KDDCUP99] Limited test split to %s samples", len(y_test))
+            logger.info("[KDDCUP99] Limited test split to %s samples", len(y_test))
 
         x_train_np = x_train.astype(np.float32).to_numpy(copy=True)
         x_test_np = x_test.astype(np.float32).to_numpy(copy=True)
 
-        # Scale perturbable numeric columns after splitting. One-hot and binary flags stay unchanged.
+        # Scale perturbable numeric columns after splitting. One-hot categorical
+        # columns and binary flags remain exact 0/1 values.
+        continuous_features = self._column_indices(x_train.columns, self.CONTINUOUS_COLUMNS)
+        integer_features = self._column_indices(x_train.columns, self.INTEGER_COLUMNS)
         scaled_features = continuous_features + integer_features
+        integer_step_by_column = {}
         if scaled_features:
             scaler = StandardScaler()
             x_train_np[:, scaled_features] = scaler.fit_transform(x_train_np[:, scaled_features])
             x_test_np[:, scaled_features] = scaler.transform(x_test_np[:, scaled_features])
-        integer_step_norm = {}
-        if integer_features:
-            integer_step_norm = {
-                idx: float(1.0 / scale)
-                for idx, scale in zip(integer_features, scaler.scale_[len(continuous_features):], strict=False)
+            integer_scales = scaler.scale_[len(continuous_features):]
+            integer_step_by_column = {
+                column: float(1.0 / scale)
+                for column, scale in zip(self.INTEGER_COLUMNS, integer_scales, strict=False)
             }
-        continuous_feature_set = set(continuous_features)
-        integer_feature_set = set(integer_features)
-        tabular_metadata = TabularAdversarialMetadata(
-            feature_names=feature_names,
-            feature_types=[
-                CONTINUOUS if idx in continuous_feature_set
-                else INTEGER if idx in integer_feature_set
-                else NON_PERTURBABLE
-                for idx in range(len(feature_names))
-            ],
-            feature_min_norm=np.min(x_train_np, axis=0).astype(float).tolist(),
-            feature_max_norm=np.max(x_train_np, axis=0).astype(float).tolist(),
-            integer_step_norm=integer_step_norm,
-        ).to_dict()
 
-        train_ds = KDDCUP99TorchDataset(
-            x_train_np,
-            y_train,
-            feature_names=feature_names,
-            continuous_features=continuous_features,
-            integer_features=integer_features,
-            non_perturbable_features=non_perturbable_features,
-            binary_features=binary_features,
-            tabular_metadata=tabular_metadata,
-        )
-        test_ds = KDDCUP99TorchDataset(
-            x_test_np,
-            y_test,
-            feature_names=feature_names,
-            continuous_features=continuous_features,
-            integer_features=integer_features,
-            non_perturbable_features=non_perturbable_features,
-            binary_features=binary_features,
-            tabular_metadata=tabular_metadata,
+        metadata = self._build_adversarial_metadata(feature_names, x_train_np, integer_step_by_column)
+        self._log_adversarial_metadata(metadata, feature_names)
+
+        return (
+            self._make_dataset(x_train_np, y_train, feature_names, metadata),
+            self._make_dataset(x_test_np, y_test, feature_names, metadata),
         )
 
-        # Optional: preserve original class names for inspection/debugging
-        train_ds.classes = classes
-        test_ds.classes = classes
+    @staticmethod
+    def _column_indices(columns, names: list[str]) -> list[int]:
+        return [columns.get_loc(name) for name in names if name in columns]
 
-        return train_ds, test_ds
+    @staticmethod
+    def _make_dataset(
+        x: np.ndarray,
+        y: np.ndarray,
+        feature_names: list[str],
+        metadata: dict[str, Any],
+    ) -> KDDCUP99TorchDataset:
+        dataset = KDDCUP99TorchDataset(
+            x,
+            y,
+            feature_names=feature_names,
+            continuous_features=metadata["continuous_features"],
+            integer_features=metadata["integer_features"],
+            non_perturbable_features=metadata["non_perturbable_features"],
+            binary_features=metadata["non_perturbable_features"],
+            tabular_metadata=metadata["tabular_metadata"],
+        )
+        dataset.classes = ["normal", "attack"]
+        return dataset
+
+    @classmethod
+    def _build_adversarial_metadata(
+        cls,
+        feature_names: list[str],
+        x_train: np.ndarray,
+        integer_step_by_column: dict[str, float],
+    ) -> dict[str, Any]:
+        # Dataset responsibility: declare which raw variables are perturbable.
+        # The shared builder maps that declaration to transformed feature masks,
+        # bounds and integer steps in model-input space.
+        return build_tabular_adversarial_metadata(
+            feature_names=feature_names,
+            x_train=x_train,
+            continuous_columns=cls.CONTINUOUS_COLUMNS,
+            integer_columns=cls.INTEGER_COLUMNS,
+            categorical_columns=cls.CATEGORICAL_COLUMNS,
+            perturbable_continuous_columns=cls.PERTURBABLE_CONTINUOUS_COLUMNS,
+            perturbable_integer_columns=cls.PERTURBABLE_INTEGER_COLUMNS,
+            integer_step_by_column=integer_step_by_column,
+        )
+
+    @staticmethod
+    def _log_adversarial_metadata(metadata: dict[str, Any], feature_names: list[str]) -> None:
+        continuous_features = metadata["continuous_features"]
+        integer_features = metadata["integer_features"]
+        non_perturbable_features = metadata["non_perturbable_features"]
+        logger.info(
+            "[KDDCUP99] Tabular adversarial feature mask | continuous=%s | integer=%s | "
+            "non_perturbable=%s | continuous_features=%s | integer_features=%s | "
+            "non_perturbable_preview=%s | integer_step_norm=%s",
+            len(continuous_features),
+            len(integer_features),
+            len(non_perturbable_features),
+            [feature_names[idx] for idx in continuous_features],
+            [feature_names[idx] for idx in integer_features],
+            [feature_names[idx] for idx in non_perturbable_features[:20]],
+            metadata["integer_step_norm"],
+        )
 
     def generate_non_iid_map(self, dataset, partition: str = "dirichlet", partition_parameter: float = 0.5):
         if partition == "dirichlet":

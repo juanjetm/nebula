@@ -117,8 +117,11 @@
       "steps": 1,
       "mode": "mixed",
       "apply_probability": 0.3,
+      "candidate_selection": "none",
       "target_loss_increase": null,
-      "max_loss_increase": null
+      "max_loss_increase": null,
+      "target_margin": 0,
+      "max_margin": 0.5
     },
     "reputation": {
       "enabled": false,

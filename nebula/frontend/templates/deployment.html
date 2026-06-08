@@ -588,7 +588,7 @@
                             style="display: inline; width: 80px; height: 30px;">
                     </div>
                     <small id="adversarial-training-dataset-note" class="form-text text-muted" style="display: none;">
-                        Adversarial Training for tabular datasets currently supports AdultCensus, BreastCancer, and Covtype with constrained PGD.
+                        Adversarial Training for tabular datasets currently supports AdultCensus, BreastCancer, Covtype, and KDDCUP99 with constrained PGD.
                     </small>
                     <div id="adversarial-training-settings" style="margin-top: 10px; display: none;">
                         <input type="hidden" id="adversarialTrainingDomain" value="image">
@@ -612,14 +612,36 @@
                                 placeholder="Probability" min="0" max="1" step="0.05" value="0.3"
                                 style="display: inline; width: 80%">
                         </div>
+                        <div id="adversarial-training-candidate-selection-settings" style="display: none;">
+                            <h5 class="step-title">Tabular candidate selection</h5>
+                            <div class="form-check form-check-inline">
+                                <select class="form-control" id="adversarialTrainingCandidateSelection"
+                                    style="display: inline; width: 80%">
+                                    <option value="none" selected>None</option>
+                                    <option value="loss_window">Loss window</option>
+                                    <option value="margin_window">Margin window</option>
+                                </select>
+                            </div>
+                        </div>
                         <div id="adversarial-training-loss-window-settings" style="display: none;">
-                            <h5 class="step-title">Tabular hard-example loss window</h5>
+                            <h5 class="step-title">Tabular loss window</h5>
                             <div class="form-check form-check-inline">
                                 <input type="number" class="form-control" id="adversarialTrainingTargetLossIncrease"
                                     placeholder="Target loss increase" min="0" step="0.01" value=""
                                     style="display: inline; width: 39%">
                                 <input type="number" class="form-control" id="adversarialTrainingMaxLossIncrease"
                                     placeholder="Max loss increase" min="0" step="0.01" value=""
+                                    style="display: inline; width: 39%">
+                            </div>
+                        </div>
+                        <div id="adversarial-training-margin-window-settings" style="display: none;">
+                            <h5 class="step-title">Tabular margin window</h5>
+                            <div class="form-check form-check-inline">
+                                <input type="number" class="form-control" id="adversarialTrainingTargetMargin"
+                                    placeholder="Target margin" step="0.01" value="0"
+                                    style="display: inline; width: 39%">
+                                <input type="number" class="form-control" id="adversarialTrainingMaxMargin"
+                                    placeholder="Max margin" step="0.01" value="0.5"
                                     style="display: inline; width: 39%">
                             </div>
                         </div>
@@ -641,7 +663,7 @@
                             </select>
                         </div>
                         <small class="form-text text-muted">
-                            Image datasets use FGSM/PGD. AdultCensus, BreastCancer, and Covtype use constrained PGD for tabular adversarial training.
+                            Image datasets use FGSM/PGD. AdultCensus, BreastCancer, Covtype, and KDDCUP99 use constrained PGD for tabular adversarial training.
                         </small>
                     </div>
                 </div>

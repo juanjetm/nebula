@@ -174,7 +174,9 @@ class TabularConstrainedPGDGenerator(TabularAdversarialExampleGenerator):
         x_adv = x_clean.clone()
         best_adv = x_adv.clone()
         best_score = torch.full((x_clean.size(0),), float("-inf"), dtype=x_clean.dtype, device=x_clean.device)
+        best_distance = torch.full((x_clean.size(0),), float("inf"), dtype=x_clean.dtype, device=x_clean.device)
         use_loss_window = self._use_loss_window()
+        use_margin_window = self._use_margin_window()
         clean_loss = self._clean_loss(model, x_clean, y) if use_loss_window else None
 
         for _ in range(steps):
@@ -195,13 +197,18 @@ class TabularConstrainedPGDGenerator(TabularAdversarialExampleGenerator):
                 if use_loss_window:
                     candidate_score = self._loss_increase(candidate_logits, y, clean_loss)
                     better = self._loss_window_better(candidate_score, best_score)
+                elif use_margin_window:
+                    candidate_score = self._margin(candidate_logits, y)
+                    candidate_distance = self._margin_window_distance(candidate_score)
+                    better = self._margin_window_better(candidate_score, candidate_distance, best_score, best_distance)
+                    best_distance = torch.where(better, candidate_distance, best_distance)
                 else:
                     candidate_score = self._margin(candidate_logits, y)
                     better = candidate_score > best_score
                 best_adv = torch.where(better.view(-1, 1), candidate, best_adv)
                 best_score = torch.where(better, candidate_score, best_score)
 
-                if self._target_reached(best_score):
+                if self._target_reached(best_score, best_distance):
                     break
 
             x_adv = candidate
@@ -209,7 +216,10 @@ class TabularConstrainedPGDGenerator(TabularAdversarialExampleGenerator):
         return best_adv.detach()
 
     def _use_loss_window(self) -> bool:
-        return self.config.target_loss_increase is not None or self.config.max_loss_increase is not None
+        return self.config.candidate_selection == "loss_window"
+
+    def _use_margin_window(self) -> bool:
+        return self.config.candidate_selection == "margin_window"
 
     def _clean_loss(self, model, x_clean: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         # Baseline difficulty. Candidate scores become loss(candidate) - loss(clean).
@@ -231,8 +241,35 @@ class TabularConstrainedPGDGenerator(TabularAdversarialExampleGenerator):
             valid = valid & (candidate_score <= float(self.config.max_loss_increase))
         return valid & (candidate_score > best_score)
 
-    def _target_reached(self, best_score: torch.Tensor) -> bool:
-        # Once every sample has reached the requested hardness, stop taking stronger steps.
-        if self.config.target_loss_increase is None:
-            return False
-        return bool((best_score >= float(self.config.target_loss_increase)).all().item())
+    def _margin_window_distance(self, margin: torch.Tensor) -> torch.Tensor:
+        # Distance is zero inside the window and positive outside. This gives a
+        # soft fallback when discrete tabular steps jump over the desired range.
+        distance = torch.zeros_like(margin)
+        if self.config.target_margin is not None:
+            target = torch.full_like(margin, float(self.config.target_margin))
+            distance = torch.maximum(distance, target - margin)
+        if self.config.max_margin is not None:
+            maximum = torch.full_like(margin, float(self.config.max_margin))
+            distance = torch.maximum(distance, margin - maximum)
+        return distance
+
+    def _margin_window_better(
+        self,
+        candidate_score: torch.Tensor,
+        candidate_distance: torch.Tensor,
+        best_score: torch.Tensor,
+        best_distance: torch.Tensor,
+    ) -> torch.Tensor:
+        closer = candidate_distance < best_distance
+        same_distance = candidate_distance == best_distance
+        stronger = candidate_score > best_score
+        return closer | (same_distance & stronger)
+
+    def _target_reached(self, best_score: torch.Tensor, best_distance: torch.Tensor) -> bool:
+        if self._use_loss_window():
+            if self.config.target_loss_increase is None:
+                return False
+            return bool((best_score >= float(self.config.target_loss_increase)).all().item())
+        if self._use_margin_window():
+            return bool((best_distance <= torch.finfo(best_distance.dtype).eps).all().item())
+        return False
