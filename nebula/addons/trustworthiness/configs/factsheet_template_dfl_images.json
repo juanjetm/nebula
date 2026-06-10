@@ -48,11 +48,11 @@
 		"test_acc": "",
 		"test_macro_f1": "",
 		"clipped_test_feature_importance_cv": "",
-		"clipped_test_clever": "",
+		"test_clever_score": "",
 		"inverse_test_loss_sensitivity": "",
-		"clipped_test_adv_accuracy": "",
-		"clipped_test_empirical_robustness": "",
-		"clipped_test_confidence_score": "",
+		"test_adv_accuracy": "",
+		"test_empirical_robustness_score": "",
+		"test_confidence_score": "",
 		"inverse_test_attack_success_rate": ""
 	},
 	"fairness": {

@@ -25,6 +25,7 @@ from nebula.addons.defenses.adversarial_training.config import (
     config_from_participant,
     validate_config,
 )
+from nebula.core.datasets.image_metadata import get_image_normalization
 from nebula.addons.defenses.adversarial_training.image import (
     ImageAdversarialExampleGenerator,
     ImageFGSMGenerator,
@@ -69,7 +70,7 @@ class AdversarialTrainingDefense:
 
         if config.domain == "image":
             # Image attacks run in normalized model space, so each dataset must provide mean/std.
-            normalization = IMAGE_DATASET_NORMALIZATION.get(config.dataset_name)
+            normalization = get_image_normalization(config.dataset_name)
             if normalization is None:
                 logging.warning(
                     "[AdversarialTrainingDefense] Skipping adversarial training: dataset '%s' has no image bounds",

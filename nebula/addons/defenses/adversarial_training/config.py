@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Any
 
+from nebula.core.datasets.image_metadata import IMAGE_DATASET_NORMALIZATION
+
 IMAGE_ADVERSARIAL_ATTACKS = {"fgsm", "pgd"}
 TABULAR_ADVERSARIAL_ATTACKS = {"constrained_pgd"}
 TABULAR_ADVERSARIAL_DATASETS = {"AdultCensus", "BreastCancer", "Covtype", "KDDCUP99"}
@@ -19,15 +21,6 @@ ERR_LOSS_INCREASE = "adversarial_training loss increase thresholds must be >= 0 
 ERR_MARGIN_WINDOW = "adversarial_training margin thresholds must satisfy target_margin <= max_margin"
 ERR_TABULAR_METADATA = "Tabular adversarial training requires tabular_metadata"
 ERR_UNSUPPORTED_ATTACK = "Unsupported adversarial training attack: {attack}"
-
-IMAGE_DATASET_NORMALIZATION = {
-    "MNIST": ((0.5,), (0.5,)),
-    "FashionMNIST": ((0.5,), (0.5,)),
-    "EMNIST": ((0.5,), (0.5,)),
-    "CIFAR10": ((0.4914, 0.4822, 0.4465), (0.2471, 0.2435, 0.2616)),
-    "CIFAR100": ((0.4914, 0.4822, 0.4465), (0.2471, 0.2435, 0.2616)),
-}
-
 
 @dataclass(frozen=True)
 class AdversarialTrainingConfig:

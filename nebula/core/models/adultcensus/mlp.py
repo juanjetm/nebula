@@ -26,6 +26,7 @@ class AdultCensusModelMLP(NebulaModel):
     ):
         # NebulaModel expects something like input_channels first; for tabular we pass input_dim there.
         super().__init__(input_dim, num_classes, learning_rate, metrics, confusion_matrix, seed)
+        self.data_type = data_type
 
         self.config = {"beta1": 0.9, "beta2": 0.999, "amsgrad": True}
 

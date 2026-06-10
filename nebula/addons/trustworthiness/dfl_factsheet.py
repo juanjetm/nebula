@@ -62,6 +62,7 @@ class DflFactsheet:
             data["federation"],
             model,
             self.factsheet_template_file_nm,
+            dataset_name=data["dataset"],
         )
 
         factsheet_file = get_factsheet_path(scenario_name, self.factsheet_file_nm)

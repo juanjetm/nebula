@@ -15,6 +15,7 @@ class MNISTModelMLP(NebulaModel):
         data_type="Images",
     ):
         super().__init__(input_channels, num_classes, learning_rate, metrics, confusion_matrix, seed)
+        self.data_type = data_type
 
         self.example_input_array = torch.zeros(1, 1, 28, 28)
         self.learning_rate = learning_rate

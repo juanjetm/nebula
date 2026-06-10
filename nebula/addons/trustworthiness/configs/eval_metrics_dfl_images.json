@@ -7,7 +7,7 @@
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "performance/clipped_test_clever"
+                "field_path": "performance/test_clever_score"
               }
             ],
             "operation": "get_value",
@@ -27,40 +27,40 @@
             "description": "Inverse loss sensitivity score; higher values indicate lower sensitivity of the loss to input perturbations.",
             "weight": 0.2
           },
-          "clipped_adversarial_accuracy": {
+          "adversarial_accuracy": {
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "performance/clipped_test_adv_accuracy"
+                "field_path": "performance/test_adv_accuracy"
               }
             ],
             "operation": "get_value",
             "type": "true_score",
-            "description": "Adversarial accuracy clipped to the expected score range; higher values indicate better predictive performance under adversarial perturbations.",
+            "description": "Adversarial accuracy; higher values indicate better predictive performance under adversarial perturbations.",
             "weight": 0.2
           },
-          "clipped_empirical_robustness": {
+          "empirical_robustness_score": {
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "performance/clipped_test_empirical_robustness"
+                "field_path": "performance/test_empirical_robustness_score"
               }
             ],
             "operation": "get_value",
             "type": "true_score",
-            "description": "Empirical robustness clipped to the expected score range; higher values indicate stronger resistance to adversarial perturbations.",
+            "description": "Empirical robustness score; higher values indicate stronger resistance to adversarial perturbations.",
             "weight": 0.15
           },
-          "clipped_confidence_score": {
+          "confidence_score": {
             "inputs": [
               {
                 "source": "factsheet",
-                "field_path": "performance/clipped_test_confidence_score"
+                "field_path": "performance/test_confidence_score"
               }
             ],
             "operation": "get_value",
             "type": "true_score",
-            "description": "Confidence score clipped to the expected score range; higher values indicate more stable predictive confidence.",
+            "description": "Confidence score; higher values indicate more stable predictive confidence.",
             "weight": 0.1
           },
           "inverse_attack_success_rate": {
@@ -645,7 +645,7 @@
               },
               {
                 "source": "factsheet",
-                "field_path": "performance/clipped_test_clever"
+                "field_path": "performance/test_clever_score"
               },
               {
                 "source": "factsheet",
@@ -653,15 +653,15 @@
               },
               {
                 "source": "factsheet",
-                "field_path": "performance/clipped_test_adv_accuracy"
+                "field_path": "performance/test_adv_accuracy"
               },
               {
                 "source": "factsheet",
-                "field_path": "performance/clipped_test_empirical_robustness"
+                "field_path": "performance/test_empirical_robustness_score"
               },
               {
                 "source": "factsheet",
-                "field_path": "performance/clipped_test_confidence_score"
+                "field_path": "performance/test_confidence_score"
               },
               {
                 "source": "factsheet",

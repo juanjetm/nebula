@@ -16,6 +16,7 @@ class FasterMobileNet(NebulaModel):
         data_type="Images",
     ):
         super().__init__(input_channels, num_classes, learning_rate, metrics, confusion_matrix, seed)
+        self.data_type = data_type
 
         self.config = {"beta1": 0.851436, "beta2": 0.999689, "amsgrad": True}
 

@@ -42,6 +42,7 @@ class CIFAR10ModelResNet(NebulaModel):
         data_type="Images",
     ):
         super().__init__()
+        self.data_type = data_type
         if metrics is None:
             metrics = MetricCollection([
                 MulticlassAccuracy(num_classes=num_classes),

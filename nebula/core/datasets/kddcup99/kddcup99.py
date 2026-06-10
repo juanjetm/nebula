@@ -233,8 +233,8 @@ class KDDCUP99Dataset(NebulaDataset):
         seed: int = 42,
         config_dir: str | None = None,
         test_size: float = 0.2,
-        train_limit: int | None = 12000,
-        test_limit: int | None = 2000,
+        train_limit: int | None = 20000,
+        test_limit: int | None = 4000,
         subset: str | None = None,
         percent10: bool = True,
     ):

@@ -16,6 +16,7 @@ class KDDCUP99ModelMLP(NebulaModel):
         data_type="Tabular",
     ):
         super().__init__(input_channels, num_classes, learning_rate, metrics, confusion_matrix, seed)
+        self.data_type = data_type
 
         self.input_size = input_size
         self.example_input_array = torch.zeros(1, self.input_size)

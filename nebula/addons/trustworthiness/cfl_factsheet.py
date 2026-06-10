@@ -23,7 +23,6 @@ from nebula.addons.trustworthiness.helpers.scenario_metrics import (
     get_underfitting_score,
 )
 from nebula.addons.trustworthiness.factsheet_common import (
-    cap_score,
     get_factsheet_path,
     get_factsheet_template_name,
     get_trustworthiness_dir,
@@ -67,6 +66,7 @@ class CflFactsheet:
             data["federation"],
             model,
             self.factsheet_template_file_nm,
+            dataset_name=data["dataset"],
         )
 
         try:
@@ -129,7 +129,7 @@ class CflFactsheet:
 
             # Convert class imbalance and runtime summaries into factsheet fields.
             class_imbalance_score = get_class_imbalance_score(avg_class_imbalance)
-            factsheet["fairness"]["class_imbalance"] = cap_score(class_imbalance_score)
+            factsheet["fairness"]["class_imbalance"] = class_imbalance_score
             populate_reputation(factsheet, reputation_summary)
 
             underfitting_score = get_underfitting_score(scenario_name, participant_idx)

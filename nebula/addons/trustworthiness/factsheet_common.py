@@ -8,32 +8,55 @@ dirname = os.path.dirname(__file__)
 # Shared helpers for trustworthiness factsheet generation.
 DATA_TYPE_IMAGES = "images"
 DATA_TYPE_TABULAR = "tabular"
+DATASET_DATA_TYPES = {
+    "mnist": DATA_TYPE_IMAGES,
+    "fashionmnist": DATA_TYPE_IMAGES,
+    "emnist": DATA_TYPE_IMAGES,
+    "cifar10": DATA_TYPE_IMAGES,
+    "cifar100": DATA_TYPE_IMAGES,
+    "kddcup99": DATA_TYPE_TABULAR,
+    "adultcensus": DATA_TYPE_TABULAR,
+    "breastcancer": DATA_TYPE_TABULAR,
+    "covtype": DATA_TYPE_TABULAR,
+    "sentiment140": DATA_TYPE_TABULAR,
+}
 
 
-def get_model_data_type(model):
-    # Return the data type declared by the model, when available.
-    if not hasattr(model, "get_data_type"):
+def get_dataset_data_type(dataset_name):
+    # Infer the data type from Nebula's built-in dataset names.
+    if dataset_name is None:
         return ""
+
+    normalized_name = str(dataset_name).strip().lower().replace("_", "").replace("-", "")
+    return DATASET_DATA_TYPES.get(normalized_name, "")
+
+
+def get_model_data_type(model, dataset_name=None):
+    # Return the model-declared data type, falling back to the dataset name.
+    if not hasattr(model, "get_data_type"):
+        return get_dataset_data_type(dataset_name)
 
     try:
         data_type = model.get_data_type()
     except AttributeError:
-        return ""
+        return get_dataset_data_type(dataset_name)
 
     if data_type is None:
-        return ""
-    return str(data_type).strip()
+        return get_dataset_data_type(dataset_name)
+
+    data_type = str(data_type).strip()
+    return data_type or get_dataset_data_type(dataset_name)
 
 
-def get_normalized_model_data_type(model):
+def get_normalized_model_data_type(model, dataset_name=None):
     # Normalize the model data type before matching templates or profiles.
-    return get_model_data_type(model).lower()
+    return get_model_data_type(model, dataset_name=dataset_name).lower()
 
 
-def get_factsheet_template_name(federation, model, default_template_name):
+def get_factsheet_template_name(federation, model, default_template_name, dataset_name=None):
     # Select a data-type-specific template when one exists for the federation.
     federation_prefix = "dfl" if str(federation).upper() in {"DFL", "SDFL"} else "cfl"
-    data_type = get_normalized_model_data_type(model)
+    data_type = get_normalized_model_data_type(model, dataset_name=dataset_name)
 
     if data_type not in {DATA_TYPE_IMAGES, DATA_TYPE_TABULAR}:
         return default_template_name
@@ -88,6 +111,11 @@ def cap_score(value, maximum=1):
 def inverse_score(value):
     # Convert an error or risk value into a bounded inverse score.
     return 1 / (1 + value)
+
+
+def inverse_bounded_score(value):
+    # Invert an error already bounded in [0, 1] while keeping the full score range.
+    return min(max(1 - float(value), 0.0), 1.0)
 
 
 def get_enabled_defences(data):
@@ -153,7 +181,7 @@ def populate_common_pre_train_sections(factsheet, data, model):
     factsheet["project"]["background"] = build_project_background(data)
 
     factsheet["data"]["provenance"] = data["dataset"]
-    factsheet["data"]["type"] = get_model_data_type(model)
+    factsheet["data"]["type"] = get_model_data_type(model, dataset_name=data["dataset"])
     factsheet["data"]["preprocessing"] = data["topology"]
 
     factsheet["participants"]["client_num"] = data["n_nodes"] or ""

@@ -17,7 +17,7 @@ from nebula.addons.trustworthiness.helpers.privacy import (
 )
 from nebula.addons.trustworthiness.helpers.robustness import (
     attack_success_rate,
-    compute_adversarial_accuracy_art,
+    get_adversarial_accuracy,
     get_clever_score,
     get_confidence_score,
     get_empirical_robustness_score,
@@ -30,6 +30,7 @@ from nebula.addons.trustworthiness.factsheet_common import (
     DATA_TYPE_TABULAR,
     cap_score,
     get_normalized_model_data_type,
+    inverse_bounded_score,
     inverse_score,
 )
 
@@ -52,7 +53,9 @@ def populate_profile_metrics(
 ):
     # Select the profile-specific populator, falling back to the shared metric set.
     federation_profile = get_federation_profile(federation)
-    data_type = get_normalized_model_data_type(model)
+    data_type = str(factsheet.get("data", {}).get("type", "")).strip().lower()
+    if not data_type:
+        data_type = get_normalized_model_data_type(model)
     populator = PROFILE_POPULATORS.get((federation_profile, data_type), populate_common_profile_metrics)
 
     populator(
@@ -65,23 +68,27 @@ def populate_profile_metrics(
 
 
 def populate_cfl_images_metrics(factsheet, model, train_loader, test_loader, test_accuracy):
-    # Populate the current shared metrics for CFL image factsheets.
+    # Image factsheets include all image-compatible robustness metrics.
     populate_common_profile_metrics(factsheet, model, train_loader, test_loader, test_accuracy)
+    populate_image_robustness_metrics(factsheet, model, test_loader)
 
 
 def populate_cfl_tabular_metrics(factsheet, model, train_loader, test_loader, test_accuracy):
-    # Populate the current shared metrics for CFL tabular factsheets.
+    # Tabular factsheets use only metrics shared by valid tabular and image workflows.
     populate_common_profile_metrics(factsheet, model, train_loader, test_loader, test_accuracy)
+    remove_image_only_robustness_metrics(factsheet)
 
 
 def populate_dfl_images_metrics(factsheet, model, train_loader, test_loader, test_accuracy):
-    # Populate the current shared metrics for DFL/SDFL image factsheets.
+    # Image factsheets include all image-compatible robustness metrics.
     populate_common_profile_metrics(factsheet, model, train_loader, test_loader, test_accuracy)
+    populate_image_robustness_metrics(factsheet, model, test_loader)
 
 
 def populate_dfl_tabular_metrics(factsheet, model, train_loader, test_loader, test_accuracy):
-    # Populate the current shared metrics for DFL/SDFL tabular factsheets.
+    # Tabular factsheets use only metrics shared by valid tabular and image workflows.
     populate_common_profile_metrics(factsheet, model, train_loader, test_loader, test_accuracy)
+    remove_image_only_robustness_metrics(factsheet)
 
 
 def populate_common_profile_metrics(factsheet, model, train_loader, test_loader, test_accuracy):
@@ -99,7 +106,7 @@ def populate_common_profile_metrics(factsheet, model, train_loader, test_loader,
         test_sample,
     )
     populate_common_explainability_metrics(factsheet, explainability_metrics)
-    populate_common_robustness_metrics(factsheet, model, test_loader, test_sample)
+    populate_common_robustness_metrics(factsheet, model, test_loader)
 
 
 def populate_common_model_quality_metrics(
@@ -120,10 +127,10 @@ def populate_common_model_quality_metrics(
 
     # Fairness and calibration metrics expressed as inverse scores.
     overfitting_value = max(0.0, float(factsheet["performance"]["train_accuracy"]) - float(test_accuracy))
-    factsheet["fairness"]["inverse_overfitting"] = inverse_score(overfitting_value)
+    factsheet["fairness"]["inverse_overfitting"] = inverse_bounded_score(overfitting_value)
 
     well_calibration_error_value = get_well_calibration_error(model, test_loader)
-    factsheet["fairness"]["inverse_well_calibration_error"] = inverse_score(well_calibration_error_value)
+    factsheet["fairness"]["inverse_well_calibration_error"] = inverse_bounded_score(well_calibration_error_value)
 
     generalized_entropy_index_value = get_generalized_entropy_index(model, test_loader)
     factsheet["fairness"]["inverse_generalized_entropy_index"] = inverse_score(generalized_entropy_index_value)
@@ -134,9 +141,9 @@ def populate_common_model_quality_metrics(
     coefficient_of_variation_value = get_coefficient_of_variation(model, test_loader)
     factsheet["fairness"]["inverse_coefficient_of_variation"] = inverse_score(coefficient_of_variation_value)
 
-    # Confidence is capped so factsheet scores stay within the expected range.
+    # Confidence is already a probability-like score in [0, 1].
     value_confidence_score = get_confidence_score(model, test_sample)
-    factsheet["performance"]["clipped_test_confidence_score"] = cap_score(value_confidence_score)
+    factsheet["performance"]["test_confidence_score"] = value_confidence_score
 
 
 def populate_common_explainability_metrics(factsheet, explainability_metrics):
@@ -149,21 +156,34 @@ def populate_common_explainability_metrics(factsheet, explainability_metrics):
     factsheet["performance"]["clipped_test_feature_importance_cv"] = cap_score(feature_importance)
 
 
-def populate_common_robustness_metrics(factsheet, model, test_loader, test_sample):
-    # Populate adversarial robustness metrics shared by the current factsheet profiles.
+def populate_common_robustness_metrics(factsheet, model, test_loader):
+    # Populate robustness metrics valid for both image and tabular datasets.
     lr = factsheet["configuration"]["learning_rate"]
     num_classes = model.get_num_classes()
 
-    # Sample-based robustness scores.
+    # Loader-based adversarial accuracy.
+    value_adv_accuracy = get_adversarial_accuracy(model, test_loader, num_classes, lr)
+    factsheet["performance"]["test_adv_accuracy"] = value_adv_accuracy
+
+    # Attack success is inverted so higher remains better in the factsheet.
+    value_attack_success_rate = attack_success_rate(
+        model,
+        test_loader,
+    )
+    factsheet["performance"]["inverse_test_attack_success_rate"] = 1 - value_attack_success_rate
+
+
+def populate_image_robustness_metrics(factsheet, model, test_loader):
+    # Populate image-only continuous-input robustness metrics.
+    lr = factsheet["configuration"]["learning_rate"]
+    num_classes = model.get_num_classes()
+    test_sample = next(iter(test_loader))
+
     value_clever = get_clever_score(model, test_sample, num_classes, lr)
-    factsheet["performance"]["clipped_test_clever"] = cap_score(value_clever)
+    factsheet["performance"]["test_clever_score"] = value_clever
 
     value_loss_sensitivity = get_loss_sensitivity_score(model, test_sample, num_classes, lr)
     factsheet["performance"]["inverse_test_loss_sensitivity"] = inverse_score(value_loss_sensitivity)
-
-    # Loader-based adversarial accuracy.
-    value_adv_accuracy = compute_adversarial_accuracy_art(model, test_loader, num_classes, lr)
-    factsheet["performance"]["clipped_test_adv_accuracy"] = cap_score(value_adv_accuracy)
 
     value_empirical_robustness = get_empirical_robustness_score(
         model,
@@ -171,14 +191,18 @@ def populate_common_robustness_metrics(factsheet, model, test_loader, test_sampl
         num_classes,
         lr,
     )
-    factsheet["performance"]["clipped_test_empirical_robustness"] = cap_score(value_empirical_robustness)
+    factsheet["performance"]["test_empirical_robustness_score"] = value_empirical_robustness
 
-    # Attack success is inverted so higher remains better in the factsheet.
-    value_attack_success_rate = attack_success_rate(
-        model,
-        test_sample,
-    )
-    factsheet["performance"]["inverse_test_attack_success_rate"] = 1 - value_attack_success_rate
+
+def remove_image_only_robustness_metrics(factsheet):
+    # Drop stale values when an existing factsheet was created before tabular metrics were split.
+    performance = factsheet.get("performance", {})
+    for field in (
+        "test_clever_score",
+        "inverse_test_loss_sensitivity",
+        "test_empirical_robustness_score",
+    ):
+        performance.pop(field, None)
 
 
 PROFILE_POPULATORS = {

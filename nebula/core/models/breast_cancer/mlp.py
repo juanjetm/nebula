@@ -20,6 +20,7 @@ class BreastCancerModelMLP(NebulaModel):
         # pero en la práctica se usa ese primer argumento como "input shape info".
         # Para tabular, pasamos input_dim en input_channels para mantener la firma.
         super().__init__(input_dim, num_classes, learning_rate, metrics, confusion_matrix, seed)
+        self.data_type = data_type
 
         # Mantengo el mismo patrón que tu MLP de FashionMNIST.
         self.config = {"beta1": 0.9, "beta2": 0.999, "amsgrad": True}
