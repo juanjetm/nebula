@@ -1,3 +1,6 @@
+# Stolfo, S., Fan, W., Lee, W., Prodromidis, A., & Chan, P. (1999). KDD Cup 1999 Data [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C51C7N.
+# Licensed under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
+
 import logging
 import os
 from typing import Any

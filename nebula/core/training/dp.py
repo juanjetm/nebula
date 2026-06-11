@@ -1,3 +1,6 @@
+# Opacus: User-Friendly Differential Privacy Library in PyTorch. Yousefpour et al. (2021). arXiv:2109.12298.
+# Licensed under Apache License 2.0: https://github.com/meta-pytorch/opacus/blob/main/LICENSE
+
 class SimpleDPState:
     # Minimal mutable state used to pass Opacus-wrapped objects between hooks.
     def __init__(self):

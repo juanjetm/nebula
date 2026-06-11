@@ -1,3 +1,6 @@
+# Wolberg, W., Mangasarian, O., Street, N., & Street, W. (1993). Breast Cancer Wisconsin (Diagnostic) [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5DW2B.
+# Licensed under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
+
 import logging
 import os
 from typing import Any

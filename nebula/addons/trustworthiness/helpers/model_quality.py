@@ -4,6 +4,11 @@ import math
 import numpy as np
 import torch
 
+# AIF360: AI Fairness 360 [Software]. https://github.com/Trusted-AI/AIF360
+# Licensed under Apache License 2.0: https://github.com/Trusted-AI/AIF360/blob/main/LICENSE
+# HolisticAI: open-source library to assess and improve AI trustworthiness.
+# Licensed under Apache License 2.0: https://github.com/holistic-ai/holisticai/blob/main/LICENSE
+
 logger = logging.getLogger(__name__)
 
 def _extract_model_logits(model_output):

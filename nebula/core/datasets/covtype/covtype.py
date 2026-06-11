@@ -1,4 +1,6 @@
 # nebula/core/datasets/covtype/covtype.py
+# Blackard, J. (1998). Covertype [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C50K5N.
+# Licensed under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
 
 import logging
 import os

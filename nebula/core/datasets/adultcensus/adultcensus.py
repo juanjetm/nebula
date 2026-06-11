@@ -1,4 +1,6 @@
 # nebula/core/datasets/adultcensus/adultcensus.py
+# Becker, B. & Kohavi, R. (1996). Adult [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5XW20.
+# Licensed under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
 
 import logging
 import os
