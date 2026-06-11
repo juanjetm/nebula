@@ -160,7 +160,6 @@ class NebulaModel(pl.LightningModule, ABC):
 
             del cm_numpy, classes, fig, ax
 
-        # Restablecer la matriz de confusión
         if phase == "Test (Local)":
             self.cm.reset()
         else:

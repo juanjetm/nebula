@@ -42,7 +42,7 @@ class LightningDP(Lightning):
         )
 
     def _train_sync(self):
-        # Keep the public Lightning trainer contract: train once and return loss/accuracy.
+        # Keep the public Lightning trainer contract: train once and return validation and training metrics.
         try:
             self._fit_with_dp()
 
@@ -57,7 +57,12 @@ class LightningDP(Lightning):
                 loss = raw_loss.item() if hasattr(raw_loss, "item") else raw_loss
 
             accuracy = validation_metrics.get("Validation/Accuracy")
-            return loss, accuracy
+            train_accuracy = None
+            get_train_accuracy = getattr(self.model, "get_latest_train_accuracy", None)
+            if callable(get_train_accuracy):
+                train_accuracy = get_train_accuracy()
+
+            return loss, accuracy, train_accuracy
 
         except Exception as e:
             logging_training.error(f"Error in _train_sync with Differential Privacy: {e}")

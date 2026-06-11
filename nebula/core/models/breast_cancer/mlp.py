@@ -16,13 +16,9 @@ class BreastCancerModelMLP(NebulaModel):
         seed=None,
         data_type="Tabular",
     ):
-        # OJO: NebulaModel está pensado para imágenes (input_channels),
-        # pero en la práctica se usa ese primer argumento como "input shape info".
-        # Para tabular, pasamos input_dim en input_channels para mantener la firma.
         super().__init__(input_dim, num_classes, learning_rate, metrics, confusion_matrix, seed)
         self.data_type = data_type
 
-        # Mantengo el mismo patrón que tu MLP de FashionMNIST.
         self.config = {"beta1": 0.9, "beta2": 0.999, "amsgrad": True}
 
         self.example_input_array = torch.rand(1, input_dim)
@@ -34,8 +30,6 @@ class BreastCancerModelMLP(NebulaModel):
         self.l3 = torch.nn.Linear(128, num_classes)
 
     def forward(self, x):
-        # En tabular, x debe ser (batch, input_dim).
-        # A veces puede venir con dimensión extra (batch, 1, input_dim) por loaders.
         if x.dim() == 3 and x.size(1) == 1:
             x = x.squeeze(1)
 
